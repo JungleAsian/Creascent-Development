@@ -7,6 +7,12 @@ const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
 const envExampleFile = path.join(toolsRoot, '.env.tools.example')
 
+function settingsRedirect(request: Request, key: 'message' | 'error', value: string) {
+  const url = new URL('/settings', request.url)
+  url.searchParams.set(key, value)
+  return NextResponse.redirect(url, 303)
+}
+
 function openEnvFile() {
   if (process.platform === 'win32') {
     spawn('notepad.exe', [envFile], { detached: true, stdio: 'ignore' }).unref()
@@ -20,26 +26,42 @@ function openEnvFile() {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({})) as { action?: string }
+  const contentType = request.headers.get('content-type') ?? ''
+  const isFormPost = contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')
+  const body = isFormPost
+    ? Object.fromEntries(await request.formData()) as { action?: string }
+    : await request.json().catch(() => ({})) as { action?: string }
 
   if (body.action === 'create') {
     if (existsSync(envFile)) {
-      return NextResponse.json({ message: '.env.tools already exists' })
+      return isFormPost
+        ? settingsRedirect(request, 'message', '.env.tools already exists')
+        : NextResponse.json({ message: '.env.tools already exists' })
     }
     if (!existsSync(envExampleFile)) {
-      return NextResponse.json({ error: '.env.tools.example was not found' }, { status: 404 })
+      return isFormPost
+        ? settingsRedirect(request, 'error', '.env.tools.example was not found')
+        : NextResponse.json({ error: '.env.tools.example was not found' }, { status: 404 })
     }
     copyFileSync(envExampleFile, envFile)
-    return NextResponse.json({ message: 'Created .env.tools from the example file' })
+    return isFormPost
+      ? settingsRedirect(request, 'message', 'Created .env.tools from the example file')
+      : NextResponse.json({ message: 'Created .env.tools from the example file' })
   }
 
   if (body.action === 'open') {
     if (!existsSync(envFile)) {
-      return NextResponse.json({ error: '.env.tools has not been created yet' }, { status: 404 })
+      return isFormPost
+        ? settingsRedirect(request, 'error', '.env.tools has not been created yet')
+        : NextResponse.json({ error: '.env.tools has not been created yet' }, { status: 404 })
     }
     openEnvFile()
-    return NextResponse.json({ message: 'Opened .env.tools in your local editor' })
+    return isFormPost
+      ? settingsRedirect(request, 'message', 'Opened .env.tools in your local editor')
+      : NextResponse.json({ message: 'Opened .env.tools in your local editor' })
   }
 
-  return NextResponse.json({ error: 'Unknown settings action' }, { status: 400 })
+  return isFormPost
+    ? settingsRedirect(request, 'error', 'Unknown settings action')
+    : NextResponse.json({ error: 'Unknown settings action' }, { status: 400 })
 }
