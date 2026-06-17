@@ -392,8 +392,23 @@ function buildPlan(from?: string) {
   return phaseDefinitions.slice(start)
 }
 
-async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolean }) {
-  if (!opts.noSync) await syncPrompts({ force: false, dryRun: opts.dryRun })
+function handoffToolLabel(builder: string) {
+  return builder === 'claude-code' ? 'Claude.ai' : 'Codex Pro'
+}
+
+function openPromptFile(file: string) {
+  if (process.platform === 'win32') {
+    const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
+    editor.unref()
+  }
+}
+
+function shouldSync(opts: { sync?: boolean; noSync?: boolean }) {
+  return opts.sync !== false && opts.noSync !== true
+}
+
+async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolean; sync?: boolean }) {
+  if (shouldSync(opts)) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
     const context = await assemblePhaseContext(phase.id)
@@ -406,54 +421,12 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       process.exitCode = 1
       return
     }
-    if (phase.builder === 'codex') {
-      await setBuildStatus(phase.id, 'awaiting-output', 'Prompt opened for Codex Pro')
-      if (process.platform === 'win32') {
-        const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
-        editor.unref()
-      }
-      log('phase', `${phase.id} opened for Codex Pro. Paste into Codex, apply changes, then rerun or continue manually.`)
-      return
-    }
-    await setBuildStatus(phase.id, 'in-progress', 'Claude Code build started')
-    const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
-    if (claude.status !== 0) {
-      await setBuildStatus(phase.id, 'failed', 'Claude Code returned a failure')
-      await sendNotification(`Claude Code phase ${phase.id} failed. Fix and retry.`, 'critical')
-      process.exitCode = 1
-      return
-    }
-    await setBuildStatus(phase.id, 'gates-running', 'Running quality gates')
-    const gates = checkGates()
-    if (gates.some((gate) => !gate.ok)) {
-      await setBuildStatus(phase.id, 'failed', 'One or more gates failed')
-      await sendNotification(`${phase.id} gates failed after build.`, 'critical')
-      process.exitCode = 1
-      return
-    }
-    const state = phases()
-    const current = state.find((item) => item.id === phase.id)
-    if (current) {
-      const published = await commitAndPushPhase(phase.id, phase.name)
-      if (!published.ok) {
-        await setBuildStatus(phase.id, 'failed', `GitHub push failed: ${published.message}`)
-        log('phase', `Cannot complete ${phase.id}; GitHub push failed: ${published.message}`, 'error')
-        process.exitCode = 1
-        return
-      }
-      current.status = 'done'
-      current.completedAt = new Date().toISOString()
-      current.commitHash = published.commitHash
-      current.committedAt = new Date().toISOString()
-      const control = await setBuildStatus(phase.id, 'complete', 'Phase committed and pushed')
-      control.commitHash = published.commitHash
-      saveBuildControl(buildControl().map((record) => record.phaseId === phase.id ? control : record))
-      save(state)
-    }
-    await notifyPhaseComplete(phase.id, phase.name)
-    if (phase.id === 'P11') {
-      await sendNotification('Submit to Meta for WhatsApp approval now. Do not wait for P19.', 'critical')
-    }
+    const tool = handoffToolLabel(phase.builder)
+    await setBuildStatus(phase.id, 'awaiting-output', `Prompt opened for ${tool}`)
+    openPromptFile(file)
+    await sendNotification(`${phase.id} is waiting for ${tool} output. Paste the prompt into ${tool}, apply the output, then click Output Copied to Repo.`, 'development')
+    log('phase', `${phase.id} opened for ${tool}. Paste the prompt into ${tool}, apply changes, then click Output Copied to Repo.`)
+    return
   }
   await closeDiscordClient()
 }
@@ -493,34 +466,12 @@ async function completePhaseAfterOutput(phaseId: string) {
   return true
 }
 
-async function runClaudePhase(phaseId: string) {
-  const definition = phaseDefinitions.find((item) => item.id === phaseId)
-  if (!definition) throw new Error(`Unknown phase ${phaseId}`)
-  const context = await assemblePhaseContext(phaseId)
-  const file = context.file
-  const readiness = assembledReadiness(context.promptChars, file)
-  if (!readiness.ok) {
-    log('phase', `Cannot build ${phaseId}; ${readiness.reason}.`, 'error')
-    process.exitCode = 1
-    return false
-  }
-  await setBuildStatus(phaseId, 'in-progress', 'Claude Code build started')
-  const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
-  if (claude.status !== 0) {
-    await setBuildStatus(phaseId, 'failed', 'Claude Code returned a failure')
-    await sendNotification(`Claude Code phase ${phaseId} failed. Fix and retry.`, 'critical')
-    process.exitCode = 1
-    return false
-  }
-  return completePhaseAfterOutput(phaseId)
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?: string; noSync?: boolean; dryRun?: boolean }) {
-  if (!opts.noSync) await syncPrompts({ force: false, dryRun: opts.dryRun })
+async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?: string; noSync?: boolean; sync?: boolean; dryRun?: boolean }) {
+  if (shouldSync(opts)) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const intervalMs = Math.max(5, Number(opts.interval ?? 30)) * 1000
   const deadline = Date.now() + Math.max(1, Number(opts.maxMinutes ?? 720)) * 60 * 1000
   const plan = buildPlan(opts.from)
@@ -536,17 +487,10 @@ async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?:
       process.exitCode = 1
       return
     }
-    if (phase.builder === 'claude-code') {
-      const completed = await runClaudePhase(phase.id)
-      if (!completed) return
-      continue
-    }
-    await setBuildStatus(phase.id, 'awaiting-output', 'Prompt opened for Codex Pro; waiting for output-copied')
-    if (process.platform === 'win32') {
-      const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
-      editor.unref()
-    }
-    await sendNotification(`${phase.id} is waiting for Codex Pro output. Click Output Copied to Repo when done.`, 'development')
+    const tool = handoffToolLabel(phase.builder)
+    await setBuildStatus(phase.id, 'awaiting-output', `Prompt opened for ${tool}; waiting for output-copied`)
+    openPromptFile(file)
+    await sendNotification(`${phase.id} is waiting for ${tool} output. Click Output Copied to Repo when done.`, 'development')
     while (Date.now() < deadline) {
       const status = await currentBuildStatus(phase.id)
       if (status === 'output-copied') {

@@ -21,8 +21,8 @@ type Agent = {
 type PageProps = { searchParams?: { message?: string; error?: string } }
 
 const services = [
-  ['claude-code', 'Claude Code', 'CLI', ''],
-  ['claude-api', 'Claude API', 'API', 'ANTHROPIC_API_KEY'],
+  ['claude-code', 'Claude.ai handoff', 'Manual', ''],
+  ['claude-api', 'Claude API live runtime', 'API later', 'ANTHROPIC_API_KEY'],
   ['codex-pro', 'Codex Pro', 'Manual', 'OPENAI_API_KEY'],
   ['gpt-4o', 'GPT-4o', 'API', 'OPENAI_API_KEY'],
   ['google-gemini', 'Gemini', 'API', 'GOOGLE_GEMINI_API_KEY'],
@@ -42,6 +42,10 @@ function readEnv() {
     const index = line.indexOf('=')
     return [line.slice(0, index), line.slice(index + 1)]
   }))
+}
+
+function agentMode(agent: Agent) {
+  return agent.service === 'claude-code' ? 'manual' : agent.mode
 }
 
 export default function AgentsPage({ searchParams }: PageProps) {
@@ -127,7 +131,7 @@ function AgentCard({ agent }: { agent: Agent }) {
       <div className="mt-3 space-y-1 text-sm text-slate-300">
         <p>Service: {agent.service}</p>
         <p>Model: {agent.model}</p>
-        <p>Mode: {agent.mode}</p>
+        <p>Mode: {agentMode(agent)}</p>
         <p>Trigger: {agent.trigger}</p>
         {agent.lastRun && <p className="text-xs text-slate-500">Last run: {agent.lastRun.status} {agent.lastRun.phase ?? ''}</p>}
       </div>

@@ -75,11 +75,13 @@ async function notionReachable(): Promise<ReadyCheck> {
   }
 }
 
-function claudeCodeCheck(): ReadyCheck {
-  const result = command(['claude', '--version'])
-  return result.ok
-    ? { name: 'Claude Code', status: 'pass', message: result.output || 'Claude Code is available.' }
-    : { name: 'Claude Code', status: 'critical', message: 'Claude Code command is not available.', fix: 'Install/sign in to Claude Code before frontend phases P09/P11.' }
+function claudeHandoffCheck(): ReadyCheck {
+  return {
+    name: 'Claude.ai handoff',
+    status: 'warning',
+    message: 'Frontend phases P09 and P11 use Claude.ai manual handoff; no Claude Code command or Anthropic API key is required for development.',
+    fix: 'When those phases open, paste the prompt into Claude.ai, apply the output, then click Output Copied to Repo.'
+  }
 }
 
 function backendBuilderCheck(): ReadyCheck {
@@ -137,9 +139,9 @@ async function buildReadyResult(): Promise<ReadyResult> {
       id: 'agents',
       label: 'AI Agents',
       checks: [
-        { name: 'Anthropic API key', status: envPresent('ANTHROPIC_API_KEY') ? 'pass' : 'critical', message: envPresent('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY is set.' : 'ANTHROPIC_API_KEY is missing.', fix: 'Add the Anthropic API key in Settings.' },
-        { name: 'Anthropic API configured', status: envPresent('ANTHROPIC_API_KEY') ? 'pass' : 'critical', message: envPresent('ANTHROPIC_API_KEY') ? 'Anthropic API can be tested by the agents command.' : 'Anthropic API cannot be tested without a key.', fix: 'Add ANTHROPIC_API_KEY.' },
-        claudeCodeCheck(),
+        { name: 'Anthropic API key', status: envPresent('ANTHROPIC_API_KEY') ? 'pass' : 'warning', message: envPresent('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY is set.' : 'ANTHROPIC_API_KEY is not set; this is only needed when the first live clinic/runtime bot goes online.', fix: 'Leave blank during development unless you are testing the live Claude API bot.' },
+        { name: 'Anthropic API configured', status: envPresent('ANTHROPIC_API_KEY') ? 'pass' : 'warning', message: envPresent('ANTHROPIC_API_KEY') ? 'Anthropic API is available for runtime testing.' : 'Development can proceed with Claude Max / Claude.ai manual handoff without an API key.', fix: 'Add ANTHROPIC_API_KEY later for live runtime API testing.' },
+        claudeHandoffCheck(),
         backendBuilderCheck()
       ]
     },

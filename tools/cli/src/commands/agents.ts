@@ -29,8 +29,8 @@ type AgentService = {
 }
 
 export const agentServices: AgentService[] = [
-  { id: 'claude-code', label: 'Claude Code', provider: 'Anthropic', mode: 'cli', models: ['claude-sonnet-4-6', 'claude-opus-4-6'] },
-  { id: 'claude-api', label: 'Claude API', provider: 'Anthropic', mode: 'api', env: 'ANTHROPIC_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5'] },
+  { id: 'claude-code', label: 'Claude.ai handoff', provider: 'Anthropic', mode: 'manual', models: ['claude-sonnet-4-6', 'claude-opus-4-6'] },
+  { id: 'claude-api', label: 'Claude API live runtime', provider: 'Anthropic', mode: 'api', env: 'ANTHROPIC_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5'] },
   { id: 'codex-pro', label: 'Codex Pro', provider: 'OpenAI', mode: 'manual', env: 'OPENAI_API_KEY', models: ['o3', 'o4-mini'] },
   { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI', mode: 'api', env: 'OPENAI_API_KEY', models: ['gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'] },
   { id: 'google-gemini', label: 'Gemini', provider: 'Google', mode: 'api', env: 'GOOGLE_GEMINI_API_KEY', models: ['gemini-2.5-pro', 'gemini-2.5-flash'] },
@@ -70,7 +70,7 @@ function defaults(): Agent[] {
       label: 'Frontend Builder',
       service: 'claude-code',
       model: 'claude-sonnet-4-6',
-      mode: 'cli',
+      mode: 'manual',
       trigger: 'on-demand',
       enabled: true,
       core: true,
@@ -158,7 +158,9 @@ export function readAgents() {
     writeJson('agents.json', data)
     return data
   }
-  return stored
+  const normalized = stored.map((agent) => agent.service === 'claude-code' ? { ...agent, mode: 'manual' as const } : agent)
+  if (JSON.stringify(normalized) !== JSON.stringify(stored)) writeJson('agents.json', normalized)
+  return normalized
 }
 
 function saveAgents(agents: Agent[]) {

@@ -82,6 +82,10 @@ function githubCommitUrl(hash?: string) {
   return hash ? `https://github.com/JungleAsian/Creascent-Development/commit/${hash}` : ''
 }
 
+function builderLabel(builder: string) {
+  return builder === 'claude-code' ? 'Claude.ai handoff' : 'Codex Pro'
+}
+
 export default function BuildControlPage({ searchParams }: PageProps) {
   const phases = phaseState()
   const controls = controlState()
@@ -100,7 +104,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Build Control</h1>
-          <p className="mt-2 text-sm text-slate-400">One-button build control for Codex Pro and Claude Code phases.</p>
+          <p className="mt-2 text-sm text-slate-400">One-button build control for Codex Pro and Claude.ai handoff phases.</p>
         </div>
         <a href={buildControlUrl} target="_blank" rel="noreferrer" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open Notion spec</a>
       </div>
@@ -126,7 +130,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
               <div className="text-sm text-slate-400">Current phase</div>
               <h2 className="mt-1 text-xl font-semibold">{currentId} — {currentName}</h2>
               <div className="mt-2 flex flex-wrap gap-2">
-                <span className={currentBuilder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{currentBuilder}</span>
+                <span className={currentBuilder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builderLabel(currentBuilder)}</span>
                 <span className={`rounded px-2 py-1 text-xs ${statusClass(currentControl.status)}`}>{currentControl.status}</span>
               </div>
             </div>
@@ -184,7 +188,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
           <div className="mt-4 space-y-3 text-sm text-slate-300">
             <p>1. Click Set Up Build Control once if the Notion database is not ready.</p>
             <p>2. Click Start Automated Build.</p>
-            <p>3. If Codex Pro opens, paste the prompt into Codex and apply the output to the repo.</p>
+            <p>3. Paste the opened prompt into the listed tool, Codex Pro or Claude.ai, then apply the output to the repo.</p>
             <p>4. Click Output Copied to Repo. DevTools then runs gates, commits, pushes, and advances.</p>
           </div>
           <div className="mt-5 rounded border border-slate-800 p-3">
@@ -211,7 +215,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
                 <strong className="w-12">{id}</strong>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-slate-200">{name}</div>
-                  <div className="text-xs text-slate-500">Business phase {business} · {builder}</div>
+                  <div className="text-xs text-slate-500">Business phase {business} · {builderLabel(builder)}</div>
                 </div>
                 <span className={`rounded px-2 py-1 text-xs ${statusClass(control?.status ?? 'pending')}`}>{control?.status ?? 'pending'}</span>
                 <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{phase?.status ?? 'not-started'}</span>

@@ -154,7 +154,7 @@ export default function CostPage({ searchParams }: PageProps) {
         <div className="mt-6 space-y-6">
           <div className="flex snap-x gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible">
             {[
-              ['Claude Code', 'claude-code'],
+              ['Claude.ai', 'claude-code'],
               ['Codex Pro', 'codex-pro'],
               ['Claude Chat', 'claude-chat']
             ].map(([label, tool]) => {
@@ -194,7 +194,7 @@ export default function CostPage({ searchParams }: PageProps) {
             <div className="hidden md:block"><h2 className="text-sm font-semibold">Cost by Phase</h2></div>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-950"><tr><th className="p-3">Phase</th><th className="p-3">Claude Code</th><th className="p-3">Codex Pro</th><th className="p-3">Total</th><th className="p-3">Status</th></tr></thead>
+                <thead className="bg-slate-950"><tr><th className="p-3">Phase</th><th className="p-3">Claude.ai</th><th className="p-3">Codex Pro</th><th className="p-3">Total</th><th className="p-3">Status</th></tr></thead>
                 <tbody className="divide-y divide-slate-800">
                   {phases.map((phase) => {
                     const phaseEntries = development.filter((entry) => entry.phase === phase)
