@@ -6,6 +6,10 @@
   color-scheme: dark;
 }
 
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
 body {
   background: #111827;
   color: #f8fafc;
@@ -14,4 +18,63 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.theme-light {
+  color: #0f172a;
+}
+
+.theme-light .bg-slate-950 {
+  background-color: #f8fafc;
+}
+
+.theme-light .bg-slate-900 {
+  background-color: #ffffff;
+}
+
+.theme-light .bg-slate-800 {
+  background-color: #e2e8f0;
+}
+
+.theme-light .bg-slate-100 {
+  background-color: #0f172a;
+}
+
+.theme-light .text-slate-950 {
+  color: #f8fafc;
+}
+
+.theme-light .text-slate-100,
+.theme-light .text-white {
+  color: #0f172a;
+}
+
+.theme-light .text-slate-200,
+.theme-light .text-slate-300 {
+  color: #1e293b;
+}
+
+.theme-light .text-slate-400,
+.theme-light .text-slate-500 {
+  color: #475569;
+}
+
+.theme-light .border-slate-800,
+.theme-light .border-slate-700 {
+  border-color: #cbd5e1;
+}
+
+.theme-light .hover\:bg-slate-800:hover {
+  background-color: #e2e8f0;
+}
+
+.theme-light .hover\:text-white:hover {
+  color: #0f172a;
+}
+
+.theme-light input,
+.theme-light textarea,
+.theme-light select {
+  background-color: #ffffff;
+  color: #0f172a;
 }
