@@ -1,0 +1,9 @@
+node_modules
+dist
+.env.tools
+dashboard/.next
+dashboard/out
+app/src-tauri/target
+logs/*.log
+logs/*.json
+!logs/.gitkeep

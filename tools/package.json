@@ -1,0 +1,36 @@
+{
+  "name": "docmee-devtools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "app",
+    "dashboard",
+    "eslint",
+    "discord"
+  ],
+  "scripts": {
+    "dev": "pnpm --dir dashboard dev",
+    "build": "pnpm --dir dashboard build",
+    "tauri": "pnpm --dir app tauri",
+    "tool": "tsx cli/src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsx ./node_modules/eslint/bin/eslint.js .",
+    "prepare": "node cli/src/lib/install-hooks.cjs"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "handlebars": "^4.7.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^8.57.0",
+    "@types/eslint": "^8.56.10",
+    "@types/node": "^20.14.10",
+    "eslint": "^8.57.0",
+    "tsx": "^4.15.7",
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^7.14.1"
+  }
+}
