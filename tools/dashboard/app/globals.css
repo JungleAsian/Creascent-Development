@@ -4,15 +4,40 @@
 
 :root {
   color-scheme: dark;
+  --surface-root: #07111f;
+  --surface-shell: #0b1727;
+  --surface-panel: #101c2d;
+  --surface-panel-soft: #132238;
+  --border-muted: #22324a;
+  --text-strong: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent-primary: #22d3ee;
+  --accent-secondary: #a78bfa;
+  --accent-success: #34d399;
+  --accent-warning: #f59e0b;
+  --accent-danger: #fb7185;
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
+  --surface-root: #f6f8fb;
+  --surface-shell: #ffffff;
+  --surface-panel: #ffffff;
+  --surface-panel-soft: #eef4fb;
+  --border-muted: #d7e0ea;
+  --text-strong: #0f172a;
+  --text-muted: #52627a;
+  --accent-primary: #0e7490;
+  --accent-secondary: #6d28d9;
+  --accent-success: #047857;
+  --accent-warning: #b45309;
+  --accent-danger: #be123c;
 }
 
 body {
-  background: #111827;
-  color: #f8fafc;
+  background: var(--surface-root);
+  color: var(--text-strong);
+  letter-spacing: 0;
 }
 
 a {
@@ -77,4 +102,59 @@ a {
 .theme-light select {
   background-color: #ffffff;
   color: #0f172a;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  background:
+    linear-gradient(180deg, rgba(34, 211, 238, 0.08), transparent 280px),
+    var(--surface-root);
+}
+
+.app-sidebar,
+.app-header,
+.app-mobile-nav,
+.app-more-sheet,
+.ui-panel {
+  background-color: var(--surface-panel);
+  border-color: var(--border-muted);
+}
+
+.app-sidebar {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+.app-header {
+  backdrop-filter: blur(14px);
+}
+
+.ui-soft {
+  background-color: var(--surface-panel-soft);
+  border-color: var(--border-muted);
+}
+
+.ui-muted {
+  color: var(--text-muted);
+}
+
+.ui-action {
+  border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-muted));
+  color: var(--text-strong);
+}
+
+.ui-action:hover {
+  background-color: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
+.ui-card-hover {
+  transition: border-color 160ms ease, transform 160ms ease, background-color 160ms ease;
+}
+
+.ui-card-hover:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 58%, var(--border-muted));
+  transform: translateY(-1px);
 }
