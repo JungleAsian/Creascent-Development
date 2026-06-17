@@ -22,6 +22,19 @@ const optionalVars = [
   'COST_ALERT_THRESHOLD_USD'
 ]
 
+const guidance: Record<string, string> = {
+  TOOLS_DB_URL: 'Supabase local start output. Usually http://localhost:54321.',
+  TOOLS_DB_SERVICE_KEY: 'Supabase local start output. Use the local service_role key only.',
+  MONOREPO_ROOT: 'Repo layout. Keep ../ when DevTools lives in /tools.',
+  NEXT_PUBLIC_DASHBOARD_PORT: 'Dashboard port. Keep 4000 unless another local service uses it.',
+  WEBHOOK_TARGET: 'Local API webhook route. Change only if your local API uses a different port/path.',
+  DEV_LICENSE_SIGNING_KEY: 'Local-only signing secret. Use a long random development string.',
+  DISCORD_BOT_TOKEN: 'Discord developer portal bot token. Leave blank until notifications are configured.',
+  DISCORD_CHANNEL_ID: 'Discord channel ID for DevTools notifications. Leave blank until Discord is configured.',
+  GATES_STRICT: 'Local gate behavior. Keep false during early setup.',
+  COST_ALERT_THRESHOLD_USD: 'Your daily local cost alert limit, such as 10.'
+}
+
 function parseEnv(content: string) {
   return Object.fromEntries(
     content
@@ -60,6 +73,7 @@ export default function SettingsPage() {
             <th className="p-3">Name</th>
             <th className="p-3">Required</th>
             <th className="p-3">Status</th>
+            <th className="p-3">Where to get it</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800">
@@ -72,6 +86,7 @@ export default function SettingsPage() {
                   {row.present ? 'present' : 'missing'}
                 </span>
               </td>
+              <td className="p-3 text-slate-400">{guidance[row.name]}</td>
             </tr>
           ))}
         </tbody>
