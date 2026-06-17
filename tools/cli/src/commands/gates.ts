@@ -2,6 +2,9 @@ import { Command } from 'commander'
 import { spawnSync } from 'node:child_process'
 import { envStatus } from '../lib/config.js'
 import { log } from '../lib/logger.js'
+import { closeDiscordClient } from '../../../discord/src/bot.js'
+import { notifyGateFailed } from '../../../discord/src/notifications/gate-failed.js'
+import { notifyGatePassed } from '../../../discord/src/notifications/gate-passed.js'
 
 type GateResult = { gate: number; name: string; ok: boolean; detail: string }
 
@@ -31,11 +34,24 @@ export const gatesCmd = new Command('gates')
   .description('Run DevTools gates')
   .command('check')
   .option('--gate <gate>')
-  .action((opts: { gate?: string }) => {
+  .action(async (opts: { gate?: string }) => {
     const results = checkGates(opts.gate ? Number(opts.gate) : undefined)
     for (const result of results) {
       log('gates', `${result.ok ? 'PASS' : 'FAIL'} Gate ${result.gate}: ${result.name} - ${result.detail.trim()}`)
     }
-    if (results.some((result) => !result.ok)) process.exitCode = 1
+    const failed = results.filter((result) => !result.ok)
+    try {
+      if (failed.length > 0) {
+        for (const result of failed) {
+          await notifyGateFailed(result.gate, result.name, result.detail.trim())
+        }
+        process.exitCode = 1
+      } else {
+        const label = opts.gate ? results[0]?.name ?? 'Selected gate' : 'All DevTools gates'
+        await notifyGatePassed(opts.gate ? Number(opts.gate) : results.length, label)
+      }
+    } finally {
+      await closeDiscordClient()
+    }
   })
   .parent!

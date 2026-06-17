@@ -17,7 +17,11 @@ const requiredVars = [
 
 const optionalVars = [
   'DISCORD_BOT_TOKEN',
+  'DISCORD_MESSAGING_BOT_TOKEN',
   'DISCORD_CHANNEL_ID',
+  'DISCORD_CRITICAL_CHANNEL_ID',
+  'DISCORD_UPDATE_CHANNEL_ID',
+  'DISCORD_APPROVAL_CHANNEL_ID',
   'GATES_STRICT',
   'COST_ALERT_THRESHOLD_USD'
 ]
@@ -41,13 +45,37 @@ const guidance: Record<string, { providerLabel: string; text: string; url?: stri
   DEV_LICENSE_SIGNING_KEY: { providerLabel: 'Docmee dev signing key', text: 'Local-only signing secret. Use a long random development string.' },
   DISCORD_BOT_TOKEN: {
     providerLabel: 'Discord: Bot Token',
-    text: 'Discord developer portal bot token. Leave blank until notifications are configured.',
+    text: 'Fallback Discord bot token. Use only if a dedicated messaging bot is not configured.',
+    url: 'https://discord.com/developers/applications',
+    linkLabel: 'Discord developer portal'
+  },
+  DISCORD_MESSAGING_BOT_TOKEN: {
+    providerLabel: 'Discord: Messaging Bot Token',
+    text: 'Dedicated Discord developer portal bot token for DevTools messages. Invite this bot to each notification channel.',
     url: 'https://discord.com/developers/applications',
     linkLabel: 'Discord developer portal'
   },
   DISCORD_CHANNEL_ID: {
     providerLabel: 'Discord: Channel ID',
-    text: 'Discord channel ID for DevTools notifications. Leave blank until Discord is configured.',
+    text: 'Fallback Discord channel ID for DevTools notifications. Used when a type-specific channel is blank.',
+    url: 'https://support.discord.com/hc/en-us/articles/206346498',
+    linkLabel: 'Discord ID guide'
+  },
+  DISCORD_CRITICAL_CHANNEL_ID: {
+    providerLabel: 'Discord: Critical/Important Channel ID',
+    text: 'Optional Discord channel for failed gates and cost threshold alerts. Falls back to Discord: Channel ID.',
+    url: 'https://support.discord.com/hc/en-us/articles/206346498',
+    linkLabel: 'Discord ID guide'
+  },
+  DISCORD_UPDATE_CHANNEL_ID: {
+    providerLabel: 'Discord: Development Updates Channel ID',
+    text: 'Optional Discord channel for successful gate and phase completion updates. Falls back to Discord: Channel ID.',
+    url: 'https://support.discord.com/hc/en-us/articles/206346498',
+    linkLabel: 'Discord ID guide'
+  },
+  DISCORD_APPROVAL_CHANNEL_ID: {
+    providerLabel: 'Discord: Approval Channel ID',
+    text: 'Optional Discord channel for approval requests. Falls back to Discord: Channel ID.',
     url: 'https://support.discord.com/hc/en-us/articles/206346498',
     linkLabel: 'Discord ID guide'
   },

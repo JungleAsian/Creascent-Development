@@ -2,6 +2,8 @@ import { Command } from 'commander'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { loadConfig } from '../lib/config.js'
 import { log } from '../lib/logger.js'
+import { closeDiscordClient } from '../../../discord/src/bot.js'
+import { notifyCostAlert } from '../../../discord/src/notifications/cost-alert.js'
 
 type CostEntry = { provider: string; input: number; output: number; tokens: number; minutes: number; usd: number; createdAt: string }
 
@@ -17,7 +19,7 @@ costCmd.command('log')
   .option('--output <output>', 'Output tokens', '0')
   .option('--tokens <tokens>', 'Total tokens', '0')
   .option('--minutes <minutes>', 'Audio minutes', '0')
-  .action((opts: { provider: string; input: string; output: string; tokens: string; minutes: string }) => {
+  .action(async (opts: { provider: string; input: string; output: string; tokens: string; minutes: string }) => {
     loadConfig()
     const entry: CostEntry = {
       provider: opts.provider,
@@ -34,7 +36,14 @@ costCmd.command('log')
     const todaySpend = data.filter((item) => item.createdAt.startsWith(today)).reduce((sum, item) => sum + item.usd, 0)
     const threshold = Number(process.env.COST_ALERT_THRESHOLD_USD || '10')
     log('cost', `Logged ${entry.provider} cost $${entry.usd.toFixed(4)}`)
-    if (todaySpend > threshold) log('cost', `Daily spend $${todaySpend.toFixed(2)} exceeded threshold $${threshold}`, 'warn')
+    if (todaySpend > threshold) {
+      log('cost', `Daily spend $${todaySpend.toFixed(2)} exceeded threshold $${threshold}`, 'warn')
+      try {
+        await notifyCostAlert(todaySpend, threshold)
+      } finally {
+        await closeDiscordClient()
+      }
+    }
   })
 
 costCmd.command('today').action(() => {

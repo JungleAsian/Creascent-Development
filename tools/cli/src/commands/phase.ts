@@ -2,6 +2,8 @@ import { Command } from 'commander'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { checkGates } from './gates.js'
 import { log } from '../lib/logger.js'
+import { closeDiscordClient } from '../../../discord/src/bot.js'
+import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
 
 type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done' }
 
@@ -24,7 +26,7 @@ phaseCmd.command('start').argument('<phase>').action((id: string) => {
   save(state)
   log('phase', `Started ${id}`)
 })
-phaseCmd.command('done').argument('<phase>').action((id: string) => {
+phaseCmd.command('done').argument('<phase>').action(async (id: string) => {
   const results = checkGates()
   if (results.some((result) => !result.ok)) {
     log('phase', `Cannot mark ${id} done; gates failed`, 'error')
@@ -37,4 +39,9 @@ phaseCmd.command('done').argument('<phase>').action((id: string) => {
   phase.status = 'done'
   save(state)
   log('phase', `Completed ${id}`)
+  try {
+    await notifyPhaseComplete(id, id)
+  } finally {
+    await closeDiscordClient()
+  }
 })
