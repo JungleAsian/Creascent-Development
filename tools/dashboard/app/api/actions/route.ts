@@ -94,6 +94,27 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Logged ${provider} cost` : 'Cost log failed')
   }
 
+  if (action === 'cost-dev-log') {
+    const phase = String(form.get('phase') ?? '').trim()
+    const feature = String(form.get('feature') ?? '').trim()
+    const tool = String(form.get('tool') ?? '').trim()
+    if (!phase || !feature || !tool) return redirect(request, 'error', 'Phase, feature, and tool are required')
+    const result = runTool([
+      'cost', 'dev', 'log',
+      '--phase', phase,
+      '--feature', feature,
+      '--tool', tool,
+      '--model', String(form.get('model') ?? 'o4-mini'),
+      '--input', String(form.get('input') ?? '0'),
+      '--output', String(form.get('output') ?? '0'),
+      '--cached', String(form.get('cached') ?? '0'),
+      '--minutes', String(form.get('minutes') ?? '0'),
+      '--method', String(form.get('method') ?? 'manual'),
+      '--notes', String(form.get('notes') ?? '')
+    ])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Development session logged' : 'Development cost log failed')
+  }
+
   if (action === 'discord-test') {
     const result = runTool(['discord', 'test'])
     return redirect(

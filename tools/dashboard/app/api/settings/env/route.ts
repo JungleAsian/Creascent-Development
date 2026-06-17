@@ -119,6 +119,27 @@ export async function POST(request: Request) {
       : NextResponse.json({ message: 'Created .env.tools from the example file' })
   }
 
+  if (body.action === 'auto-setup') {
+    if (!existsSync(envFile)) {
+      if (!existsSync(envExampleFile)) {
+        return isFormPost
+          ? settingsRedirect(request, 'error', '.env.tools.example was not found')
+          : NextResponse.json({ error: '.env.tools.example was not found' }, { status: 404 })
+      }
+      copyFileSync(envExampleFile, envFile)
+    }
+    const backlogOk = backlogCount() === 45 || runTool(['backlog', 'init'])
+    runTool(['agents', 'reset'])
+    const status = setupStatus()
+    const ok = backlogOk && status.issues.filter((issue) => issue !== 'backlog').length === 0
+    const message = ok
+      ? 'Local setup is ready. Add service keys only when you want Discord, Notion, AI, Meta, or VPS features.'
+      : `Local setup prepared, but still needs: ${status.issues.join(', ')}`
+    return isFormPost
+      ? settingsRedirect(request, ok ? 'message' : 'error', message)
+      : NextResponse.json(ok ? { message } : { error: message }, { status: ok ? 200 : 500 })
+  }
+
   if (body.action === 'open') {
     if (!existsSync(envFile)) {
       return isFormPost

@@ -126,6 +126,40 @@ const safeDefaults = [
   ['Node environment', 'development']
 ]
 
+const setupSteps = [
+  ['1', 'Prepare this computer', 'Creates the local setup file, fills safe defaults, seeds the backlog, and resets agent defaults.', 'auto-setup'],
+  ['2', 'Connect optional services', 'Open the service links below only for features you plan to use, such as Discord, Notion, AI, WhatsApp, or VPS deploy.'],
+  ['3', 'Run setup check', 'Confirms the local file, required local settings, and backlog are ready.', 'check']
+] as const
+
+const plainLanguageGroups = [
+  {
+    title: 'Local setup',
+    body: 'Required for the desktop tool to run on this computer.',
+    names: ['TOOLS_DB_URL', 'TOOLS_DB_SERVICE_KEY', 'MONOREPO_ROOT', 'NEXT_PUBLIC_DASHBOARD_PORT', 'WEBHOOK_TARGET', 'DEV_LICENSE_SIGNING_KEY']
+  },
+  {
+    title: 'Discord messages',
+    body: 'Needed only if you want the tool to publish alerts, updates, and approval requests to Discord.',
+    names: ['DISCORD_MESSAGING_BOT_TOKEN', 'DISCORD_CRITICAL_CHANNEL_ID', 'DISCORD_UPDATE_CHANNEL_ID', 'DISCORD_APPROVAL_CHANNEL_ID']
+  },
+  {
+    title: 'Notion sync',
+    body: 'Needed only if you want phase prompts synced from Notion.',
+    names: ['NOTION_API_KEY', 'NOTION_PROMPTS_DB_ID']
+  },
+  {
+    title: 'AI services',
+    body: 'Needed only for agent connection tests and build-cost tracking by provider.',
+    names: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'MISTRAL_API_KEY', 'DEEPSEEK_API_KEY']
+  },
+  {
+    title: 'WhatsApp and deployment',
+    body: 'Needed later for Meta webhook testing and Hostinger VPS deployment.',
+    names: ['META_APP_SECRET', 'META_VERIFY_TOKEN', 'WHATSAPP_DEFAULT_ACCESS_TOKEN', 'VPS_HOST', 'VPS_USER', 'VPS_DOMAIN']
+  }
+] as const
+
 function parseEnv(content: string) {
   return Object.fromEntries(
     content
@@ -159,13 +193,14 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
   const allRows = groups.flatMap((group) => group.rows.map(([name]) => name))
   const missingRequired = requiredVars.filter((name) => !env[name])
   const networkUrl = `http://${localIp()}:4000`
+  const rowByName = new Map(groups.flatMap((group) => group.rows.map((row) => [row[0], row])))
 
   return (
     <section className="max-w-6xl">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup</h1>
-          <p className="mt-2 text-sm text-slate-400">{envExists ? envFile : '.env.tools has not been created yet'}</p>
+          <p className="mt-2 text-sm text-slate-400">Guided setup for non-technical users. Advanced variable names are available only when needed.</p>
         </div>
         <div className="flex min-w-72 flex-col items-end gap-2">
           <div className="flex gap-2">
@@ -189,11 +224,70 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
         </div>
       </div>
 
+      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold">No-Configuration Setup</h2>
+            <p className="mt-1 text-sm text-slate-400">Use this first. The tool prepares everything it can locally without asking you to edit files.</p>
+          </div>
+          <form action="/api/settings/env" method="post">
+            <input type="hidden" name="action" value="auto-setup" />
+            <button className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white">Set Up This Computer</button>
+          </form>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {setupSteps.map(([number, title, body, action]) => (
+            <div key={title} className="rounded border border-slate-800 p-3">
+              <div className="flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-slate-800 text-xs">{number}</span><h3 className="text-sm font-semibold">{title}</h3></div>
+              <p className="mt-2 text-sm text-slate-400">{body}</p>
+              {action === 'check' && <form action="/api/settings/env" method="post" className="mt-3"><input type="hidden" name="action" value="check" /><button className="rounded-md border border-slate-700 px-3 py-2 text-xs hover:bg-slate-800">Run Check</button></form>}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-6 grid gap-3 md:grid-cols-4">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Configuration file</h2><p className={envExists ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{envExists ? 'Ready' : 'Missing'}</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Required settings</h2><p className={missingRequired.length === 0 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-red-300'}>{missingRequired.length === 0 ? 'Ready' : `${missingRequired.length} missing`}</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Backlog</h2><p className={backlogCount === 45 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{backlogCount}/45 tasks</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Credential fields</h2><p className="mt-2 text-sm text-slate-300">{allRows.length} tracked</p></div>
+      </div>
+
+      <div className="mt-6 grid gap-3 md:grid-cols-2">
+        {plainLanguageGroups.map((group) => {
+          const total = group.names.length
+          const ready = group.names.filter((name) => Boolean(env[name])).length
+          const requiredMissing = group.names.filter((name) => requiredVars.includes(name) && !env[name]).length
+          return (
+            <details key={group.title} className="rounded-md border border-slate-800 bg-slate-900">
+              <summary className="cursor-pointer select-none px-4 py-3">
+                <span className="text-sm font-semibold">{group.title}</span>
+                <span className={requiredMissing > 0 ? 'ml-3 text-sm text-red-300' : ready === total ? 'ml-3 text-sm text-emerald-300' : 'ml-3 text-sm text-amber-300'}>{ready}/{total} ready</span>
+              </summary>
+              <div className="border-t border-slate-800 p-4">
+                <p className="text-sm text-slate-400">{group.body}</p>
+                <div className="mt-3 space-y-2">
+                  {group.names.map((name) => {
+                    const row = rowByName.get(name)
+                    if (!row) return null
+                    const [, label, text, url] = row
+                    const required = requiredVars.includes(name)
+                    const present = Boolean(env[name])
+                    return (
+                      <div key={name} className="rounded border border-slate-800 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm text-slate-200">{label}</span>
+                          <span className={present ? 'text-sm text-emerald-300' : required ? 'text-sm text-red-300' : 'text-sm text-slate-500'}>{present ? 'ready' : required ? 'needed' : 'optional'}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">{text}{url && <> <a href={url} target="_blank" rel="noreferrer" className="ml-1 text-sky-300 underline underline-offset-2 hover:text-sky-200">Open service page</a></>}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </details>
+          )
+        })}
       </div>
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -232,6 +326,7 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
       </div>
 
       <div className="mt-6 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-300">Advanced Technical Details</h2>
         {groups.map((group) => (
           <details key={group.title} className="rounded-md border border-slate-800 bg-slate-950">
             <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-100">{group.title}</summary>
