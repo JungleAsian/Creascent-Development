@@ -63,6 +63,38 @@ function backlogCount() {
   }
 }
 
+function parseEnv(content: string) {
+  return Object.fromEntries(
+    content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#') && line.includes('='))
+      .map((line) => {
+        const index = line.indexOf('=')
+        return [line.slice(0, index), line.slice(index + 1)]
+      })
+  )
+}
+
+function setupStatus() {
+  const required = [
+    'TOOLS_DB_URL',
+    'TOOLS_DB_SERVICE_KEY',
+    'MONOREPO_ROOT',
+    'NEXT_PUBLIC_DASHBOARD_PORT',
+    'WEBHOOK_TARGET',
+    'DEV_LICENSE_SIGNING_KEY'
+  ]
+  const env = existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {}
+  const missing = required.filter((name) => !env[name])
+  const issues = [
+    existsSync(envFile) ? '' : '.env.tools',
+    missing.length === 0 ? '' : `required settings (${missing.join(', ')})`,
+    backlogCount() === 45 ? '' : 'backlog'
+  ].filter(Boolean)
+  return { ok: issues.length === 0, issues }
+}
+
 export async function POST(request: Request) {
   const contentType = request.headers.get('content-type') ?? ''
   const isFormPost = contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')
@@ -107,25 +139,11 @@ export async function POST(request: Request) {
   }
 
   if (body.action === 'check') {
-    const envOk = runTool(['env', 'check'])
-    const backlogOk = backlogCount() === 45
-    const typecheckOk = runScript('typecheck')
-    const lintOk = runScript('lint')
-    const dalOk = runTool(['dal', 'check'])
-    const gatesOk = typecheckOk && lintOk && dalOk
-    const ok = envOk && backlogOk && gatesOk
-    const message = ok
-      ? 'Setup check passed'
-      : `Setup needs attention: ${[
-        envOk ? '' : 'env',
-        backlogOk ? '' : 'backlog',
-        typecheckOk ? '' : 'typecheck',
-        lintOk ? '' : 'lint',
-        dalOk ? '' : 'dal'
-      ].filter(Boolean).join(', ')}`
+    const status = setupStatus()
+    const message = status.ok ? 'Setup check passed' : `Setup needs attention: ${status.issues.join(', ')}`
     return isFormPost
-      ? settingsRedirect(request, ok ? 'message' : 'error', message)
-      : NextResponse.json(ok ? { message } : { error: message }, { status: ok ? 200 : 500 })
+      ? settingsRedirect(request, status.ok ? 'message' : 'error', message)
+      : NextResponse.json(status.ok ? { message } : { error: message }, { status: status.ok ? 200 : 500 })
   }
 
   return isFormPost
