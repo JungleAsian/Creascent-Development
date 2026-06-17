@@ -245,8 +245,12 @@ async function assemblePhaseContext(phaseId: string, opts: { preview?: boolean }
 }
 
 function assembledReadiness(promptChars: number, file: string) {
-  if (promptChars < 1000) return { ok: false, reason: 'phase prompt is too short to be a build prompt' }
-  return fileReadiness(file)
+  const context = fileReadiness(file)
+  if (!context.ok) return context
+  const text = fs.readFileSync(file, 'utf8')
+  const hasBuildInstructions = /===\s+P\d+\s+BUILD INSTRUCTIONS\s+===/i.test(text)
+  if (promptChars < 1000 && !hasBuildInstructions) return { ok: false, reason: 'phase prompt is too short to be a build prompt' }
+  return { ok: true, reason: 'ready' }
 }
 
 async function readNotionBuildStatus(phaseId: string) {

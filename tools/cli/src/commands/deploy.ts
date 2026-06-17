@@ -21,7 +21,7 @@ function requireVpsConfig() {
 function ssh(args: string[]) {
   if (!requireVpsConfig()) return { ok: false, output: 'VPS settings missing' }
   const target = `${process.env.VPS_USER}@${process.env.VPS_HOST}`
-  const result = spawnSync('ssh', ['-i', process.env.VPS_SSH_KEY_PATH ?? '', target, ...args], {
+  const result = spawnSync('ssh', ['-i', keyPath(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', target, ...args], {
     encoding: 'utf8',
     shell: true,
     stdio: 'pipe'
@@ -50,6 +50,10 @@ function pnpmCommand() {
   const localAppData = process.env.LOCALAPPDATA
   const pnpmExe = localAppData ? path.join(localAppData, 'pnpm', 'pnpm.exe') : ''
   return pnpmExe && fs.existsSync(pnpmExe) ? pnpmExe : 'pnpm.exe'
+}
+
+function keyPath() {
+  return (process.env.VPS_SSH_KEY_PATH || '~/.ssh/id_ed25519').replace(/^~/, os.homedir())
 }
 
 async function printQr(url: string) {
@@ -123,6 +127,23 @@ deployCmd.command('check').action(() => {
   log('deploy', result.ok ? 'VPS check completed' : `VPS check failed: ${result.output}`, result.ok ? 'info' : 'warn')
 })
 
+deployCmd.command('keygen').action(() => {
+  loadConfig()
+  const privateKey = keyPath()
+  const publicKey = `${privateKey}.pub`
+  if (!fs.existsSync(privateKey)) {
+    fs.mkdirSync(path.dirname(privateKey), { recursive: true })
+    const result = spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', privateKey, '-N', '', '-C', 'docmee-devtools'], { encoding: 'utf8', stdio: 'pipe' })
+    if (result.status !== 0) {
+      log('deploy', `SSH key generation failed: ${result.stderr || result.stdout}`, 'error')
+      process.exitCode = 1
+      return
+    }
+  }
+  log('deploy', `SSH private key: ${privateKey}`)
+  if (fs.existsSync(publicKey)) console.log(fs.readFileSync(publicKey, 'utf8').trim())
+})
+
 deployCmd.command('setup').action(() => {
   const script = path.join(deployDir, 'setup', 'vps-setup.sh')
   log('deploy', `Run one-time VPS setup with ${script}. Review it before copying to production.`)
@@ -146,7 +167,23 @@ deployCmd.command('vps').action(async () => {
 })
 
 deployCmd.command('local').action(() => {
-  log('deploy', 'Local deploy plan: start Redis/Supabase, build services, run API/workers/frontend locally. Product apps are not touched by DevTools until P01 starts.')
+  const compose = path.resolve(toolsRoot, '..', 'docker-compose.yml')
+  if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true })
+  log('deploy', 'Local deploy requested. Product app processes start after Docmee app phases create /apps.')
+})
+
+deployCmd.command('health').option('--target <target>', 'local or vps', 'local').action(async (opts: { target: string }) => {
+  loadConfig()
+  const host = opts.target === 'vps' ? process.env.VPS_DOMAIN || process.env.VPS_HOST || 'localhost' : 'localhost'
+  const url = `http://${host}:3001/health`
+  try {
+    const response = await fetch(url)
+    log('deploy', `Health ${url}: HTTP ${response.status}`, response.ok ? 'info' : 'warn')
+    if (!response.ok) process.exitCode = 1
+  } catch (error) {
+    log('deploy', `Health ${url} failed: ${String(error)}`, 'warn')
+    process.exitCode = 1
+  }
 })
 
 deployCmd.command('status').action(() => {

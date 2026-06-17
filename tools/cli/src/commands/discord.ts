@@ -5,12 +5,12 @@ import { log } from '../lib/logger.js'
 export const discordCmd = new Command('discord').description('Send DevTools Discord notifications')
 
 function normalizeType(type: string): DiscordNotificationType {
-  if (type === 'critical' || type === 'development' || type === 'approval') return type
-  throw new Error('Type must be critical, development, or approval')
+  if (type === 'critical' || type === 'development' || type === 'approval' || type === 'stack') return type
+  throw new Error('Type must be critical, development, approval, or stack')
 }
 
 discordCmd.command('test')
-  .option('--type <type>', 'critical, development, or approval', 'development')
+  .option('--type <type>', 'critical, development, approval, or stack', 'development')
   .action(async (opts: { type: string }) => {
     const type = normalizeType(opts.type)
     try {
@@ -28,7 +28,7 @@ discordCmd.command('test')
 
 discordCmd.command('send')
   .requiredOption('--message <message>')
-  .option('--type <type>', 'critical, development, or approval', 'development')
+  .option('--type <type>', 'critical, development, approval, or stack', 'development')
   .action(async (opts: { message: string; type: string }) => {
     const type = normalizeType(opts.type)
     try {

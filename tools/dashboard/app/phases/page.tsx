@@ -41,13 +41,20 @@ function phases() {
 
 function promptInfo(id: string) {
   const file = path.join(promptsDir, `${id}-CODEX-PROMPT.md`)
-  if (!fs.existsSync(file)) return { exists: false, usable: false, chars: 0, synced: '', issue: 'prompt not synced' }
-  const stat = fs.statSync(file)
-  const text = fs.readFileSync(file, 'utf8')
+  const contextFile = path.join(promptsDir, `${id}-CONTEXT.md`)
+  const stat = fs.existsSync(file) ? fs.statSync(file) : fs.existsSync(contextFile) ? fs.statSync(contextFile) : null
+  const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  const contextText = fs.existsSync(contextFile) ? fs.readFileSync(contextFile, 'utf8') : ''
   const placeholder = text.includes('Paste the full') || text.includes('No prompt content found') || text.includes('record P01 to Notion') || text.includes('record P02 to Notion')
-  const usable = !placeholder && text.trim().length >= 1000
-  const issue = usable ? '' : placeholder ? 'placeholder prompt' : 'prompt too short'
-  return { exists: true, usable, chars: text.length, synced: stat.mtime.toLocaleString(), issue }
+  const contextPlaceholder = contextText.includes('Paste the full') || contextText.includes('No prompt content found')
+  const promptUsable = !placeholder && text.trim().length >= 1000
+  const contextUsable = !contextPlaceholder && contextText.trim().length >= 1000 && /===\s+P\d+\s+BUILD INSTRUCTIONS\s+===/i.test(contextText)
+  const usable = promptUsable || contextUsable
+  const exists = Boolean(text || contextText)
+  const chars = promptUsable ? text.length : contextText.length || text.length
+  const source = promptUsable ? 'prompt' : contextUsable ? 'context' : 'prompt'
+  const issue = usable ? '' : !exists ? 'prompt not synced' : placeholder && !contextUsable ? 'placeholder prompt' : 'prompt too short'
+  return { exists, usable, chars, synced: stat ? stat.mtime.toLocaleString() : '', issue, source }
 }
 
 function githubCommitUrl(hash?: string) {
@@ -115,7 +122,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
                 <strong className="w-14">{id}</strong>
                 <div className="min-w-0 flex-1 md:min-w-64">
                   <div className="font-medium">{name}</div>
-                  <div className={info.usable ? 'mt-1 text-xs text-slate-500' : 'mt-1 text-xs text-amber-300'}>Business phase {business} · {info.exists ? `${info.chars} chars · synced ${info.synced}${info.usable ? '' : ` · ${info.issue}`}` : 'prompt not synced'}</div>
+                  <div className={info.usable ? 'mt-1 text-xs text-slate-500' : 'mt-1 text-xs text-amber-300'}>Business phase {business} · {info.exists ? `${info.chars} chars · ${info.source} · synced ${info.synced}${info.usable ? '' : ` · ${info.issue}`}` : 'prompt not synced'}</div>
                 </div>
                 <span className={builder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builder}</span>
                 <span className={prompt === 'ready' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{prompt}</span>

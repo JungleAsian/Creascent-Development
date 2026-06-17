@@ -3,18 +3,20 @@ import { loadConfig } from '../../cli/src/lib/config.js'
 
 let client: Client | null = null
 
-export type DiscordNotificationType = 'critical' | 'development' | 'approval'
+export type DiscordNotificationType = 'critical' | 'development' | 'approval' | 'stack'
 
 const channelEnvByType: Record<DiscordNotificationType, string> = {
   critical: 'DISCORD_CRITICAL_CHANNEL_ID',
   development: 'DISCORD_UPDATE_CHANNEL_ID',
-  approval: 'DISCORD_APPROVAL_CHANNEL_ID'
+  approval: 'DISCORD_APPROVAL_CHANNEL_ID',
+  stack: 'DISCORD_STACK_CHANNEL_ID'
 }
 
 const labelByType: Record<DiscordNotificationType, string> = {
   critical: 'Critical/Important',
   development: 'Development Update',
-  approval: 'Approval'
+  approval: 'Approval',
+  stack: 'Stack Intelligence'
 }
 
 export async function getDiscordClient() {

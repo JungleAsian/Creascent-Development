@@ -34,10 +34,14 @@ function checkFile(file: string) {
 
 function promptUsable(id: string) {
   const file = path.join(promptsDir, phaseFileName(id))
-  if (!fs.existsSync(file)) return false
-  const text = fs.readFileSync(file, 'utf8')
-  const placeholder = text.includes('Paste the full') || text.includes('No prompt content found') || text.includes('record P01 to Notion') || text.includes('record P02 to Notion')
-  return !placeholder && text.trim().length >= 1000
+  const contextFile = path.join(promptsDir, `${id}-CONTEXT.md`)
+  const promptText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  const contextText = fs.existsSync(contextFile) ? fs.readFileSync(contextFile, 'utf8') : ''
+  const promptPlaceholder = promptText.includes('Paste the full') || promptText.includes('No prompt content found') || promptText.includes('record P01 to Notion') || promptText.includes('record P02 to Notion')
+  const contextPlaceholder = contextText.includes('Paste the full') || contextText.includes('No prompt content found')
+  const promptReady = !promptPlaceholder && promptText.trim().length >= 1000
+  const contextReady = !contextPlaceholder && contextText.trim().length >= 1000 && /===\s+P\d+\s+BUILD INSTRUCTIONS\s+===/i.test(contextText)
+  return promptReady || contextReady
 }
 
 function localIp() {

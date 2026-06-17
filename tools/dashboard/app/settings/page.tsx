@@ -34,7 +34,8 @@ const groups = [
       ['DISCORD_CHANNEL_ID', 'Discord: Channel ID', 'Fallback Discord channel ID.', 'https://support.discord.com/hc/en-us/articles/206346498'],
       ['DISCORD_CRITICAL_CHANNEL_ID', 'Discord: Critical/Important Channel ID', 'Optional channel for failed gates, deploy failures, and cost alerts.', 'https://support.discord.com/hc/en-us/articles/206346498'],
       ['DISCORD_UPDATE_CHANNEL_ID', 'Discord: Development Updates Channel ID', 'Optional channel for gate passes and phase completion.', 'https://support.discord.com/hc/en-us/articles/206346498'],
-      ['DISCORD_APPROVAL_CHANNEL_ID', 'Discord: Approval Channel ID', 'Optional channel for approval requests.', 'https://support.discord.com/hc/en-us/articles/206346498']
+      ['DISCORD_APPROVAL_CHANNEL_ID', 'Discord: Approval Channel ID', 'Optional channel for approval requests.', 'https://support.discord.com/hc/en-us/articles/206346498'],
+      ['DISCORD_STACK_CHANNEL_ID', 'Discord: Stack Intelligence Channel ID', 'Channel for daily/weekly stack updates.', 'https://support.discord.com/hc/en-us/articles/206346498']
     ]
   },
   {
@@ -57,6 +58,10 @@ const groups = [
       ['CUSTOM_AI_API_KEY', 'Custom AI: API Key', 'Optional OpenAI-compatible custom provider key.'],
       ['CUSTOM_AI_BASE_URL', 'Custom AI: Base URL', 'Optional OpenAI-compatible custom provider endpoint.'],
       ['CUSTOM_AI_MODEL', 'Custom AI: Model', 'Optional custom model name.'],
+      ['GROK_API_KEY', 'Grok xAI: API Key', 'Real-time stack intelligence news from xAI.', 'https://console.x.ai'],
+      ['GROK_BASE_URL', 'Grok xAI: Base URL', 'Default https://api.x.ai/v1.', 'https://console.x.ai'],
+      ['GROK_MODEL', 'Grok xAI: Model', 'Default grok-3.', 'https://console.x.ai'],
+      ['STACK_NEWS_SOURCE', 'Stack Intelligence: News Source', 'Use grok, claude, or both.'],
       ['DEEPSEEK_API_KEY', 'DeepSeek: API Key', 'DeepSeek platform API key.', 'https://platform.deepseek.com/api_keys'],
       ['DEEPSEEK_BASE_URL', 'DeepSeek: Base URL', 'Default https://api.deepseek.com.']
     ]
@@ -143,7 +148,7 @@ const plainLanguageGroups = [
   {
     title: 'Discord messages',
     body: 'Needed only if you want the tool to publish alerts, updates, and approval requests to Discord.',
-    names: ['DISCORD_MESSAGING_BOT_TOKEN', 'DISCORD_CRITICAL_CHANNEL_ID', 'DISCORD_UPDATE_CHANNEL_ID', 'DISCORD_APPROVAL_CHANNEL_ID']
+    names: ['DISCORD_MESSAGING_BOT_TOKEN', 'DISCORD_CRITICAL_CHANNEL_ID', 'DISCORD_UPDATE_CHANNEL_ID', 'DISCORD_APPROVAL_CHANNEL_ID', 'DISCORD_STACK_CHANNEL_ID']
   },
   {
     title: 'Notion sync',
@@ -153,7 +158,12 @@ const plainLanguageGroups = [
   {
     title: 'AI services',
     body: 'Needed only for agent connection tests and build-cost tracking by provider.',
-    names: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'MISTRAL_API_KEY', 'DEEPSEEK_API_KEY']
+    names: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'MISTRAL_API_KEY', 'DEEPSEEK_API_KEY', 'GROK_API_KEY']
+  },
+  {
+    title: 'Stack intelligence',
+    body: 'Needed only if you want daily stack news, version checks, security advisories, and pricing alerts.',
+    names: ['GROK_API_KEY', 'GROK_BASE_URL', 'GROK_MODEL', 'STACK_NEWS_SOURCE', 'DISCORD_STACK_CHANNEL_ID']
   },
   {
     title: 'WhatsApp and deployment',

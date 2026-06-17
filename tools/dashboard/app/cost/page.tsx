@@ -3,6 +3,7 @@ import Link from 'next/link'
 import path from 'node:path'
 
 const costFile = path.resolve(process.cwd(), '..', 'logs', 'cost.json')
+const stackFile = path.resolve(process.cwd(), '..', 'logs', 'stack-intelligence.json')
 type PageProps = { searchParams?: { message?: string; error?: string; tab?: string } }
 type RuntimeCostEntry = { provider: string; usd: number; createdAt: string; input?: number; output?: number; tokens?: number; minutes?: number }
 type DevCostEntry = {
@@ -21,6 +22,14 @@ type DevCostEntry = {
   notes: string
 }
 type CostStore = RuntimeCostEntry[] | { runtime?: RuntimeCostEntry[]; development?: DevCostEntry[] }
+type StackStore = {
+  generatedAt?: string
+  source?: string
+  news?: Array<{ date?: string; tool?: string; category?: string; headline?: string; impact?: string; severity?: string; via?: string }>
+  packages?: Array<{ name: string; currentVersion: string; latestVersion: string; updateAvailable: boolean; pinned: boolean }>
+  advisories?: Array<{ package: string; severity: string; summary: string; affectsCurrentVersion: boolean; source: string }>
+  priceChanges?: Array<{ date?: string; tool?: string; headline?: string; impact?: string; severity?: string; via?: string }>
+}
 
 const phases = Array.from({ length: 19 }, (_, index) => `P${String(index + 1).padStart(2, '0')}`)
 
@@ -29,6 +38,11 @@ function readStore() {
   const data = JSON.parse(fs.readFileSync(costFile, 'utf8')) as CostStore
   if (Array.isArray(data)) return { runtime: data, development: [] as DevCostEntry[] }
   return { runtime: data.runtime ?? [], development: data.development ?? [] }
+}
+
+function readStack(): StackStore {
+  if (!fs.existsSync(stackFile)) return { news: [], packages: [], advisories: [], priceChanges: [] }
+  return JSON.parse(fs.readFileSync(stackFile, 'utf8')) as StackStore
 }
 
 function money(value: number) {
@@ -40,7 +54,7 @@ function sum(entries: DevCostEntry[], tool?: string) {
 }
 
 export default function CostPage({ searchParams }: PageProps) {
-  const tab = searchParams?.tab === 'development' ? 'development' : 'runtime'
+  const tab = searchParams?.tab === 'development' ? 'development' : searchParams?.tab === 'stack' ? 'stack' : 'runtime'
   const today = new Date().toISOString().split('T')[0]
   const { runtime, development } = readStore()
   const todaySpend = runtime.filter((entry) => entry.createdAt.startsWith(today)).reduce((total, entry) => total + entry.usd, 0)
@@ -52,6 +66,7 @@ export default function CostPage({ searchParams }: PageProps) {
   const devTotal = development.reduce((total, entry) => total + entry.cost_usd, 0)
   const avgPhase = completedPhases.size > 0 ? devTotal / completedPhases.size : 0
   const projection = avgPhase * 19
+  const stack = readStack()
 
   return (
     <section className="max-w-7xl">
@@ -63,12 +78,61 @@ export default function CostPage({ searchParams }: PageProps) {
         <div className="flex rounded-md border border-slate-800 bg-slate-900 p-1">
           <Link href="/cost" className={`rounded px-3 py-2 text-sm ${tab === 'runtime' ? 'bg-slate-100 text-slate-950' : 'text-slate-300 hover:bg-slate-800'}`}>Runtime Cost</Link>
           <Link href="/cost?tab=development" className={`rounded px-3 py-2 text-sm ${tab === 'development' ? 'bg-slate-100 text-slate-950' : 'text-slate-300 hover:bg-slate-800'}`}>Development Cost</Link>
+          <Link href="/cost?tab=stack" className={`rounded px-3 py-2 text-sm ${tab === 'stack' ? 'bg-slate-100 text-slate-950' : 'text-slate-300 hover:bg-slate-800'}`}>Stack Intelligence</Link>
         </div>
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
 
-      {tab === 'runtime' ? (
+      {tab === 'stack' ? (
+        <div className="mt-6 space-y-6">
+          <div className="rounded-md border border-slate-800 bg-slate-900 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Stack Intelligence</h2>
+                <p className="mt-1 text-sm text-slate-400">Last updated: {stack.generatedAt ? new Date(stack.generatedAt).toLocaleString() : 'not yet'} · Source: {stack.source ?? 'none'}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="stack-refresh" /><input type="hidden" name="source" value="grok" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Refresh Grok</button></form>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="stack-refresh" /><input type="hidden" name="source" value="claude" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Refresh Claude</button></form>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="stack-refresh" /><button className="rounded-md bg-cyan-600 px-3 py-2 text-sm text-white">Refresh All</button></form>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+              <h2 className="text-sm font-semibold">Price Changes</h2>
+              <div className="mt-3 space-y-2">
+                {(stack.priceChanges ?? []).map((item, index) => <div key={index} className="rounded border border-slate-800 p-3"><p className="text-sm text-slate-200">{item.tool}: {item.headline}</p><p className="mt-1 text-xs text-slate-400">{item.impact} {item.via && `[via ${item.via}]`}</p></div>)}
+                {(stack.priceChanges ?? []).length === 0 && <p className="text-sm text-slate-400">No price changes recorded.</p>}
+              </div>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+              <h2 className="text-sm font-semibold">Security Advisories</h2>
+              <div className="mt-3 space-y-2">
+                {(stack.advisories ?? []).map((item, index) => <div key={index} className="rounded border border-slate-800 p-3"><p className={item.severity === 'critical' ? 'text-sm text-red-300' : 'text-sm text-slate-200'}>{item.package}: {item.summary}</p><p className="mt-1 text-xs text-slate-400">Affected: {item.affectsCurrentVersion ? 'yes' : 'no'} · {item.source}</p></div>)}
+                {(stack.advisories ?? []).length === 0 && <p className="text-sm text-emerald-300">No advisories recorded.</p>}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+            <h2 className="text-sm font-semibold">Technology Updates</h2>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-sm"><thead className="bg-slate-950"><tr><th className="p-3">Package</th><th className="p-3">Current</th><th className="p-3">Latest</th><th className="p-3">Status</th></tr></thead><tbody className="divide-y divide-slate-800">{(stack.packages ?? []).map((item) => <tr key={item.name}><td className="p-3">{item.name}</td><td className="p-3">{item.currentVersion}</td><td className="p-3">{item.latestVersion}</td><td className={item.updateAvailable ? 'p-3 text-amber-300' : 'p-3 text-emerald-300'}>{item.updateAvailable ? 'update available' : 'current'}</td></tr>)}</tbody></table>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+            <h2 className="text-sm font-semibold">Stack News</h2>
+            <div className="mt-3 grid gap-2">
+              {(stack.news ?? []).map((item, index) => <div key={index} className="rounded border border-slate-800 p-3"><p className="text-sm text-slate-200">[{item.category}] {item.tool}: {item.headline}</p><p className="mt-1 text-xs text-slate-400">{item.impact} {item.via && `[via ${item.via}]`}</p></div>)}
+              {(stack.news ?? []).length === 0 && <p className="text-sm text-slate-400">No stack news recorded. Run a refresh to populate this tab.</p>}
+            </div>
+          </div>
+        </div>
+      ) : tab === 'runtime' ? (
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div className="rounded-md border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold">Today</h2><p className="mt-4 text-3xl">{money(todaySpend)}</p></div>
           <form action="/api/actions" method="post" className="rounded-md border border-slate-800 bg-slate-900 p-5">

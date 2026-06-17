@@ -159,6 +159,17 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Development session logged' : 'Development cost log failed')
   }
 
+  if (action === 'stack-refresh') {
+    const source = String(form.get('source') ?? 'all')
+    const args = source === 'grok'
+      ? ['stack', 'news', '--grok']
+      : source === 'claude'
+        ? ['stack', 'news', '--claude']
+        : ['stack', 'all']
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stack Intelligence refreshed' : 'Stack Intelligence refresh failed')
+  }
+
   if (action === 'discord-test') {
     const result = runTool(['discord', 'test'])
     return redirect(
