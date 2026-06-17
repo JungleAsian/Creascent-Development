@@ -7,3 +7,4 @@ app/src-tauri/target
 logs/*.log
 logs/*.json
 !logs/.gitkeep
+*.lnk
