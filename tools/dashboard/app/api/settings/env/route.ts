@@ -1,11 +1,12 @@
-import { copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
 const envExampleFile = path.join(toolsRoot, '.env.tools.example')
+const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
 
 function settingsRedirect(request: Request, key: 'message' | 'error', value: string) {
   const url = new URL('/settings', request.url)
@@ -23,6 +24,43 @@ function openEnvFile() {
     return
   }
   spawn('xdg-open', [envFile], { detached: true, stdio: 'ignore' }).unref()
+}
+
+function pnpmCommand() {
+  if (process.platform !== 'win32') return 'pnpm'
+  const localAppData = process.env.LOCALAPPDATA
+  const pnpmExe = localAppData ? path.join(localAppData, 'pnpm', 'pnpm.exe') : ''
+  return pnpmExe && existsSync(pnpmExe) ? pnpmExe : 'pnpm.exe'
+}
+
+function runTool(args: string[]) {
+  const result = spawnSync(pnpmCommand(), ['tool', ...args], {
+    cwd: toolsRoot,
+    encoding: 'utf8',
+    shell: false,
+    stdio: 'pipe'
+  })
+  return result.status === 0
+}
+
+function runScript(script: string) {
+  const result = spawnSync(pnpmCommand(), [script], {
+    cwd: toolsRoot,
+    encoding: 'utf8',
+    shell: false,
+    stdio: 'pipe'
+  })
+  return result.status === 0
+}
+
+function backlogCount() {
+  if (!existsSync(backlogFile)) return 0
+  try {
+    const backlog = JSON.parse(readFileSync(backlogFile, 'utf8')) as unknown
+    return Array.isArray(backlog) ? backlog.length : 0
+  } catch {
+    return 0
+  }
 }
 
 export async function POST(request: Request) {
@@ -59,6 +97,35 @@ export async function POST(request: Request) {
     return isFormPost
       ? settingsRedirect(request, 'message', 'Opened .env.tools in your local editor')
       : NextResponse.json({ message: 'Opened .env.tools in your local editor' })
+  }
+
+  if (body.action === 'seed-backlog') {
+    const ok = runTool(['backlog', 'init'])
+    return isFormPost
+      ? settingsRedirect(request, ok ? 'message' : 'error', ok ? 'Seeded the local DevTools backlog' : 'Backlog seed failed')
+      : NextResponse.json(ok ? { message: 'Seeded the local DevTools backlog' } : { error: 'Backlog seed failed' }, { status: ok ? 200 : 500 })
+  }
+
+  if (body.action === 'check') {
+    const envOk = runTool(['env', 'check'])
+    const backlogOk = backlogCount() === 45
+    const typecheckOk = runScript('typecheck')
+    const lintOk = runScript('lint')
+    const dalOk = runTool(['dal', 'check'])
+    const gatesOk = typecheckOk && lintOk && dalOk
+    const ok = envOk && backlogOk && gatesOk
+    const message = ok
+      ? 'Setup check passed'
+      : `Setup needs attention: ${[
+        envOk ? '' : 'env',
+        backlogOk ? '' : 'backlog',
+        typecheckOk ? '' : 'typecheck',
+        lintOk ? '' : 'lint',
+        dalOk ? '' : 'dal'
+      ].filter(Boolean).join(', ')}`
+    return isFormPost
+      ? settingsRedirect(request, ok ? 'message' : 'error', message)
+      : NextResponse.json(ok ? { message } : { error: message }, { status: ok ? 200 : 500 })
   }
 
   return isFormPost
