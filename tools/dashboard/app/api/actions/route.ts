@@ -58,6 +58,19 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${phase} ${command === 'start' ? 'started' : 'completed'}` : `${phase} ${command} failed`)
   }
 
+  if (action === 'phase-sync') {
+    const result = runTool(['phase', 'sync'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Phase prompts synced or cache checked' : 'Phase prompt sync failed')
+  }
+
+  if (action === 'phase-build' || action === 'phase-build-dry-run') {
+    const from = String(form.get('from') ?? 'P01')
+    const args = ['phase', 'build', '--from', from]
+    if (action === 'phase-build-dry-run') args.push('--dry-run')
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Phase build command completed' : 'Phase build command failed')
+  }
+
   if (action === 'backlog-done') {
     const id = String(form.get('id') ?? '')
     const result = runTool(['backlog', 'done', '--id', id])
@@ -88,6 +101,29 @@ export async function POST(request: Request) {
       result.ok ? 'message' : 'error',
       result.ok ? 'Discord test notification sent' : 'Discord test failed. Check the bot token, channel ID, and bot channel access.'
     )
+  }
+
+  if (action.startsWith('deploy-')) {
+    const commandByAction: Record<string, string[]> = {
+      'deploy-check': ['deploy', 'check'],
+      'deploy-status': ['deploy', 'status'],
+      'deploy-redis': ['deploy', 'redis'],
+      'deploy-local': ['deploy', 'local'],
+      'deploy-env': ['deploy', 'env'],
+      'deploy-vps': ['deploy', 'vps'],
+      'deploy-rollback': ['deploy', 'rollback']
+    }
+    const args = commandByAction[action]
+    if (!args) return redirect(request, 'error', 'Unknown deploy action')
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Deploy command completed' : 'Deploy command reported a warning or failure')
+  }
+
+  if (action === 'accept-run') {
+    const step = String(form.get('step') ?? '')
+    const args = step ? ['accept', '--step', step] : ['accept']
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Acceptance check passed' : 'Acceptance check needs product app phases')
   }
 
   return redirect(request, 'error', 'Unknown action')

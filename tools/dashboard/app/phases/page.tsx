@@ -1,42 +1,103 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const phasesFile = path.resolve(process.cwd(), '..', 'logs', 'phases.json')
+const toolsRoot = path.resolve(process.cwd(), '..')
+const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
+const promptsDir = path.join(toolsRoot, 'prompts')
 
-type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done' }
+const definitions = [
+  ['P01', 'Repository Foundation', 'codex', '1', 'ready'],
+  ['P02', 'Database', 'codex', '1', 'ready'],
+  ['P03', 'Core Infrastructure + AI', 'codex', '1', 'draft'],
+  ['P04', 'WhatsApp Channel', 'codex', '1', 'draft'],
+  ['P05', 'Clinic Bot', 'codex', '1', 'draft'],
+  ['P06', 'Appointment Scheduler', 'codex', '1', 'draft'],
+  ['P07', 'Secretary Alerts', 'codex', '1', 'draft'],
+  ['P08', 'Auth & API', 'codex', '1', 'draft'],
+  ['P09', 'Clinic Inbox + IA Studio', 'claude-code', '1', 'ready'],
+  ['P10', 'License Manager', 'codex', '1', 'draft'],
+  ['P11', 'IA Studio Admin Panel', 'claude-code', '1', 'ready'],
+  ['P12', 'Voice Transcription Service', 'codex', '1', 'draft'],
+  ['P13', 'Installer (DeployKit)', 'codex', '2', 'draft'],
+  ['P14', 'Facebook Messenger', 'codex', '2', 'draft'],
+  ['P15', 'Instagram Direct', 'codex', '2', 'draft'],
+  ['P16', 'Phase 2 Features', 'codex', '2', 'draft'],
+  ['P17', 'Testing & CI/CD', 'codex', '2', 'draft'],
+  ['P18', 'Phase 3 Features', 'codex', '3', 'draft'],
+  ['P19', 'Compliance & Launch', 'codex', '1', 'draft']
+] as const
+
+type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string }
 type PageProps = { searchParams?: { message?: string; error?: string } }
 
 function phases() {
-  if (!fs.existsSync(phasesFile)) {
-    return Array.from({ length: 10 }, (_, index) => ({ id: `P${String(index + 1).padStart(2, '0')}`, status: 'not-started' as const }))
-  }
-  return JSON.parse(fs.readFileSync(phasesFile, 'utf8')) as Phase[]
+  const fallback = definitions.map(([id]) => ({ id, status: 'not-started' as const }))
+  if (!fs.existsSync(phasesFile)) return fallback
+  const data = JSON.parse(fs.readFileSync(phasesFile, 'utf8')) as Phase[]
+  const byId = new Map(data.map((phase) => [phase.id, phase]))
+  return fallback.map((phase) => byId.get(phase.id) ?? phase)
+}
+
+function promptInfo(id: string) {
+  const file = path.join(promptsDir, `${id}-CODEX-PROMPT.md`)
+  if (!fs.existsSync(file)) return { exists: false, chars: 0, synced: '' }
+  const stat = fs.statSync(file)
+  return { exists: true, chars: fs.readFileSync(file, 'utf8').length, synced: stat.mtime.toLocaleString() }
 }
 
 export default function PhasesPage({ searchParams }: PageProps) {
+  const state = phases()
+  const byId = new Map(state.map((phase) => [phase.id, phase]))
+  const done = state.filter((phase) => phase.status === 'done').length
+  const p11Done = byId.get('P11')?.status === 'done'
+
   return (
-    <section>
-      <h1 className="text-2xl font-semibold">Phase Progress</h1>
+    <section className="max-w-6xl">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Phase Progress</h1>
+          <p className="mt-2 text-sm text-slate-400">{done}/19 phases complete</p>
+        </div>
+        <div className="h-3 w-72 rounded bg-slate-800"><div className="h-3 rounded bg-cyan-500" style={{ width: `${Math.round((done / 19) * 100)}%` }} /></div>
+      </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
+      {p11Done && <div className="mt-4 rounded-md border border-amber-500 bg-amber-950/40 p-4 text-sm text-amber-200">Submit to Meta NOW. WhatsApp approval should start after P11, not after P19.</div>}
+
+      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <h2 className="text-sm font-semibold">Automated Build</h2>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-sync" /><button className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Sync from Notion</button></form>
+          <form action="/api/actions" method="post" className="flex gap-2">
+            <input type="hidden" name="action" value="phase-build" />
+            <select name="from" className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+              {definitions.map(([id]) => <option key={id} value={id}>Resume from {id}</option>)}
+            </select>
+            <button className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">Start Automated Build</button>
+          </form>
+          <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-build-dry-run" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Dry Run</button></form>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Build output is written to /tools/logs/phase-YYYY-MM-DD.log.</p>
+      </div>
+
       <div className="mt-6 space-y-3">
-        {phases().map((phase) => {
-          const width = phase.status === 'done' ? 'w-full' : phase.status === 'in-progress' ? 'w-1/2' : 'w-0'
+        {definitions.map(([id, name, builder, business, prompt]) => {
+          const phase = byId.get(id) ?? { id, status: 'not-started' as const }
+          const info = promptInfo(id)
           return (
-            <div key={phase.id} className="flex items-center gap-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
-              <strong className="w-16">{phase.id}</strong>
-              <div className="h-2 flex-1 rounded bg-slate-800"><div className={`h-2 rounded bg-cyan-500 ${width}`} /></div>
-              <span className="rounded bg-slate-800 px-2 py-1 text-sm">{phase.status}</span>
-              <form action="/api/actions" method="post">
-                <input type="hidden" name="action" value="phase-start" />
-                <input type="hidden" name="phase" value={phase.id} />
-                <button disabled={phase.status !== 'not-started'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button>
-              </form>
-              <form action="/api/actions" method="post">
-                <input type="hidden" name="action" value="phase-done" />
-                <input type="hidden" name="phase" value={phase.id} />
-                <button disabled={phase.status === 'done'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Mark Done</button>
-              </form>
+            <div key={id} className="rounded-md border border-slate-800 bg-slate-900 p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <strong className="w-14">{id}</strong>
+                <div className="min-w-64 flex-1">
+                  <div className="font-medium">{name}</div>
+                  <div className="mt-1 text-xs text-slate-500">Business phase {business} · {info.exists ? `${info.chars} chars · synced ${info.synced}` : 'prompt not synced'}</div>
+                </div>
+                <span className={builder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builder}</span>
+                <span className={prompt === 'ready' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{prompt}</span>
+                <span className="rounded bg-slate-800 px-2 py-1 text-sm">{phase.status}</span>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-start" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status !== 'not-started'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button></form>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-done" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status === 'done'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Mark Done</button></form>
+              </div>
             </div>
           )
         })}

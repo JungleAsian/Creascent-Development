@@ -19,6 +19,7 @@
     "prepare": "node cli/src/lib/install-hooks.cjs"
   },
   "dependencies": {
+    "@notionhq/client": "^2.2.0",
     "commander": "^12.1.0",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",

@@ -7,4 +7,6 @@ app/src-tauri/target
 logs/*.log
 logs/*.json
 !logs/.gitkeep
+prompts/*.md
+!prompts/.gitkeep
 *.lnk

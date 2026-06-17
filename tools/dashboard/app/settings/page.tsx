@@ -15,81 +15,108 @@ const requiredVars = [
   'DEV_LICENSE_SIGNING_KEY'
 ]
 
-const optionalVars = [
-  'DISCORD_BOT_TOKEN',
-  'DISCORD_MESSAGING_BOT_TOKEN',
-  'DISCORD_CHANNEL_ID',
-  'DISCORD_CRITICAL_CHANNEL_ID',
-  'DISCORD_UPDATE_CHANNEL_ID',
-  'DISCORD_APPROVAL_CHANNEL_ID',
-  'GATES_STRICT',
-  'COST_ALERT_THRESHOLD_USD'
-]
-
-const guidance: Record<string, { providerLabel: string; text: string; url?: string; linkLabel?: string }> = {
-  TOOLS_DB_URL: {
-    providerLabel: 'Supabase: API URL',
-    text: 'Supabase local start output. Usually http://localhost:54321.',
-    url: 'https://supabase.com/docs/guides/local-development/cli/getting-started',
-    linkLabel: 'Supabase local CLI docs'
+const groups = [
+  {
+    title: 'DevTools Database',
+    rows: [
+      ['TOOLS_DB_URL', 'Supabase: API URL', 'Supabase local start output. Usually http://localhost:54321.', 'https://supabase.com/docs/guides/local-development/cli/getting-started'],
+      ['TOOLS_DB_SERVICE_KEY', 'Supabase: service_role key', 'Supabase local start output. Use the local service_role key only.', 'https://supabase.com/docs/guides/local-development/cli/getting-started'],
+      ['MONOREPO_ROOT', 'Docmee repo root', 'Repo layout. Keep ../ when DevTools lives in /tools.'],
+      ['NEXT_PUBLIC_DASHBOARD_PORT', 'Docmee dashboard port', 'Dashboard port. Keep 4000 unless another local service uses it.']
+    ]
   },
-  TOOLS_DB_SERVICE_KEY: {
-    providerLabel: 'Supabase: service_role key',
-    text: 'Supabase local start output. Use the local service_role key only.',
-    url: 'https://supabase.com/docs/guides/local-development/cli/getting-started',
-    linkLabel: 'Supabase local CLI docs'
+  {
+    title: 'Discord Notifications',
+    rows: [
+      ['DISCORD_BOT_TOKEN', 'Discord: Bot Token', 'Fallback Discord bot token.', 'https://discord.com/developers/applications'],
+      ['DISCORD_MESSAGING_BOT_TOKEN', 'Discord: Messaging Bot Token', 'Dedicated DevTools messaging bot token.', 'https://discord.com/developers/applications'],
+      ['DISCORD_CHANNEL_ID', 'Discord: Channel ID', 'Fallback Discord channel ID.', 'https://support.discord.com/hc/en-us/articles/206346498'],
+      ['DISCORD_CRITICAL_CHANNEL_ID', 'Discord: Critical/Important Channel ID', 'Optional channel for failed gates, deploy failures, and cost alerts.', 'https://support.discord.com/hc/en-us/articles/206346498'],
+      ['DISCORD_UPDATE_CHANNEL_ID', 'Discord: Development Updates Channel ID', 'Optional channel for gate passes and phase completion.', 'https://support.discord.com/hc/en-us/articles/206346498'],
+      ['DISCORD_APPROVAL_CHANNEL_ID', 'Discord: Approval Channel ID', 'Optional channel for approval requests.', 'https://support.discord.com/hc/en-us/articles/206346498']
+    ]
   },
-  MONOREPO_ROOT: { providerLabel: 'Docmee repo root', text: 'Repo layout. Keep ../ when DevTools lives in /tools.' },
-  NEXT_PUBLIC_DASHBOARD_PORT: { providerLabel: 'Docmee dashboard port', text: 'Dashboard port. Keep 4000 unless another local service uses it.' },
-  WEBHOOK_TARGET: { providerLabel: 'Docmee local webhook URL', text: 'Local API webhook route. Change only if your local API uses a different port/path.' },
-  DEV_LICENSE_SIGNING_KEY: { providerLabel: 'Docmee dev signing key', text: 'Local-only signing secret. Use a long random development string.' },
-  DISCORD_BOT_TOKEN: {
-    providerLabel: 'Discord: Bot Token',
-    text: 'Fallback Discord bot token. Use only if a dedicated messaging bot is not configured.',
-    url: 'https://discord.com/developers/applications',
-    linkLabel: 'Discord developer portal'
+  {
+    title: 'Notion Prompt Sync',
+    rows: [
+      ['NOTION_API_KEY', 'Notion: Internal Integration Token', 'Create a Notion integration with read content permission.', 'https://www.notion.so/my-integrations'],
+      ['NOTION_PROMPTS_DB_ID', 'Notion: Phase Prompts Page ID', 'The 32-character ID from the Phase Prompts page URL.']
+    ]
   },
-  DISCORD_MESSAGING_BOT_TOKEN: {
-    providerLabel: 'Discord: Messaging Bot Token',
-    text: 'Dedicated Discord developer portal bot token for DevTools messages. Invite this bot to each notification channel.',
-    url: 'https://discord.com/developers/applications',
-    linkLabel: 'Discord developer portal'
+  {
+    title: 'AI Providers',
+    rows: [
+      ['ANTHROPIC_API_KEY', 'Anthropic: API Key', 'Claude API key.', 'https://console.anthropic.com/api-keys'],
+      ['OPENAI_EMBEDDING_KEY', 'OpenAI: API Key', 'Embeddings key. Use OPENAI_EMBEDDING_KEY, not OPENAI_API_KEY.', 'https://platform.openai.com/api-keys'],
+      ['DEEPSEEK_API_KEY', 'DeepSeek: API Key', 'DeepSeek platform API key.', 'https://platform.deepseek.com/api_keys'],
+      ['DEEPSEEK_BASE_URL', 'DeepSeek: Base URL', 'Default https://api.deepseek.com.']
+    ]
   },
-  DISCORD_CHANNEL_ID: {
-    providerLabel: 'Discord: Channel ID',
-    text: 'Fallback Discord channel ID for DevTools notifications. Used when a type-specific channel is blank.',
-    url: 'https://support.discord.com/hc/en-us/articles/206346498',
-    linkLabel: 'Discord ID guide'
+  {
+    title: 'Voice, Email, Calendar, Meta',
+    rows: [
+      ['DEEPGRAM_API_KEY', 'Deepgram: API Key', 'Voice transcription provider key.', 'https://console.deepgram.com'],
+      ['RESEND_API_KEY', 'Resend: API Key', 'Email provider key.', 'https://resend.com/api-keys'],
+      ['EMAIL_FROM', 'Resend: From Email', 'Verified sender address in Resend.'],
+      ['GOOGLE_CLIENT_ID', 'Google Cloud: OAuth Client ID', 'Calendar OAuth client ID.', 'https://console.cloud.google.com/apis/credentials'],
+      ['GOOGLE_CLIENT_SECRET', 'Google Cloud: OAuth Client Secret', 'Calendar OAuth client secret.', 'https://console.cloud.google.com/apis/credentials'],
+      ['GOOGLE_REDIRECT_URI', 'Google Cloud: Authorized Redirect URI', 'Local or production OAuth redirect URI.', 'https://console.cloud.google.com/apis/credentials'],
+      ['META_APP_SECRET', 'Meta: App Secret', 'WhatsApp app secret.', 'https://developers.facebook.com'],
+      ['META_VERIFY_TOKEN', 'Meta: Verify Token', 'Webhook verification token.', 'https://developers.facebook.com'],
+      ['WHATSAPP_DEFAULT_ACCESS_TOKEN', 'Meta: WhatsApp Access Token', 'Default local/dev WhatsApp access token.', 'https://developers.facebook.com']
+    ]
   },
-  DISCORD_CRITICAL_CHANNEL_ID: {
-    providerLabel: 'Discord: Critical/Important Channel ID',
-    text: 'Optional Discord channel for failed gates and cost threshold alerts. Falls back to Discord: Channel ID.',
-    url: 'https://support.discord.com/hc/en-us/articles/206346498',
-    linkLabel: 'Discord ID guide'
+  {
+    title: 'Runtime, Auth, License, GitHub',
+    rows: [
+      ['REDIS_URL', 'Redis: Connection URL', 'Default redis://localhost:6379.'],
+      ['JWT_SECRET', 'Auth: JWT Secret', 'Generate with openssl rand -hex 32.'],
+      ['JWT_REFRESH_SECRET', 'Auth: JWT Refresh Secret', 'Generate with openssl rand -hex 32.'],
+      ['LICENSE_SERVER_URL', 'LicenseKit: Server URL', 'License server URL for deployed environments.'],
+      ['LICENSE_PUBLIC_KEY', 'LicenseKit: Public Key', 'License verification public key.'],
+      ['GITHUB_TOKEN', 'GitHub: Personal Access Token', 'Token for deployment and installer workflows.', 'https://github.com/settings/tokens'],
+      ['GITHUB_ORG', 'GitHub: Organization', 'GitHub org or owner.'],
+      ['APP_URL', 'Docmee: App URL', 'Default http://localhost:3000.'],
+      ['APP_VERSION', 'Docmee: App Version', 'Version used in deploy checks.'],
+      ['API_PORT', 'Docmee: API Port', 'Default 3001.'],
+      ['NODE_ENV', 'Node: Environment', 'development for local setup.'],
+      ['LLM_STUB', 'Docmee: LLM Stub Mode', 'Use true for local safe testing.'],
+      ['SERVER_ID', 'Docmee: Server ID', 'Unique environment label.']
+    ]
   },
-  DISCORD_UPDATE_CHANNEL_ID: {
-    providerLabel: 'Discord: Development Updates Channel ID',
-    text: 'Optional Discord channel for successful gate and phase completion updates. Falls back to Discord: Channel ID.',
-    url: 'https://support.discord.com/hc/en-us/articles/206346498',
-    linkLabel: 'Discord ID guide'
+  {
+    title: 'Deployment',
+    rows: [
+      ['VPS_HOST', 'Hostinger: VPS Host', 'Hostinger KVM IP address.'],
+      ['VPS_USER', 'Hostinger: SSH User', 'Usually root during setup.'],
+      ['VPS_SSH_KEY_PATH', 'SSH: Private Key Path', 'Default ~/.ssh/id_ed25519.'],
+      ['VPS_DEPLOY_PATH', 'Hostinger: Deploy Path', 'Default /var/www/docmee.'],
+      ['VPS_DOMAIN', 'Hostinger: Domain', 'Domain routed to the VPS.'],
+      ['ENV_PRODUCTION_PATH', 'Docmee: Production Env Path', 'Path to .env.production for secure sync.'],
+      ['GITHUB_REPO', 'GitHub: Repository SSH URL', 'Repo used by VPS git pull deployment.'],
+      ['GITHUB_BRANCH', 'GitHub: Deploy Branch', 'Usually main.'],
+      ['PM2_ECOSYSTEM_FILE', 'PM2: Ecosystem File', 'Default ecosystem.config.cjs.']
+    ]
   },
-  DISCORD_APPROVAL_CHANNEL_ID: {
-    providerLabel: 'Discord: Approval Channel ID',
-    text: 'Optional Discord channel for approval requests. Falls back to Discord: Channel ID.',
-    url: 'https://support.discord.com/hc/en-us/articles/206346498',
-    linkLabel: 'Discord ID guide'
-  },
-  GATES_STRICT: { providerLabel: 'Docmee gate strictness', text: 'Local gate behavior. Keep false during early setup.' },
-  COST_ALERT_THRESHOLD_USD: { providerLabel: 'Docmee cost alert threshold', text: 'Your daily local cost alert limit, such as 10.' }
-}
+  {
+    title: 'DevTools Controls',
+    rows: [
+      ['GATES_STRICT', 'Docmee gate strictness', 'Keep false during early setup.'],
+      ['COST_ALERT_THRESHOLD_USD', 'Docmee cost alert threshold', 'Daily local cost alert threshold.'],
+      ['WEBHOOK_TARGET', 'Docmee local webhook URL', 'Local API webhook route.'],
+      ['DEV_LICENSE_SIGNING_KEY', 'Docmee dev signing key', 'Local-only signing secret.']
+    ]
+  }
+] as const
 
 const safeDefaults = [
   ['Supabase: API URL', 'http://localhost:54321'],
   ['Docmee repo root', '../'],
   ['Docmee dashboard port', '4000'],
   ['Docmee local webhook URL', 'http://localhost:3001/webhook/whatsapp'],
-  ['Docmee gate strictness', 'false'],
-  ['Docmee cost alert threshold', '10']
+  ['Redis URL', 'redis://localhost:6379'],
+  ['DeepSeek base URL', 'https://api.deepseek.com'],
+  ['Node environment', 'development']
 ]
 
 function parseEnv(content: string) {
@@ -105,48 +132,18 @@ function parseEnv(content: string) {
   )
 }
 
-type SettingsPageProps = {
-  searchParams?: {
-    message?: string
-    error?: string
-  }
-}
+type SettingsPageProps = { searchParams?: { message?: string; error?: string } }
 
 export default function SettingsPage({ searchParams }: SettingsPageProps) {
   const envExists = fs.existsSync(envFile)
   const exampleExists = fs.existsSync(envExampleFile)
   const env = envExists ? parseEnv(fs.readFileSync(envFile, 'utf8')) : {}
-  const backlogCount = fs.existsSync(backlogFile)
-    ? JSON.parse(fs.readFileSync(backlogFile, 'utf8')).length as number
-    : 0
-  const rows = [
-    ...requiredVars.map((name) => ({ name, required: true, present: Boolean(env[name]) })),
-    ...optionalVars.map((name) => ({ name, required: false, present: Boolean(env[name]) }))
-  ]
-  const missingRequired = rows.filter((row) => row.required && !row.present)
-  const setupCards = [
-    {
-      title: 'Configuration file',
-      status: envExists ? 'Ready' : 'Missing',
-      ok: envExists,
-      detail: envExists ? '.env.tools is available locally.' : 'Create the local config file from the example.'
-    },
-    {
-      title: 'Required settings',
-      status: missingRequired.length === 0 ? 'Ready' : `${missingRequired.length} missing`,
-      ok: missingRequired.length === 0,
-      detail: missingRequired.length === 0 ? 'All required settings are present.' : missingRequired.map((row) => guidance[row.name].providerLabel).join(', ')
-    },
-    {
-      title: 'Backlog',
-      status: backlogCount === 45 ? 'Ready' : `${backlogCount}/45 tasks`,
-      ok: backlogCount === 45,
-      detail: backlogCount === 45 ? 'The DevTools backlog is seeded.' : 'Seed the local backlog before starting P01.'
-    }
-  ]
+  const backlogCount = fs.existsSync(backlogFile) ? JSON.parse(fs.readFileSync(backlogFile, 'utf8')).length as number : 0
+  const allRows = groups.flatMap((group) => group.rows.map(([name]) => name))
+  const missingRequired = requiredVars.filter((name) => !env[name])
 
   return (
-    <section className="max-w-5xl">
+    <section className="max-w-6xl">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup</h1>
@@ -157,33 +154,16 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
             {!envExists && (
               <form action="/api/settings/env" method="post">
                 <input type="hidden" name="action" value="create" />
-                <button
-                  type="submit"
-                  disabled={!exampleExists}
-                  className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700"
-                >
-                  Create .env.tools
-                </button>
+                <button type="submit" disabled={!exampleExists} className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700">Create .env.tools</button>
               </form>
             )}
             <form action="/api/settings/env" method="post">
               <input type="hidden" name="action" value="open" />
-              <button
-                type="submit"
-                disabled={!envExists}
-                className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-              >
-                Open .env.tools
-              </button>
+              <button type="submit" disabled={!envExists} className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Open .env.tools</button>
             </form>
             <form action="/api/settings/env" method="post">
               <input type="hidden" name="action" value="check" />
-              <button
-                type="submit"
-                className="rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white"
-              >
-                Run setup check
-              </button>
+              <button type="submit" className="rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white">Run setup check</button>
             </form>
           </div>
           {searchParams?.message && <p className="text-right text-xs text-emerald-300">{searchParams.message}</p>}
@@ -191,30 +171,17 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
-        {setupCards.map((card) => (
-          <div key={card.title} className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold">{card.title}</h2>
-              <span className={card.ok ? 'text-sm text-emerald-300' : 'text-sm text-amber-300'}>{card.status}</span>
-            </div>
-            <p className="mt-2 text-sm text-slate-400">{card.detail}</p>
-          </div>
-        ))}
+      <div className="mt-6 grid gap-3 md:grid-cols-4">
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Configuration file</h2><p className={envExists ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{envExists ? 'Ready' : 'Missing'}</p></div>
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Required settings</h2><p className={missingRequired.length === 0 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-red-300'}>{missingRequired.length === 0 ? 'Ready' : `${missingRequired.length} missing`}</p></div>
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Backlog</h2><p className={backlogCount === 45 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{backlogCount}/45 tasks</p></div>
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Credential fields</h2><p className="mt-2 text-sm text-slate-300">{allRows.length} tracked</p></div>
       </div>
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">Backlog setup</h2>
-            <p className="mt-1 text-sm text-slate-400">Seed the local DevTools backlog if it is not ready.</p>
-          </div>
-          <form action="/api/settings/env" method="post">
-            <input type="hidden" name="action" value="seed-backlog" />
-            <button type="submit" className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">
-              Seed backlog
-            </button>
-          </form>
+          <div><h2 className="text-sm font-semibold">Backlog setup</h2><p className="mt-1 text-sm text-slate-400">Seed the local DevTools backlog if it is not ready.</p></div>
+          <form action="/api/settings/env" method="post"><input type="hidden" name="action" value="seed-backlog" /><button type="submit" className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Seed backlog</button></form>
         </div>
       </div>
 
@@ -222,62 +189,38 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
         <h2 className="text-sm font-semibold">Safe local defaults</h2>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {safeDefaults.map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2">
-              <span className="text-sm text-slate-400">{label}</span>
-              <code className="text-xs text-slate-200">{value}</code>
-            </div>
+            <div key={label} className="flex items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2"><span className="text-sm text-slate-400">{label}</span><code className="text-xs text-slate-200">{value}</code></div>
           ))}
         </div>
       </div>
 
-      <details className="mt-6 rounded-md border border-slate-800 bg-slate-950">
-        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-100">
-          Environment details
-        </summary>
-        <div className="overflow-x-auto border-t border-slate-800">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-900">
-              <tr>
-                <th className="p-3">Name</th>
-                <th className="p-3">Provider label</th>
-                <th className="p-3">Required</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Where to get it</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {rows.map((row) => (
-                <tr key={row.name}>
-                  <td className="p-3 font-mono text-xs text-slate-200">{row.name}</td>
-                  <td className="p-3 text-slate-300">{guidance[row.name].providerLabel}</td>
-                  <td className="p-3">{row.required ? 'yes' : 'no'}</td>
-                  <td className="p-3">
-                    <span className={row.present ? 'text-emerald-300' : row.required ? 'text-red-300' : 'text-slate-500'}>
-                      {row.present ? 'present' : 'missing'}
-                    </span>
-                  </td>
-                  <td className="p-3 text-slate-400">
-                    {guidance[row.name].text}
-                    {guidance[row.name].url && (
-                      <>
-                        {' '}
-                        <a
-                          href={guidance[row.name].url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                        >
-                          {guidance[row.name].linkLabel}
-                        </a>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+      <div className="mt-6 space-y-3">
+        {groups.map((group) => (
+          <details key={group.title} className="rounded-md border border-slate-800 bg-slate-950">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-100">{group.title}</summary>
+            <div className="overflow-x-auto border-t border-slate-800">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-900"><tr><th className="p-3">Name</th><th className="p-3">Provider label</th><th className="p-3">Required</th><th className="p-3">Status</th><th className="p-3">Where to get it</th></tr></thead>
+                <tbody className="divide-y divide-slate-800">
+                  {group.rows.map(([name, label, text, url]) => {
+                    const required = requiredVars.includes(name)
+                    const present = Boolean(env[name])
+                    return (
+                      <tr key={name}>
+                        <td className="p-3 font-mono text-xs text-slate-200">{name}</td>
+                        <td className="p-3 text-slate-300">{label}</td>
+                        <td className="p-3">{required ? 'yes' : 'no'}</td>
+                        <td className="p-3"><span className={present ? 'text-emerald-300' : required ? 'text-red-300' : 'text-slate-500'}>{present ? 'present' : 'missing'}</span></td>
+                        <td className="p-3 text-slate-400">{text}{url && <> <a href={url} target="_blank" rel="noreferrer" className="text-sky-300 underline underline-offset-2 hover:text-sky-200">Open setup</a></>}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        ))}
+      </div>
     </section>
   )
 }
