@@ -82,7 +82,12 @@ export async function POST(request: Request) {
   }
 
   if (action === 'discord-test') {
-    return redirect(request, 'message', 'Discord test is available after DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID are configured')
+    const result = runTool(['discord', 'test'])
+    return redirect(
+      request,
+      result.ok ? 'message' : 'error',
+      result.ok ? 'Discord test notification sent' : 'Discord test failed. Check the bot token, channel ID, and bot channel access.'
+    )
   }
 
   return redirect(request, 'error', 'Unknown action')

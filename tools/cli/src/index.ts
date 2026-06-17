@@ -14,6 +14,7 @@ import { phaseCmd } from './commands/phase.js'
 import { costCmd } from './commands/cost.js'
 import { prCmd } from './commands/pr.js'
 import { licenseCmd } from './commands/license.js'
+import { discordCmd } from './commands/discord.js'
 
 program.name('tool').description('Docmee DevTools CLI').version('0.1.0')
 program.addCommand(backlogCmd)
@@ -30,4 +31,5 @@ program.addCommand(phaseCmd)
 program.addCommand(costCmd)
 program.addCommand(prCmd)
 program.addCommand(licenseCmd)
+program.addCommand(discordCmd)
 program.parse()
