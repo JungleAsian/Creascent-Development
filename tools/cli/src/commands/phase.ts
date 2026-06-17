@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { Client } from '@notionhq/client'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { checkGates } from './gates.js'
@@ -392,19 +392,57 @@ function buildPlan(from?: string) {
   return phaseDefinitions.slice(start)
 }
 
-function handoffToolLabel(builder: string) {
-  return builder === 'claude-code' ? 'Claude.ai' : 'Codex Pro'
-}
-
-function openPromptFile(file: string) {
-  if (process.platform === 'win32') {
-    const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
-    editor.unref()
-  }
-}
-
 function shouldSync(opts: { sync?: boolean; noSync?: boolean }) {
   return opts.sync !== false && opts.noSync !== true
+}
+
+async function runAutomatedClaudePhase(phaseId: string, name: string, file: string) {
+  await setBuildStatus(phaseId, 'in-progress', 'Claude Code build started')
+  const state = phases()
+  const phase = state.find((item) => item.id === phaseId)
+  if (phase) {
+    phase.status = 'in-progress'
+    phase.startedAt = new Date().toISOString()
+    save(state)
+  }
+  await sendNotification(`${phaseId} Claude Code build started.`, 'development')
+  const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
+  if (claude.status !== 0) {
+    await setBuildStatus(phaseId, 'failed', 'Claude Code returned a failure or is not available')
+    await sendNotification(`${phaseId} Claude Code failed or is not available. Fix Claude Code, then resume from ${phaseId}.`, 'critical')
+    process.exitCode = 1
+    return false
+  }
+  await setBuildStatus(phaseId, 'gates-running', 'Running quality gates')
+  const gates = checkGates()
+  if (gates.some((gate) => !gate.ok)) {
+    await setBuildStatus(phaseId, 'failed', 'One or more gates failed')
+    await sendNotification(`${phaseId} gates failed after Claude Code build.`, 'critical')
+    process.exitCode = 1
+    return false
+  }
+  await setBuildStatus(phaseId, 'pushing', 'Committing and pushing phase changes')
+  const published = await commitAndPushPhase(phaseId, name)
+  if (!published.ok) {
+    await setBuildStatus(phaseId, 'failed', `GitHub push failed: ${published.message}`)
+    log('phase', `Cannot complete ${phaseId}; GitHub push failed: ${published.message}`, 'error')
+    process.exitCode = 1
+    return false
+  }
+  const nextState = phases()
+  const current = nextState.find((item) => item.id === phaseId)
+  if (!current) throw new Error(`Unknown phase ${phaseId}`)
+  current.status = 'done'
+  current.completedAt = new Date().toISOString()
+  current.commitHash = published.commitHash
+  current.committedAt = new Date().toISOString()
+  save(nextState)
+  const control = await setBuildStatus(phaseId, 'complete', 'Phase committed and pushed')
+  control.commitHash = published.commitHash
+  saveBuildControl(buildControl().map((record) => record.phaseId === phaseId ? control : record))
+  await notifyPhaseComplete(phaseId, name)
+  if (phaseId === 'P11') await sendNotification('Submit to Meta for WhatsApp approval now. Do not wait for P19.', 'critical')
+  return true
 }
 
 async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolean; sync?: boolean }) {
@@ -421,12 +459,8 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       process.exitCode = 1
       return
     }
-    const tool = handoffToolLabel(phase.builder)
-    await setBuildStatus(phase.id, 'awaiting-output', `Prompt opened for ${tool}`)
-    openPromptFile(file)
-    await sendNotification(`${phase.id} is waiting for ${tool} output. Paste the prompt into ${tool}, apply the output, then click Output Copied to Repo.`, 'development')
-    log('phase', `${phase.id} opened for ${tool}. Paste the prompt into ${tool}, apply changes, then click Output Copied to Repo.`)
-    return
+    const completed = await runAutomatedClaudePhase(phase.id, phase.name, file)
+    if (!completed) return
   }
   await closeDiscordClient()
 }
@@ -466,14 +500,8 @@ async function completePhaseAfterOutput(phaseId: string) {
   return true
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?: string; noSync?: boolean; sync?: boolean; dryRun?: boolean }) {
   if (shouldSync(opts)) await syncPrompts({ force: false, dryRun: opts.dryRun })
-  const intervalMs = Math.max(5, Number(opts.interval ?? 30)) * 1000
-  const deadline = Date.now() + Math.max(1, Number(opts.maxMinutes ?? 720)) * 60 * 1000
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
     if (phases().find((item) => item.id === phase.id)?.status === 'done') continue
@@ -487,30 +515,8 @@ async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?:
       process.exitCode = 1
       return
     }
-    const tool = handoffToolLabel(phase.builder)
-    await setBuildStatus(phase.id, 'awaiting-output', `Prompt opened for ${tool}; waiting for output-copied`)
-    openPromptFile(file)
-    await sendNotification(`${phase.id} is waiting for ${tool} output. Click Output Copied to Repo when done.`, 'development')
-    while (Date.now() < deadline) {
-      const status = await currentBuildStatus(phase.id)
-      if (status === 'output-copied') {
-        const completed = await completePhaseAfterOutput(phase.id)
-        if (!completed) return
-        break
-      }
-      if (status === 'failed') {
-        log('phase', `${phase.id} is marked failed; watch stopped.`, 'error')
-        process.exitCode = 1
-        return
-      }
-      log('phase', `${phase.id} waiting for output-copied; current status is ${status}`)
-      await sleep(intervalMs)
-    }
-    if (Date.now() >= deadline) {
-      await setBuildStatus(phase.id, 'failed', 'Build watch timed out')
-      process.exitCode = 1
-      return
-    }
+    const completed = await runAutomatedClaudePhase(phase.id, phase.name, file)
+    if (!completed) return
   }
   await closeDiscordClient()
 }

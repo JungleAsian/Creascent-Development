@@ -75,21 +75,26 @@ async function notionReachable(): Promise<ReadyCheck> {
   }
 }
 
-function claudeHandoffCheck(): ReadyCheck {
-  return {
-    name: 'Claude.ai handoff',
-    status: 'warning',
-    message: 'Frontend phases P09 and P11 use Claude.ai manual handoff; no Claude Code command or Anthropic API key is required for development.',
-    fix: 'When those phases open, paste the prompt into Claude.ai, apply the output, then click Output Copied to Repo.'
-  }
+function claudeCodeInstalledCheck(): ReadyCheck {
+  const result = command(['claude', '--version'])
+  return result.ok
+    ? { name: 'Claude Code installed', status: 'pass', message: result.output || 'Claude Code is available.' }
+    : { name: 'Claude Code installed', status: 'critical', message: 'Claude Code command is not available.', fix: 'Install Claude Code and sign in with Claude Max before starting the automated build.' }
+}
+
+function claudeCodeAuthenticatedCheck(): ReadyCheck {
+  const result = command(['claude', '--version'])
+  return result.ok
+    ? { name: 'Claude Code authenticated', status: 'pass', message: 'Claude Code CLI is available for authenticated Claude Max sessions.' }
+    : { name: 'Claude Code authenticated', status: 'critical', message: 'Claude Code cannot be verified because the command is not available.', fix: 'Install Claude Code, run the sign-in flow, then rerun pnpm tool ready.' }
 }
 
 function backendBuilderCheck(): ReadyCheck {
   const service = readAgentBackend()
-  if (!service) return { name: 'Backend builder', status: 'warning', message: 'No enabled backend builder found; Codex Pro remains the manual backend builder.' }
-  return service === 'codex-pro'
-    ? { name: 'Backend builder', status: 'pass', message: 'Backend builder is Codex Pro.' }
-    : { name: 'Backend builder', status: 'warning', message: `Backend builder is ${service}; expected Codex Pro for the current workflow.` }
+  if (!service) return { name: 'Backend builder', status: 'critical', message: 'No enabled backend builder found.', fix: 'Reset Agents so Backend Builder uses Claude Code.' }
+  return service === 'claude-code'
+    ? { name: 'Backend builder', status: 'pass', message: 'Backend builder is Claude Code.' }
+    : { name: 'Backend builder', status: 'critical', message: `Backend builder is ${service}; expected Claude Code for full automation.`, fix: 'Open Agents and reset defaults, or set backend-builder to Claude Code.' }
 }
 
 function summarize(categories: ReadyCategory[]) {
@@ -139,9 +144,9 @@ async function buildReadyResult(): Promise<ReadyResult> {
       id: 'agents',
       label: 'AI Agents',
       checks: [
-        { name: 'Anthropic API key', status: envPresent('ANTHROPIC_API_KEY') ? 'pass' : 'warning', message: envPresent('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY is set.' : 'ANTHROPIC_API_KEY is not set; this is only needed when the first live clinic/runtime bot goes online.', fix: 'Leave blank during development unless you are testing the live Claude API bot.' },
-        { name: 'Anthropic API configured', status: envPresent('ANTHROPIC_API_KEY') ? 'pass' : 'warning', message: envPresent('ANTHROPIC_API_KEY') ? 'Anthropic API is available for runtime testing.' : 'Development can proceed with Claude Max / Claude.ai manual handoff without an API key.', fix: 'Add ANTHROPIC_API_KEY later for live runtime API testing.' },
-        claudeHandoffCheck(),
+        { name: 'Anthropic API key', status: 'warning', message: 'ANTHROPIC_API_KEY is not required for the automated development build; Claude Code uses Claude Max locally.', fix: 'Add ANTHROPIC_API_KEY later only for live runtime API bot testing.' },
+        claudeCodeInstalledCheck(),
+        claudeCodeAuthenticatedCheck(),
         backendBuilderCheck()
       ]
     },

@@ -106,6 +106,10 @@ export async function POST(request: Request) {
     const from = String(form.get('from') ?? 'P01')
     const args = ['phase', 'build', '--from', from]
     if (action === 'phase-build-dry-run') args.push('--dry-run')
+    if (action === 'phase-build') {
+      const pid = runToolDetached(args)
+      return redirect(request, 'message', `Automated build started from ${from}${pid ? ` (${pid})` : ''}`)
+    }
     const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Phase build command completed' : 'Phase build command failed')
   }

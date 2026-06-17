@@ -7,25 +7,25 @@ const promptsDir = path.join(toolsRoot, 'prompts')
 const phasePromptsUrl = 'https://app.notion.com/p/38241c470daf81a8b44ef53543e6bb45'
 
 const definitions = [
-  ['P01', 'Repository Foundation', 'codex', '1', 'ready'],
-  ['P02', 'Database', 'codex', '1', 'ready'],
-  ['P03', 'Core Infrastructure + AI', 'codex', '1', 'ready'],
-  ['P04', 'WhatsApp Channel', 'codex', '1', 'ready'],
-  ['P05', 'Clinic Bot', 'codex', '1', 'ready'],
-  ['P06', 'Appointment Scheduler', 'codex', '1', 'ready'],
-  ['P07', 'Secretary Alerts', 'codex', '1', 'ready'],
-  ['P08', 'Auth & API', 'codex', '1', 'ready'],
+  ['P01', 'Repository Foundation', 'claude-code', '1', 'ready'],
+  ['P02', 'Database', 'claude-code', '1', 'ready'],
+  ['P03', 'Core Infrastructure + AI', 'claude-code', '1', 'ready'],
+  ['P04', 'WhatsApp Channel', 'claude-code', '1', 'ready'],
+  ['P05', 'Clinic Bot', 'claude-code', '1', 'ready'],
+  ['P06', 'Appointment Scheduler', 'claude-code', '1', 'ready'],
+  ['P07', 'Secretary Alerts', 'claude-code', '1', 'ready'],
+  ['P08', 'Auth & API', 'claude-code', '1', 'ready'],
   ['P09', 'Clinic Inbox + IA Studio', 'claude-code', '1', 'ready'],
-  ['P10', 'License Manager', 'codex', '1', 'ready'],
+  ['P10', 'License Manager', 'claude-code', '1', 'ready'],
   ['P11', 'IA Studio Admin Panel', 'claude-code', '1', 'ready'],
-  ['P12', 'Voice Transcription Service', 'codex', '1', 'ready'],
-  ['P13', 'Installer (DeployKit)', 'codex', '2', 'ready'],
-  ['P14', 'Facebook Messenger', 'codex', '2', 'ready'],
-  ['P15', 'Instagram Direct', 'codex', '2', 'ready'],
-  ['P16', 'Phase 2 Features', 'codex', '2', 'ready'],
-  ['P17', 'Testing & CI/CD', 'codex', '2', 'ready'],
-  ['P18', 'Phase 3 Features', 'codex', '3', 'ready'],
-  ['P19', 'Compliance & Launch', 'codex', '1', 'ready']
+  ['P12', 'Voice Transcription Service', 'claude-code', '1', 'ready'],
+  ['P13', 'Installer (DeployKit)', 'claude-code', '2', 'ready'],
+  ['P14', 'Facebook Messenger', 'claude-code', '2', 'ready'],
+  ['P15', 'Instagram Direct', 'claude-code', '2', 'ready'],
+  ['P16', 'Phase 2 Features', 'claude-code', '2', 'ready'],
+  ['P17', 'Testing & CI/CD', 'claude-code', '2', 'ready'],
+  ['P18', 'Phase 3 Features', 'claude-code', '3', 'ready'],
+  ['P19', 'Compliance & Launch', 'claude-code', '1', 'ready']
 ] as const
 
 type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string; commitHash?: string; committedAt?: string }
@@ -60,6 +60,10 @@ function promptInfo(id: string) {
 function githubCommitUrl(hash?: string) {
   if (!hash) return ''
   return `https://github.com/JungleAsian/Creascent-Development/commit/${hash}`
+}
+
+function builderLabel(builder: string) {
+  return builder === 'claude-code' ? 'Claude Code' : builder
 }
 
 export default function PhasesPage({ searchParams }: PageProps) {
@@ -124,7 +128,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
                   <div className="font-medium">{name}</div>
                   <div className={info.usable ? 'mt-1 text-xs text-slate-500' : 'mt-1 text-xs text-amber-300'}>Business phase {business} · {info.exists ? `${info.chars} chars · ${info.source} · synced ${info.synced}${info.usable ? '' : ` · ${info.issue}`}` : 'prompt not synced'}</div>
                 </div>
-                <span className={builder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builder}</span>
+                <span className={builder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builderLabel(builder)}</span>
                 <span className={prompt === 'ready' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{prompt}</span>
                 <span className="rounded bg-slate-800 px-2 py-1 text-sm">{phase.status}</span>
                 {phase.commitHash && <a href={githubCommitUrl(phase.commitHash)} target="_blank" rel="noreferrer" className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-300 hover:bg-slate-800">commit {phase.commitHash}</a>}

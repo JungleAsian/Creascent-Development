@@ -24,7 +24,7 @@ function readJson<T>(file: string, fallback: T): T {
 
 const workCards = [
   ['Ready Check', '/ready', 'Confirm the tool can safely start development.', 'Run before build'],
-  ['Build Control', '/build-control', 'Start and monitor Codex Pro and Claude.ai handoff phases.', 'Primary workflow'],
+  ['Build Control', '/build-control', 'Start and monitor Claude Code automation for all 19 phases.', 'Primary workflow'],
   ['Phase Progress', '/phases', 'Review prompt status, phase state, and commits.', '19 phases'],
   ['Diagnostics', '/diagnostics', 'Find local setup, Notion, Discord, and system issues.', 'Health checks'],
   ['Settings', '/settings', 'Fill credentials with plain-language service labels.', 'Configuration'],

@@ -9,25 +9,25 @@ const promptsDir = path.join(toolsRoot, 'prompts')
 const buildControlUrl = 'https://app.notion.com/p/38241c470daf8146a1f6d9b28cc498f3'
 
 const definitions = [
-  ['P01', 'Repository Foundation', 'codex', '1'],
-  ['P02', 'Database', 'codex', '1'],
-  ['P03', 'Core Infrastructure + AI', 'codex', '1'],
-  ['P04', 'WhatsApp Channel', 'codex', '1'],
-  ['P05', 'Clinic Bot', 'codex', '1'],
-  ['P06', 'Appointment Scheduler', 'codex', '1'],
-  ['P07', 'Secretary Alerts', 'codex', '1'],
-  ['P08', 'Auth & API', 'codex', '1'],
+  ['P01', 'Repository Foundation', 'claude-code', '1'],
+  ['P02', 'Database', 'claude-code', '1'],
+  ['P03', 'Core Infrastructure + AI', 'claude-code', '1'],
+  ['P04', 'WhatsApp Channel', 'claude-code', '1'],
+  ['P05', 'Clinic Bot', 'claude-code', '1'],
+  ['P06', 'Appointment Scheduler', 'claude-code', '1'],
+  ['P07', 'Secretary Alerts', 'claude-code', '1'],
+  ['P08', 'Auth & API', 'claude-code', '1'],
   ['P09', 'Clinic Inbox + IA Studio', 'claude-code', '1'],
-  ['P10', 'License Manager', 'codex', '1'],
+  ['P10', 'License Manager', 'claude-code', '1'],
   ['P11', 'IA Studio Admin Panel', 'claude-code', '1'],
-  ['P12', 'Voice Transcription Service', 'codex', '1'],
-  ['P13', 'Installer (DeployKit)', 'codex', '2'],
-  ['P14', 'Facebook Messenger', 'codex', '2'],
-  ['P15', 'Instagram Direct', 'codex', '2'],
-  ['P16', 'Phase 2 Features', 'codex', '2'],
-  ['P17', 'Testing & CI/CD', 'codex', '2'],
-  ['P18', 'Phase 3 Features', 'codex', '3'],
-  ['P19', 'Compliance & Launch', 'codex', '1']
+  ['P12', 'Voice Transcription Service', 'claude-code', '1'],
+  ['P13', 'Installer (DeployKit)', 'claude-code', '2'],
+  ['P14', 'Facebook Messenger', 'claude-code', '2'],
+  ['P15', 'Instagram Direct', 'claude-code', '2'],
+  ['P16', 'Phase 2 Features', 'claude-code', '2'],
+  ['P17', 'Testing & CI/CD', 'claude-code', '2'],
+  ['P18', 'Phase 3 Features', 'claude-code', '3'],
+  ['P19', 'Compliance & Launch', 'claude-code', '1']
 ] as const
 
 type PageProps = { searchParams?: { message?: string; error?: string } }
@@ -83,7 +83,7 @@ function githubCommitUrl(hash?: string) {
 }
 
 function builderLabel(builder: string) {
-  return builder === 'claude-code' ? 'Claude.ai handoff' : 'Codex Pro'
+  return builder === 'claude-code' ? 'Claude Code' : 'Codex Pro'
 }
 
 export default function BuildControlPage({ searchParams }: PageProps) {
@@ -104,7 +104,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Build Control</h1>
-          <p className="mt-2 text-sm text-slate-400">One-button build control for Codex Pro and Claude.ai handoff phases.</p>
+          <p className="mt-2 text-sm text-slate-400">Full automation for all 19 phases through Claude Code.</p>
         </div>
         <a href={buildControlUrl} target="_blank" rel="noreferrer" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open Notion spec</a>
       </div>
@@ -166,11 +166,6 @@ export default function BuildControlPage({ searchParams }: PageProps) {
               <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Prepare Context</button>
             </form>
             <form action="/api/actions" method="post">
-              <input type="hidden" name="action" value="phase-output-copied" />
-              <input type="hidden" name="phase" value={currentId} />
-              <button className="min-h-11 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Output Copied to Repo</button>
-            </form>
-            <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="gates-run" />
               <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Re-run Gates</button>
             </form>
@@ -188,16 +183,16 @@ export default function BuildControlPage({ searchParams }: PageProps) {
           <div className="mt-4 space-y-3 text-sm text-slate-300">
             <p>1. Click Set Up Build Control once if the Notion database is not ready.</p>
             <p>2. Click Start Automated Build.</p>
-            <p>3. Paste the opened prompt into the listed tool, Codex Pro or Claude.ai, then apply the output to the repo.</p>
-            <p>4. Click Output Copied to Repo. DevTools then runs gates, commits, pushes, and advances.</p>
+            <p>3. DevTools sends each prepared context file to Claude Code automatically.</p>
+            <p>4. After each phase, DevTools runs gates, commits, pushes, notifies Discord, and advances.</p>
           </div>
           <div className="mt-5 rounded border border-slate-800 p-3">
             <div className="text-xs text-slate-500">Polling check</div>
             <form action="/api/actions" method="post" className="mt-3 flex flex-wrap gap-2">
               <input type="hidden" name="action" value="phase-poll" />
               <input type="hidden" name="phase" value={currentId} />
-              <input type="hidden" name="status" value="output-copied" />
-              <button className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Check Output Copied</button>
+              <input type="hidden" name="status" value="in-progress" />
+              <button className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Check Build Running</button>
             </form>
           </div>
         </div>

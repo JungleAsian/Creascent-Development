@@ -21,7 +21,7 @@ type Agent = {
 type PageProps = { searchParams?: { message?: string; error?: string } }
 
 const services = [
-  ['claude-code', 'Claude.ai handoff', 'Manual', ''],
+  ['claude-code', 'Claude Code', 'CLI', ''],
   ['claude-api', 'Claude API live runtime', 'API later', 'ANTHROPIC_API_KEY'],
   ['codex-pro', 'Codex Pro', 'Manual', 'OPENAI_API_KEY'],
   ['gpt-4o', 'GPT-4o', 'API', 'OPENAI_API_KEY'],
@@ -45,7 +45,7 @@ function readEnv() {
 }
 
 function agentMode(agent: Agent) {
-  return agent.service === 'claude-code' ? 'manual' : agent.mode
+  return agent.service === 'claude-code' ? 'cli' : agent.mode
 }
 
 export default function AgentsPage({ searchParams }: PageProps) {
@@ -60,7 +60,7 @@ export default function AgentsPage({ searchParams }: PageProps) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">AI Agents</h1>
-          <p className="mt-2 text-sm text-slate-400">Configure builder, reviewer, test, documentation, security, database, and UI agents.</p>
+          <p className="mt-2 text-sm text-slate-400">Claude Code runs the build automatically. No API key is needed for the development build.</p>
         </div>
         <form action="/api/actions" method="post">
           <input type="hidden" name="action" value="agents-reset" />
@@ -69,6 +69,9 @@ export default function AgentsPage({ searchParams }: PageProps) {
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
+      <div className="mt-4 rounded-md border border-cyan-800 bg-cyan-950/30 p-4 text-sm text-cyan-100">
+        Full automation requires the local Claude Code command to be installed and signed in with Claude Max.
+      </div>
 
       {agents.length === 0 && (
         <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">

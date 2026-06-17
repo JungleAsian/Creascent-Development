@@ -29,7 +29,7 @@ type AgentService = {
 }
 
 export const agentServices: AgentService[] = [
-  { id: 'claude-code', label: 'Claude.ai handoff', provider: 'Anthropic', mode: 'manual', models: ['claude-sonnet-4-6', 'claude-opus-4-6'] },
+  { id: 'claude-code', label: 'Claude Code', provider: 'Anthropic', mode: 'cli', models: ['claude-sonnet-4-6', 'claude-opus-4-6'] },
   { id: 'claude-api', label: 'Claude API live runtime', provider: 'Anthropic', mode: 'api', env: 'ANTHROPIC_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5'] },
   { id: 'codex-pro', label: 'Codex Pro', provider: 'OpenAI', mode: 'manual', env: 'OPENAI_API_KEY', models: ['o3', 'o4-mini'] },
   { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI', mode: 'api', env: 'OPENAI_API_KEY', models: ['gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'] },
@@ -56,9 +56,9 @@ function defaults(): Agent[] {
       id: 'backend-builder',
       role: 'backend-builder',
       label: 'Backend Builder',
-      service: 'codex-pro',
-      model: 'o3',
-      mode: 'manual',
+      service: 'claude-code',
+      model: 'claude-sonnet-4-6',
+      mode: 'cli',
       trigger: 'on-demand',
       enabled: true,
       core: true,
@@ -70,7 +70,7 @@ function defaults(): Agent[] {
       label: 'Frontend Builder',
       service: 'claude-code',
       model: 'claude-sonnet-4-6',
-      mode: 'manual',
+      mode: 'cli',
       trigger: 'on-demand',
       enabled: true,
       core: true,
@@ -158,7 +158,11 @@ export function readAgents() {
     writeJson('agents.json', data)
     return data
   }
-  const normalized = stored.map((agent) => agent.service === 'claude-code' ? { ...agent, mode: 'manual' as const } : agent)
+  const normalized = stored.map((agent) => {
+    if (agent.role === 'backend-builder') return { ...agent, service: 'claude-code', model: 'claude-sonnet-4-6', mode: 'cli' as const }
+    if (agent.service === 'claude-code') return { ...agent, mode: 'cli' as const }
+    return agent
+  })
   if (JSON.stringify(normalized) !== JSON.stringify(stored)) writeJson('agents.json', normalized)
   return normalized
 }

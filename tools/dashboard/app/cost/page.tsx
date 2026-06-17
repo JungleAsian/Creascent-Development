@@ -154,7 +154,7 @@ export default function CostPage({ searchParams }: PageProps) {
         <div className="mt-6 space-y-6">
           <div className="flex snap-x gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible">
             {[
-              ['Claude.ai', 'claude-code'],
+              ['Claude Code', 'claude-code'],
               ['Codex Pro', 'codex-pro'],
               ['Claude Chat', 'claude-chat']
             ].map(([label, tool]) => {
@@ -177,8 +177,8 @@ export default function CostPage({ searchParams }: PageProps) {
             <div className="mt-3 grid gap-3 md:grid-cols-4">
               <input name="phase" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="P01" defaultValue="P01" />
               <input name="feature" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="P01/monorepo-scaffold" />
-              <input name="tool" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="codex-pro" defaultValue="codex-pro" />
-              <input name="model" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="o3" defaultValue="o3" />
+              <input name="tool" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="claude-code" defaultValue="claude-code" />
+              <input name="model" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="claude-sonnet" defaultValue="claude-sonnet" />
               <input name="input" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="Input tokens" defaultValue="0" />
               <input name="output" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="Output tokens" defaultValue="0" />
               <input name="cached" className="rounded border border-slate-700 bg-slate-950 p-2 text-sm" placeholder="Cached tokens" defaultValue="0" />
@@ -194,7 +194,7 @@ export default function CostPage({ searchParams }: PageProps) {
             <div className="hidden md:block"><h2 className="text-sm font-semibold">Cost by Phase</h2></div>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-950"><tr><th className="p-3">Phase</th><th className="p-3">Claude.ai</th><th className="p-3">Codex Pro</th><th className="p-3">Total</th><th className="p-3">Status</th></tr></thead>
+                <thead className="bg-slate-950"><tr><th className="p-3">Phase</th><th className="p-3">Claude Code</th><th className="p-3">Codex Pro</th><th className="p-3">Total</th><th className="p-3">Status</th></tr></thead>
                 <tbody className="divide-y divide-slate-800">
                   {phases.map((phase) => {
                     const phaseEntries = development.filter((entry) => entry.phase === phase)
