@@ -202,47 +202,54 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
         </div>
       </div>
 
-      <table className="mt-5 w-full text-left text-sm">
-        <thead className="bg-slate-900">
-          <tr>
-            <th className="p-3">Name</th>
-            <th className="p-3">Provider label</th>
-            <th className="p-3">Required</th>
-            <th className="p-3">Status</th>
-            <th className="p-3">Where to get it</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800">
-          {rows.map((row) => (
-            <tr key={row.name}>
-              <td className="p-3 font-mono text-xs text-slate-200">{row.name}</td>
-              <td className="p-3 text-slate-300">{guidance[row.name].providerLabel}</td>
-              <td className="p-3">{row.required ? 'yes' : 'no'}</td>
-              <td className="p-3">
-                <span className={row.present ? 'text-emerald-300' : row.required ? 'text-red-300' : 'text-slate-500'}>
-                  {row.present ? 'present' : 'missing'}
-                </span>
-              </td>
-              <td className="p-3 text-slate-400">
-                {guidance[row.name].text}
-                {guidance[row.name].url && (
-                  <>
-                    {' '}
-                    <a
-                      href={guidance[row.name].url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                    >
-                      {guidance[row.name].linkLabel}
-                    </a>
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <details className="mt-6 rounded-md border border-slate-800 bg-slate-950">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-100">
+          Environment details
+        </summary>
+        <div className="overflow-x-auto border-t border-slate-800">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-900">
+              <tr>
+                <th className="p-3">Name</th>
+                <th className="p-3">Provider label</th>
+                <th className="p-3">Required</th>
+                <th className="p-3">Status</th>
+                <th className="p-3">Where to get it</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {rows.map((row) => (
+                <tr key={row.name}>
+                  <td className="p-3 font-mono text-xs text-slate-200">{row.name}</td>
+                  <td className="p-3 text-slate-300">{guidance[row.name].providerLabel}</td>
+                  <td className="p-3">{row.required ? 'yes' : 'no'}</td>
+                  <td className="p-3">
+                    <span className={row.present ? 'text-emerald-300' : row.required ? 'text-red-300' : 'text-slate-500'}>
+                      {row.present ? 'present' : 'missing'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-slate-400">
+                    {guidance[row.name].text}
+                    {guidance[row.name].url && (
+                      <>
+                        {' '}
+                        <a
+                          href={guidance[row.name].url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                        >
+                          {guidance[row.name].linkLabel}
+                        </a>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
   )
 }
