@@ -9,6 +9,7 @@ import { loadConfig } from '../lib/config.js'
 import { log } from '../lib/logger.js'
 import { envFile, promptsDir } from '../lib/paths.js'
 import { defaultPhaseState, phaseDefinitions, phaseFileName, type PhaseState } from '../lib/phases.js'
+import { claudeCodeCommand } from '../lib/claude-code.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
 
@@ -88,9 +89,17 @@ function git(args: string[]) {
   return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: true, stdio: 'pipe' })
 }
 
+function repoRoot() {
+  return path.resolve(promptsDir, '..', '..')
+}
+
 function gitOutput(args: string[]) {
   const result = git(args)
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
+}
+
+function shortFailure(output: string) {
+  return output.replace(/\s+/g, ' ').trim().slice(0, 180) || 'Claude Code returned a failure or is not available'
 }
 
 function currentBranch() {
@@ -406,10 +415,21 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
     save(state)
   }
   await sendNotification(`${phaseId} Claude Code build started.`, 'development')
-  const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
+  const prompt = fs.readFileSync(file, 'utf8')
+  const claude = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot(), prompt], {
+    cwd: repoRoot(),
+    encoding: 'utf8',
+    shell: false,
+    stdio: 'pipe'
+  })
+  const output = `${claude.stdout ?? ''}${claude.stderr ?? ''}`.trim()
+  if (output) {
+    for (const line of output.split(/\r?\n/).filter(Boolean)) log('phase', `${phaseId} Claude Code: ${line}`)
+  }
   if (claude.status !== 0) {
-    await setBuildStatus(phaseId, 'failed', 'Claude Code returned a failure or is not available')
-    await sendNotification(`${phaseId} Claude Code failed or is not available. Fix Claude Code, then resume from ${phaseId}.`, 'critical')
+    const failure = shortFailure(output)
+    await setBuildStatus(phaseId, 'failed', `Claude Code failed: ${failure}`)
+    await sendNotification(`${phaseId} Claude Code failed: ${failure}. Fix Claude Code, then resume from ${phaseId}.`, 'critical')
     process.exitCode = 1
     return false
   }

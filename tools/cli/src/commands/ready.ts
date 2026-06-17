@@ -7,6 +7,7 @@ import { log } from '../lib/logger.js'
 import { envFile, promptsDir, toolsRoot } from '../lib/paths.js'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { phaseDefinitions, phaseFileName } from '../lib/phases.js'
+import { claudeCodeCommand } from '../lib/claude-code.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 
 type ReadySeverity = 'pass' | 'warning' | 'critical'
@@ -76,17 +77,46 @@ async function notionReachable(): Promise<ReadyCheck> {
 }
 
 function claudeCodeInstalledCheck(): ReadyCheck {
-  const result = command(['claude', '--version'])
+  const result = command([claudeCodeCommand(), '--version'])
   return result.ok
     ? { name: 'Claude Code installed', status: 'pass', message: result.output || 'Claude Code is available.' }
     : { name: 'Claude Code installed', status: 'critical', message: 'Claude Code command is not available.', fix: 'Install Claude Code and sign in with Claude Max before starting the automated build.' }
 }
 
-function claudeCodeAuthenticatedCheck(): ReadyCheck {
-  const result = command(['claude', '--version'])
-  return result.ok
-    ? { name: 'Claude Code authenticated', status: 'pass', message: 'Claude Code CLI is available for authenticated Claude Max sessions.' }
-    : { name: 'Claude Code authenticated', status: 'critical', message: 'Claude Code cannot be verified because the command is not available.', fix: 'Install Claude Code, run the sign-in flow, then rerun pnpm tool ready.' }
+function claudeCodeBuildSmokeCheck(): ReadyCheck {
+  const result = spawnSync(claudeCodeCommand(), ['--print', 'Reply READY only'], {
+    cwd: toolsRoot,
+    encoding: 'utf8',
+    shell: false,
+    stdio: 'pipe'
+  })
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+  const normalized = output.toLowerCase()
+  if (result.status === 0) {
+    return { name: 'Claude Code build smoke test', status: 'pass', message: output || 'Claude Code can run automated build prompts.' }
+  }
+  if (normalized.includes('credit balance is too low')) {
+    return {
+      name: 'Claude Code build smoke test',
+      status: 'critical',
+      message: 'Claude Code is reachable, but the active Anthropic account says: Credit balance is too low.',
+      fix: 'Add Anthropic credits, replace ANTHROPIC_API_KEY with a funded key, or sign in Claude Code with Claude Max and remove the unfunded API key from DevTools Settings.'
+    }
+  }
+  if (normalized.includes('not logged in') || normalized.includes('auth')) {
+    return {
+      name: 'Claude Code build smoke test',
+      status: 'critical',
+      message: output || 'Claude Code is not logged in.',
+      fix: 'Sign in to Claude Code, then rerun setup check.'
+    }
+  }
+  return {
+    name: 'Claude Code build smoke test',
+    status: 'critical',
+    message: output || 'Claude Code could not run an automated prompt.',
+    fix: 'Open Claude Code, confirm it can send a message, then rerun setup check.'
+  }
 }
 
 function backendBuilderCheck(): ReadyCheck {
@@ -146,7 +176,7 @@ async function buildReadyResult(): Promise<ReadyResult> {
       checks: [
         { name: 'Anthropic API key', status: 'warning', message: 'ANTHROPIC_API_KEY is not required for the automated development build; Claude Code uses Claude Max locally.', fix: 'Add ANTHROPIC_API_KEY later only for live runtime API bot testing.' },
         claudeCodeInstalledCheck(),
-        claudeCodeAuthenticatedCheck(),
+        claudeCodeBuildSmokeCheck(),
         backendBuilderCheck()
       ]
     },
