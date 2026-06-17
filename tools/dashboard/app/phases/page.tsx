@@ -4,6 +4,7 @@ import path from 'node:path'
 const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
 const promptsDir = path.join(toolsRoot, 'prompts')
+const phasePromptsUrl = 'https://app.notion.com/p/38241c470daf81a8b44ef53543e6bb45'
 
 const definitions = [
   ['P01', 'Repository Foundation', 'codex', '1', 'ready'],
@@ -50,6 +51,9 @@ export default function PhasesPage({ searchParams }: PageProps) {
   const byId = new Map(state.map((phase) => [phase.id, phase]))
   const done = state.filter((phase) => phase.status === 'done').length
   const p11Done = byId.get('P11')?.status === 'done'
+  const readyMissing = definitions
+    .filter(([id, , , , prompt]) => prompt === 'ready' && !promptInfo(id).exists)
+    .map(([id]) => id)
 
   return (
     <section className="max-w-6xl">
@@ -65,15 +69,23 @@ export default function PhasesPage({ searchParams }: PageProps) {
       {p11Done && <div className="mt-4 rounded-md border border-amber-500 bg-amber-950/40 p-4 text-sm text-amber-200">Submit to Meta NOW. WhatsApp approval should start after P11, not after P19.</div>}
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
-        <h2 className="text-sm font-semibold">Automated Build</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Prompt Sync Status</h2>
+            <p className={readyMissing.length === 0 ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-amber-300'}>
+              {readyMissing.length === 0 ? 'All ready prompts are cached locally.' : `Missing ready prompt cache: ${readyMissing.join(', ')}`}
+            </p>
+          </div>
+          <a href={phasePromptsUrl} target="_blank" rel="noreferrer" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open in Notion</a>
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-sync" /><button className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Sync from Notion</button></form>
+          <form action="/api/phases/sync" method="post"><button className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Sync from Notion</button></form>
           <form action="/api/actions" method="post" className="flex gap-2">
             <input type="hidden" name="action" value="phase-build" />
             <select name="from" className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
               {definitions.map(([id]) => <option key={id} value={id}>Resume from {id}</option>)}
             </select>
-            <button className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">Start Automated Build</button>
+            <button disabled={readyMissing.length > 0} className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
           </form>
           <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-build-dry-run" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Dry Run</button></form>
         </div>
