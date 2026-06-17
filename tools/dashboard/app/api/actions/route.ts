@@ -51,6 +51,12 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'All gates passed' : 'One or more gates failed')
   }
 
+  if (action === 'ready-run' || action === 'ready-fix') {
+    const args = action === 'ready-fix' ? ['ready', '--fix'] : ['ready']
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'DevTools is ready' : 'Readiness check found critical issues')
+  }
+
   if (action === 'seed') {
     const kind = String(form.get('kind') ?? 'all')
     const result = runTool(['seed', kind])

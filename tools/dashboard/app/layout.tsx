@@ -4,6 +4,7 @@ import { DashboardShell } from './shell'
 
 const nav = [
   ['Backlog', '/backlog'],
+  ['Ready', '/ready'],
   ['Build Control', '/build-control'],
   ['Six Gates', '/gates'],
   ['Phase Progress', '/phases'],

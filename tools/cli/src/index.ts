@@ -21,6 +21,7 @@ import { acceptCmd } from './commands/accept.js'
 import { diagnoseCmd } from './commands/diagnose.js'
 import { agentsCmd } from './commands/agents.js'
 import { stackCmd } from './commands/stack.js'
+import { readyCmd } from './commands/ready.js'
 
 program.name('tool').description('Docmee DevTools CLI').version('2.0.0')
 program.addCommand(setupCmd)
@@ -44,4 +45,5 @@ program.addCommand(acceptCmd)
 program.addCommand(diagnoseCmd)
 program.addCommand(agentsCmd)
 program.addCommand(stackCmd)
+program.addCommand(readyCmd)
 program.parse()

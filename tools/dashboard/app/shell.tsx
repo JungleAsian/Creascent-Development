@@ -16,6 +16,7 @@ const spanishLabels: Record<string, string> = {
   'Phase Progress': 'Fases',
   'API Cost': 'Costo',
   Diagnostics: 'Diagnostico',
+  Ready: 'Listo',
   Agents: 'Agentes',
   Logs: 'Registros',
   'Webhook Console': 'Webhooks',
@@ -32,6 +33,7 @@ const navIcons: Record<string, string> = {
   'Phase Progress': 'P',
   'API Cost': '$',
   Diagnostics: 'D',
+  Ready: '!',
   Agents: 'A',
   Logs: 'L',
   'Webhook Console': 'W',
@@ -41,13 +43,14 @@ const navIcons: Record<string, string> = {
   Settings: 'T'
 }
 
-const primaryMobile = ['Build Control', 'Phase Progress', 'Six Gates', 'Agents', 'Deploy']
+const primaryMobile = ['Ready', 'Build Control', 'Phase Progress', 'Six Gates', 'Deploy']
 
 export function DashboardShell({ children, nav }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [language, setLanguage] = useState<'en' | 'es'>('en')
   const [moreOpen, setMoreOpen] = useState(false)
+  const [readyCritical, setReadyCritical] = useState(0)
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem('docmee-sidebar-collapsed') === 'true')
@@ -61,6 +64,13 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
     document.documentElement.dataset.theme = theme
     document.documentElement.lang = language
   }, [theme, language])
+
+  useEffect(() => {
+    fetch('/api/ready/status')
+      .then((response) => response.json())
+      .then((data: { critical?: number }) => setReadyCritical(data.critical ?? 0))
+      .catch(() => setReadyCritical(0))
+  }, [])
 
   function toggleSidebar() {
     const next = !collapsed
@@ -154,7 +164,8 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
               <span className="truncate">{labelFor(label)}</span>
             </Link>
           ))}
-          <button type="button" onClick={() => setMoreOpen(true)} className="grid min-h-11 place-items-center rounded-md px-1 py-1 text-[11px] text-slate-300 hover:bg-slate-800">
+          <button type="button" onClick={() => setMoreOpen(true)} className="relative grid min-h-11 place-items-center rounded-md px-1 py-1 text-[11px] text-slate-300 hover:bg-slate-800">
+            {readyCritical > 0 && <span className="absolute right-3 top-1 h-2 w-2 rounded-full bg-red-500" />}
             <span className="text-sm">...</span>
             <span>{language === 'es' ? 'Mas' : 'More'}</span>
           </button>

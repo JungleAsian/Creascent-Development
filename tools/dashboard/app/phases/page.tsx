@@ -9,23 +9,23 @@ const phasePromptsUrl = 'https://app.notion.com/p/38241c470daf81a8b44ef53543e6bb
 const definitions = [
   ['P01', 'Repository Foundation', 'codex', '1', 'ready'],
   ['P02', 'Database', 'codex', '1', 'ready'],
-  ['P03', 'Core Infrastructure + AI', 'codex', '1', 'draft'],
-  ['P04', 'WhatsApp Channel', 'codex', '1', 'draft'],
-  ['P05', 'Clinic Bot', 'codex', '1', 'draft'],
-  ['P06', 'Appointment Scheduler', 'codex', '1', 'draft'],
-  ['P07', 'Secretary Alerts', 'codex', '1', 'draft'],
-  ['P08', 'Auth & API', 'codex', '1', 'draft'],
+  ['P03', 'Core Infrastructure + AI', 'codex', '1', 'ready'],
+  ['P04', 'WhatsApp Channel', 'codex', '1', 'ready'],
+  ['P05', 'Clinic Bot', 'codex', '1', 'ready'],
+  ['P06', 'Appointment Scheduler', 'codex', '1', 'ready'],
+  ['P07', 'Secretary Alerts', 'codex', '1', 'ready'],
+  ['P08', 'Auth & API', 'codex', '1', 'ready'],
   ['P09', 'Clinic Inbox + IA Studio', 'claude-code', '1', 'ready'],
-  ['P10', 'License Manager', 'codex', '1', 'draft'],
+  ['P10', 'License Manager', 'codex', '1', 'ready'],
   ['P11', 'IA Studio Admin Panel', 'claude-code', '1', 'ready'],
-  ['P12', 'Voice Transcription Service', 'codex', '1', 'draft'],
-  ['P13', 'Installer (DeployKit)', 'codex', '2', 'draft'],
-  ['P14', 'Facebook Messenger', 'codex', '2', 'draft'],
-  ['P15', 'Instagram Direct', 'codex', '2', 'draft'],
-  ['P16', 'Phase 2 Features', 'codex', '2', 'draft'],
-  ['P17', 'Testing & CI/CD', 'codex', '2', 'draft'],
-  ['P18', 'Phase 3 Features', 'codex', '3', 'draft'],
-  ['P19', 'Compliance & Launch', 'codex', '1', 'draft']
+  ['P12', 'Voice Transcription Service', 'codex', '1', 'ready'],
+  ['P13', 'Installer (DeployKit)', 'codex', '2', 'ready'],
+  ['P14', 'Facebook Messenger', 'codex', '2', 'ready'],
+  ['P15', 'Instagram Direct', 'codex', '2', 'ready'],
+  ['P16', 'Phase 2 Features', 'codex', '2', 'ready'],
+  ['P17', 'Testing & CI/CD', 'codex', '2', 'ready'],
+  ['P18', 'Phase 3 Features', 'codex', '3', 'ready'],
+  ['P19', 'Compliance & Launch', 'codex', '1', 'ready']
 ] as const
 
 type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string; commitHash?: string; committedAt?: string }

@@ -4,6 +4,7 @@ import path from 'node:path'
 const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
 const buildControlFile = path.join(toolsRoot, 'logs', 'build-control.json')
+const readyFile = path.join(toolsRoot, 'logs', 'ready.json')
 const promptsDir = path.join(toolsRoot, 'prompts')
 const buildControlUrl = 'https://app.notion.com/p/38241c470daf8146a1f6d9b28cc498f3'
 
@@ -32,6 +33,7 @@ const definitions = [
 type PageProps = { searchParams?: { message?: string; error?: string } }
 type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string; commitHash?: string }
 type Control = { phaseId: string; status: string; updatedAt: string; notes?: string; commitHash?: string }
+type ReadyResult = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string }
 
 function readJson<T>(file: string, fallback: T) {
   if (!fs.existsSync(file)) return fallback
@@ -54,6 +56,10 @@ function controlState() {
   const current = readJson<Control[]>(buildControlFile, fallback)
   const byId = new Map(current.map((record) => [record.phaseId, record]))
   return fallback.map((record) => byId.get(record.phaseId) ?? record)
+}
+
+function readyState() {
+  return readJson<ReadyResult>(readyFile, { ready: false, summary: { critical: 1, warning: 0, pass: 0 } })
 }
 
 function promptInfo(id: string) {
@@ -86,6 +92,8 @@ export default function BuildControlPage({ searchParams }: PageProps) {
   const currentControl = controlById.get(currentId) ?? { phaseId: currentId, status: 'pending', updatedAt: new Date(0).toISOString() }
   const done = phases.filter((phase) => phase.status === 'done').length
   const currentPrompt = promptInfo(currentId)
+  const ready = readyState()
+  const readyCritical = ready.summary?.critical ?? 1
 
   return (
     <section className="max-w-6xl">
@@ -99,6 +107,17 @@ export default function BuildControlPage({ searchParams }: PageProps) {
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
+      {readyCritical > 0 && (
+        <div className="mt-4 rounded-md border border-red-800 bg-red-950/40 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-red-200">Readiness gate has not passed</h2>
+              <p className="mt-1 text-sm text-red-100">{readyCritical} critical issue{readyCritical === 1 ? '' : 's'} must be fixed before starting the automated build.</p>
+            </div>
+            <a href="/ready" className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white">Open Ready Check</a>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -135,7 +154,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-build-watch" />
               <input type="hidden" name="from" value={currentId} />
-              <button className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Start Automated Build</button>
+              <button disabled={readyCritical > 0} className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
             </form>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-context" />
