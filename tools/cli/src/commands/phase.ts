@@ -26,6 +26,16 @@ function promptPath(id: string) {
   return path.join(promptsDir, phaseFileName(id))
 }
 
+function promptReadiness(id: string) {
+  const file = promptPath(id)
+  if (!fs.existsSync(file)) return { ok: false, reason: 'prompt file is missing' }
+  const text = fs.readFileSync(file, 'utf8')
+  const placeholder = text.includes('Paste the full') || text.includes('No prompt content found') || text.includes('record P01 to Notion') || text.includes('record P02 to Notion')
+  if (placeholder) return { ok: false, reason: 'prompt is still a placeholder in Notion' }
+  if (text.trim().length < 1000) return { ok: false, reason: 'prompt is too short to be a build prompt' }
+  return { ok: true, reason: 'ready' }
+}
+
 function promptTextFromBlocks(blocks: Array<{ type: string; [key: string]: unknown }>) {
   const lines: string[] = []
   for (const block of blocks) {
@@ -83,11 +93,11 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
     const file = promptPath(phase.id)
-    const cached = fs.existsSync(file)
-    log('phase', `${opts.dryRun ? 'Plan' : 'Build'} ${phase.id} ${phase.name} (${phase.builder}) ${cached ? file : 'prompt missing'}`)
+    const readiness = promptReadiness(phase.id)
+    log('phase', `${opts.dryRun ? 'Plan' : 'Build'} ${phase.id} ${phase.name} (${phase.builder}) ${readiness.ok ? file : readiness.reason}`)
     if (opts.dryRun) continue
-    if (!cached) {
-      log('phase', `Cannot build ${phase.id}; prompt file is missing. Sync from Notion or mark prompt ready.`, 'error')
+    if (!readiness.ok) {
+      log('phase', `Cannot build ${phase.id}; ${readiness.reason}. Add the full prompt in Notion, then run phase sync.`, 'error')
       process.exitCode = 1
       return
     }

@@ -7,6 +7,7 @@ import { envFile, logsDir, promptsDir, toolsRoot } from '../lib/paths.js'
 import { loadConfig, requiredEnvVars } from '../lib/config.js'
 import { writeJson } from '../lib/json-store.js'
 import { log } from '../lib/logger.js'
+import { phaseDefinitions, phaseFileName } from '../lib/phases.js'
 
 type Severity = 'pass' | 'info' | 'warning' | 'critical'
 type Check = { name: string; status: Severity; message: string; fix?: string; fixable?: boolean }
@@ -24,6 +25,14 @@ function envPresent(name: string) {
 
 function checkFile(file: string) {
   return fs.existsSync(file)
+}
+
+function promptUsable(id: string) {
+  const file = path.join(promptsDir, phaseFileName(id))
+  if (!fs.existsSync(file)) return false
+  const text = fs.readFileSync(file, 'utf8')
+  const placeholder = text.includes('Paste the full') || text.includes('No prompt content found') || text.includes('record P01 to Notion') || text.includes('record P02 to Notion')
+  return !placeholder && text.trim().length >= 1000
 }
 
 function localIp() {
@@ -50,6 +59,8 @@ function buildCategories(quick: boolean): Category[] {
   loadConfig()
   const monorepoRoot = path.resolve(toolsRoot, process.env.MONOREPO_ROOT || '..')
   const promptFiles = fs.existsSync(promptsDir) ? fs.readdirSync(promptsDir).filter((name) => name.endsWith('.md')) : []
+  const readyPrompts = phaseDefinitions.filter((phase) => phase.promptStatus === 'ready' || phase.promptStatus === 'locked')
+  const unusableReadyPrompts = readyPrompts.filter((phase) => !promptUsable(phase.id)).map((phase) => phase.id)
   const categories: Category[] = [
     {
       id: 'windows',
@@ -69,7 +80,12 @@ function buildCategories(quick: boolean): Category[] {
         { name: '.env.tools', status: checkFile(envFile) ? 'pass' : 'critical', message: checkFile(envFile) ? '.env.tools exists.' : '.env.tools is missing.', fix: 'Open Settings and create .env.tools.' },
         ...requiredEnvVars.map((name) => ({ name, status: envPresent(name) ? 'pass' as const : 'critical' as const, message: envPresent(name) ? `${name} is set.` : `${name} is missing.`, fix: `Fill ${name} in Settings.` })),
         { name: 'Monorepo root', status: checkFile(monorepoRoot) ? 'pass' : 'warning', message: `${monorepoRoot}` },
-        { name: 'Prompt cache', status: promptFiles.length > 0 ? 'pass' : 'warning', message: `${promptFiles.length} prompt files cached.`, fix: 'Run pnpm tool phase sync.' }
+        {
+          name: 'Prompt cache',
+          status: unusableReadyPrompts.length === 0 ? 'pass' : 'critical',
+          message: unusableReadyPrompts.length === 0 ? `${promptFiles.length} prompt files cached and ready prompts are usable.` : `Ready prompts need full content: ${unusableReadyPrompts.join(', ')}.`,
+          fix: 'Add the full prompt content in Notion, then run pnpm tool phase sync --force.'
+        }
       ]
     },
     {
@@ -78,7 +94,12 @@ function buildCategories(quick: boolean): Category[] {
       checks: [
         { name: 'Notion API key', status: envPresent('NOTION_API_KEY') ? 'pass' : 'critical', message: envPresent('NOTION_API_KEY') ? 'Notion API key is set.' : 'Notion API key is missing.', fix: 'Create a Notion integration and add NOTION_API_KEY.' },
         { name: 'Phase prompts page', status: envPresent('NOTION_PROMPTS_DB_ID') ? 'pass' : 'critical', message: envPresent('NOTION_PROMPTS_DB_ID') ? 'Phase prompt page ID is set.' : 'Phase prompt page ID is missing.', fix: 'Set NOTION_PROMPTS_DB_ID to the Phase Prompts page ID.' },
-        { name: 'Synced prompts', status: promptFiles.length >= 3 ? 'pass' : 'warning', message: `${promptFiles.length} prompt files found.`, fix: 'Run pnpm tool phase sync --force.' }
+        {
+          name: 'Synced prompts',
+          status: unusableReadyPrompts.length === 0 ? 'pass' : 'critical',
+          message: unusableReadyPrompts.length === 0 ? `${promptFiles.length} prompt files found.` : `Placeholder or missing ready prompts: ${unusableReadyPrompts.join(', ')}.`,
+          fix: 'Update the Phase Prompts pages with full prompt content and sync again.'
+        }
       ]
     },
     {
@@ -97,6 +118,7 @@ function buildCategories(quick: boolean): Category[] {
       checks: [
         { name: 'CLAUDE.md', status: checkFile(path.join(monorepoRoot, 'CLAUDE.md')) ? 'pass' : 'warning', message: 'Root CLAUDE.md check completed.', fix: 'Place CLAUDE.md at the monorepo root before P01.' },
         { name: 'Dashboard package', status: checkFile(path.join(toolsRoot, 'dashboard', 'package.json')) ? 'pass' : 'critical', message: 'Dashboard package found.' },
+        { name: 'Start build prompts', status: unusableReadyPrompts.length === 0 ? 'pass' : 'critical', message: unusableReadyPrompts.length === 0 ? 'Start can continue with usable ready prompts.' : `Start is blocked by placeholder prompts: ${unusableReadyPrompts.join(', ')}.`, fix: 'Do not press Start until the full prompts are in Notion and synced.' },
         { name: 'CLI package', status: checkFile(path.join(toolsRoot, 'cli', 'src', 'index.ts')) ? 'pass' : 'critical', message: 'CLI entrypoint found.' }
       ]
     }

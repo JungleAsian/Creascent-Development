@@ -41,9 +41,13 @@ function phases() {
 
 function promptInfo(id: string) {
   const file = path.join(promptsDir, `${id}-CODEX-PROMPT.md`)
-  if (!fs.existsSync(file)) return { exists: false, chars: 0, synced: '' }
+  if (!fs.existsSync(file)) return { exists: false, usable: false, chars: 0, synced: '', issue: 'prompt not synced' }
   const stat = fs.statSync(file)
-  return { exists: true, chars: fs.readFileSync(file, 'utf8').length, synced: stat.mtime.toLocaleString() }
+  const text = fs.readFileSync(file, 'utf8')
+  const placeholder = text.includes('Paste the full') || text.includes('No prompt content found') || text.includes('record P01 to Notion') || text.includes('record P02 to Notion')
+  const usable = !placeholder && text.trim().length >= 1000
+  const issue = usable ? '' : placeholder ? 'placeholder prompt' : 'prompt too short'
+  return { exists: true, usable, chars: text.length, synced: stat.mtime.toLocaleString(), issue }
 }
 
 export default function PhasesPage({ searchParams }: PageProps) {
@@ -51,9 +55,13 @@ export default function PhasesPage({ searchParams }: PageProps) {
   const byId = new Map(state.map((phase) => [phase.id, phase]))
   const done = state.filter((phase) => phase.status === 'done').length
   const p11Done = byId.get('P11')?.status === 'done'
-  const readyMissing = definitions
+  const readyBlocked = definitions
     .filter(([id, , , , prompt]) => prompt === 'ready' && !promptInfo(id).exists)
     .map(([id]) => id)
+  const readyInvalid = definitions
+    .filter(([id, , , , prompt]) => prompt === 'ready' && promptInfo(id).exists && !promptInfo(id).usable)
+    .map(([id]) => id)
+  const buildBlocked = [...readyBlocked, ...readyInvalid]
 
   return (
     <section className="max-w-6xl">
@@ -72,8 +80,8 @@ export default function PhasesPage({ searchParams }: PageProps) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Prompt Sync Status</h2>
-            <p className={readyMissing.length === 0 ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-amber-300'}>
-              {readyMissing.length === 0 ? 'All ready prompts are cached locally.' : `Missing ready prompt cache: ${readyMissing.join(', ')}`}
+            <p className={buildBlocked.length === 0 ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-amber-300'}>
+              {buildBlocked.length === 0 ? 'All ready prompts are cached and usable.' : `Build blocked until full prompts are available for: ${buildBlocked.join(', ')}`}
             </p>
           </div>
           <a href={phasePromptsUrl} target="_blank" rel="noreferrer" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open in Notion</a>
@@ -85,7 +93,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
             <select name="from" className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
               {definitions.map(([id]) => <option key={id} value={id}>Resume from {id}</option>)}
             </select>
-            <button disabled={readyMissing.length > 0} className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
+            <button disabled={buildBlocked.length > 0} className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
           </form>
           <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-build-dry-run" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Dry Run</button></form>
         </div>
@@ -102,12 +110,12 @@ export default function PhasesPage({ searchParams }: PageProps) {
                 <strong className="w-14">{id}</strong>
                 <div className="min-w-64 flex-1">
                   <div className="font-medium">{name}</div>
-                  <div className="mt-1 text-xs text-slate-500">Business phase {business} · {info.exists ? `${info.chars} chars · synced ${info.synced}` : 'prompt not synced'}</div>
+                  <div className={info.usable ? 'mt-1 text-xs text-slate-500' : 'mt-1 text-xs text-amber-300'}>Business phase {business} · {info.exists ? `${info.chars} chars · synced ${info.synced}${info.usable ? '' : ` · ${info.issue}`}` : 'prompt not synced'}</div>
                 </div>
                 <span className={builder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builder}</span>
                 <span className={prompt === 'ready' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{prompt}</span>
                 <span className="rounded bg-slate-800 px-2 py-1 text-sm">{phase.status}</span>
-                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-start" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status !== 'not-started'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button></form>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-start" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status !== 'not-started' || (prompt === 'ready' && !info.usable)} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button></form>
                 <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-done" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status === 'done'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Mark Done</button></form>
               </div>
             </div>
