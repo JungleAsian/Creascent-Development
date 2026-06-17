@@ -12,6 +12,16 @@ import { defaultPhaseState, phaseDefinitions, phaseFileName, type PhaseState } f
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
 
+type BuildControlStatus = 'pending' | 'awaiting-output' | 'in-progress' | 'output-copied' | 'gates-running' | 'pushing' | 'complete' | 'failed'
+type BuildControlRecord = {
+  phaseId: string
+  status: BuildControlStatus
+  updatedAt: string
+  notes?: string
+  commitHash?: string
+}
+type BacklogTask = { id: number; phase: string; priority: string; title: string; status: string }
+
 function phases() {
   const current = readJson<PhaseState[]>('phases.json', defaultPhaseState())
   const byId = new Map(current.map((phase) => [phase.id, phase]))
@@ -24,6 +34,36 @@ function save(phasesState: PhaseState[]) {
 
 function promptPath(id: string) {
   return path.join(promptsDir, phaseFileName(id))
+}
+
+function contextPath(id: string) {
+  return path.join(promptsDir, `${id}-CONTEXT.md`)
+}
+
+function buildControl() {
+  const fallback: BuildControlRecord[] = phaseDefinitions.map((phase) => ({
+    phaseId: phase.id,
+    status: 'pending' as const,
+    updatedAt: new Date(0).toISOString()
+  }))
+  const current = readJson<BuildControlRecord[]>('build-control.json', fallback)
+  const byId = new Map(current.map((record) => [record.phaseId, record]))
+  return fallback.map((record) => byId.get(record.phaseId) ?? record)
+}
+
+function saveBuildControl(records: BuildControlRecord[]) {
+  writeJson('build-control.json', records)
+}
+
+function setLocalBuildStatus(phaseId: string, status: BuildControlStatus, notes?: string) {
+  const records = buildControl()
+  const record = records.find((item) => item.phaseId === phaseId)
+  if (!record) throw new Error(`Unknown phase ${phaseId}`)
+  record.status = status
+  record.updatedAt = new Date().toISOString()
+  if (notes) record.notes = notes
+  saveBuildControl(records)
+  return record
 }
 
 function git(args: string[]) {
@@ -100,6 +140,131 @@ async function fetchPromptMarkdown(notion: Client, pageId: string, title: string
   return `# ${title}\n\n${body || '_No prompt content found in Notion yet._\n'}`
 }
 
+async function fetchPageText(notion: Client, pageId: string, title: string) {
+  const blocks = await notion.blocks.children.list({ block_id: pageId, page_size: 100 })
+  const body = promptTextFromBlocks(blocks.results as Array<{ type: string; [key: string]: unknown }>)
+  return `# ${title}\n\n${body}`.trim()
+}
+
+function extractContextPageIds(markdown: string) {
+  const marker = markdown.match(/##\s+CONTEXT PAGES([\s\S]*)/i)
+  if (!marker) return []
+  const ids = new Set<string>()
+  for (const match of marker[1].matchAll(/[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)) {
+    ids.add(match[0].replaceAll('-', ''))
+  }
+  return [...ids]
+}
+
+function backlogGaps(phaseId: string) {
+  const tasks = readJson<BacklogTask[]>('backlog.json', [])
+  return tasks
+    .filter((task) => task.status !== 'done' && (task.phase === phaseId || task.phase === 'P00'))
+    .map((task) => `- Gap #${task.id}: ${task.title} (${task.priority})`)
+}
+
+async function assemblePhaseContext(phaseId: string, opts: { preview?: boolean } = {}) {
+  loadConfig()
+  const phase = phaseDefinitions.find((item) => item.id === phaseId)
+  if (!phase) throw new Error(`Unknown phase ${phaseId}`)
+  fs.mkdirSync(promptsDir, { recursive: true })
+
+  let architecture = ''
+  let prompt = ''
+  const sources: string[] = []
+  const promptFile = promptPath(phaseId)
+
+  if (process.env.NOTION_API_KEY) {
+    const notion = new Client({ auth: process.env.NOTION_API_KEY })
+    try {
+      if (process.env.NOTION_CLAUDE_MD_PAGE_ID) {
+        architecture = await fetchPageText(notion, process.env.NOTION_CLAUDE_MD_PAGE_ID, 'CLAUDE.md')
+        sources.push(`CLAUDE.md (${architecture.length} chars)`)
+      }
+      prompt = await fetchPromptMarkdown(notion, phase.notionPageId, `${phase.id} - ${phase.name}`)
+      sources.push(`${phase.id} prompt (${prompt.length} chars)`)
+      for (const pageId of extractContextPageIds(prompt)) {
+        if (pageId === process.env.NOTION_CLAUDE_MD_PAGE_ID?.replaceAll('-', '')) continue
+        const extra = await fetchPageText(notion, pageId, `Context ${pageId}`)
+        architecture += `\n\n${extra}`
+        sources.push(`context page ${pageId.slice(0, 8)} (${extra.length} chars)`)
+      }
+    } catch (error) {
+      log('phase', `Notion context fetch failed; using cached prompt where available. ${String(error)}`, 'warn')
+    }
+  }
+
+  if (!prompt && fs.existsSync(promptFile)) {
+    prompt = fs.readFileSync(promptFile, 'utf8')
+    sources.push(`${phase.id} cached prompt (${prompt.length} chars)`)
+  }
+  if (!architecture) {
+    const localClaude = path.resolve(promptsDir, '..', 'CLAUDE.md')
+    if (fs.existsSync(localClaude)) {
+      architecture = fs.readFileSync(localClaude, 'utf8')
+      sources.push(`local CLAUDE.md (${architecture.length} chars)`)
+    }
+  }
+
+  const gaps = backlogGaps(phaseId)
+  if (gaps.length > 0) sources.push(`backlog gaps (${gaps.length})`)
+  const context = [
+    `# ${phase.id} - ${phase.name} Context`,
+    '=== ARCHITECTURE (CLAUDE.md) ===',
+    architecture || '_No architecture context was available._',
+    '---',
+    `=== ${phase.id} BUILD INSTRUCTIONS ===`,
+    prompt || '_No phase prompt was available._',
+    '---',
+    `=== KNOWN GAPS TO FIX IN ${phase.id} ===`,
+    gaps.length > 0 ? gaps.join('\n') : '_No open local backlog gaps for this phase._'
+  ].join('\n\n')
+  const file = contextPath(phaseId)
+  fs.writeFileSync(file, `${context.trim()}\n`)
+  log('phase', `Context ready: ${context.length} chars from ${sources.length} sources -> ${file}`)
+  if (sources.length > 0) log('phase', `Sources: ${sources.join('; ')}`)
+  if (opts.preview) console.log(context)
+  return { file, context, sources }
+}
+
+async function readNotionBuildStatus(phaseId: string) {
+  loadConfig()
+  if (!process.env.NOTION_API_KEY || !process.env.NOTION_BUILD_CONTROL_DB_ID) return null
+  const notion = new Client({ auth: process.env.NOTION_API_KEY })
+  const result = await notion.databases.query({
+    database_id: process.env.NOTION_BUILD_CONTROL_DB_ID,
+    filter: { property: 'Phase ID', rich_text: { equals: phaseId } }
+  })
+  const page = result.results[0] as { properties?: Record<string, { type?: string; select?: { name?: string } }> } | undefined
+  return page?.properties?.Status?.select?.name ?? null
+}
+
+async function setNotionBuildStatus(phaseId: string, status: BuildControlStatus, notes?: string) {
+  loadConfig()
+  if (!process.env.NOTION_API_KEY || !process.env.NOTION_BUILD_CONTROL_DB_ID) return false
+  const phase = phaseDefinitions.find((item) => item.id === phaseId)
+  if (!phase) throw new Error(`Unknown phase ${phaseId}`)
+  const notion = new Client({ auth: process.env.NOTION_API_KEY })
+  const existing = await notion.databases.query({
+    database_id: process.env.NOTION_BUILD_CONTROL_DB_ID,
+    filter: { property: 'Phase ID', rich_text: { equals: phaseId } }
+  })
+  const properties = {
+    'Phase Name': { title: [{ text: { content: phase.name } }] },
+    'Phase ID': { rich_text: [{ text: { content: phaseId } }] },
+    Builder: { select: { name: phase.builder } },
+    Status: { select: { name: status } },
+    Notes: { rich_text: notes ? [{ text: { content: notes } }] : [] }
+  }
+  const page = existing.results[0] as { id?: string } | undefined
+  if (page?.id) {
+    await notion.pages.update({ page_id: page.id, properties })
+  } else {
+    await notion.pages.create({ parent: { database_id: process.env.NOTION_BUILD_CONTROL_DB_ID }, properties })
+  }
+  return true
+}
+
 async function syncPrompts(opts: { phase?: string; dryRun?: boolean; force?: boolean; init?: boolean }) {
   loadConfig()
   if (opts.init) {
@@ -140,9 +305,10 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
   if (!opts.noSync) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
-    const file = promptPath(phase.id)
+    const file = phase.builder === 'claude-code' ? contextPath(phase.id) : promptPath(phase.id)
     const readiness = promptReadiness(phase.id)
     log('phase', `${opts.dryRun ? 'Plan' : 'Build'} ${phase.id} ${phase.name} (${phase.builder}) ${readiness.ok ? file : readiness.reason}`)
+    if (phase.builder === 'claude-code' || opts.dryRun) await assemblePhaseContext(phase.id)
     if (opts.dryRun) continue
     if (!readiness.ok) {
       log('phase', `Cannot build ${phase.id}; ${readiness.reason}. Add the full prompt in Notion, then run phase sync.`, 'error')
@@ -150,6 +316,7 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       return
     }
     if (phase.builder === 'codex') {
+      setLocalBuildStatus(phase.id, 'awaiting-output', 'Prompt opened for Codex Pro')
       if (process.platform === 'win32') {
         const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
         editor.unref()
@@ -157,14 +324,18 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       log('phase', `${phase.id} opened for Codex Pro. Paste into Codex, apply changes, then rerun or continue manually.`)
       return
     }
+    setLocalBuildStatus(phase.id, 'in-progress', 'Claude Code build started')
     const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
     if (claude.status !== 0) {
+      setLocalBuildStatus(phase.id, 'failed', 'Claude Code returned a failure')
       await sendNotification(`Claude Code phase ${phase.id} failed. Fix and retry.`, 'critical')
       process.exitCode = 1
       return
     }
+    setLocalBuildStatus(phase.id, 'gates-running', 'Running quality gates')
     const gates = checkGates()
     if (gates.some((gate) => !gate.ok)) {
+      setLocalBuildStatus(phase.id, 'failed', 'One or more gates failed')
       await sendNotification(`${phase.id} gates failed after build.`, 'critical')
       process.exitCode = 1
       return
@@ -174,6 +345,7 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
     if (current) {
       const published = await commitAndPushPhase(phase.id, phase.name)
       if (!published.ok) {
+        setLocalBuildStatus(phase.id, 'failed', `GitHub push failed: ${published.message}`)
         log('phase', `Cannot complete ${phase.id}; GitHub push failed: ${published.message}`, 'error')
         process.exitCode = 1
         return
@@ -182,6 +354,9 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       current.completedAt = new Date().toISOString()
       current.commitHash = published.commitHash
       current.committedAt = new Date().toISOString()
+      const control = setLocalBuildStatus(phase.id, 'complete', 'Phase committed and pushed')
+      control.commitHash = published.commitHash
+      saveBuildControl(buildControl().map((record) => record.phaseId === phase.id ? control : record))
       save(state)
     }
     await notifyPhaseComplete(phase.id, phase.name)
@@ -260,3 +435,42 @@ phaseCmd.command('build')
   .option('--dry-run')
   .option('--no-sync')
   .action(runBuild)
+
+phaseCmd.command('context')
+  .option('--phase <phase>')
+  .option('--preview')
+  .option('--all')
+  .action(async (opts: { phase?: string; preview?: boolean; all?: boolean }) => {
+    if (opts.all) {
+      for (const phase of phaseDefinitions) await assemblePhaseContext(phase.id, { preview: opts.preview })
+      return
+    }
+    if (!opts.phase) throw new Error('--phase is required unless --all is used')
+    await assemblePhaseContext(opts.phase, { preview: opts.preview })
+  })
+
+phaseCmd.command('poll')
+  .requiredOption('--phase <phase>')
+  .requiredOption('--status <status>')
+  .action(async (opts: { phase: string; status: BuildControlStatus }) => {
+    const local = buildControl().find((record) => record.phaseId === opts.phase)?.status ?? 'pending'
+    const notion = await readNotionBuildStatus(opts.phase)
+    const actual = notion ?? local
+    if (actual === opts.status) {
+      log('phase', `${opts.phase} status is ${actual}`)
+      return
+    }
+    log('phase', `${opts.phase} status is ${actual}; waiting for ${opts.status}`, 'warn')
+    process.exitCode = 1
+  })
+
+phaseCmd.command('status')
+  .requiredOption('--phase <phase>')
+  .requiredOption('--status <status>')
+  .option('--notes <notes>')
+  .action(async (opts: { phase: string; status: BuildControlStatus; notes?: string }) => {
+    setLocalBuildStatus(opts.phase, opts.status, opts.notes)
+    const remoteUpdated = await setNotionBuildStatus(opts.phase, opts.status, opts.notes)
+    log('phase', `${opts.phase} status set to ${opts.status}`)
+    if (remoteUpdated) log('phase', `${opts.phase} Notion Build Control status updated`)
+  })

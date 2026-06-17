@@ -11,6 +11,7 @@ type DashboardShellProps = {
 
 const spanishLabels: Record<string, string> = {
   Backlog: 'Pendientes',
+  'Build Control': 'Control',
   'Six Gates': 'Controles',
   'Phase Progress': 'Fases',
   'API Cost': 'Costo',
@@ -26,6 +27,7 @@ const spanishLabels: Record<string, string> = {
 
 const navIcons: Record<string, string> = {
   Backlog: 'B',
+  'Build Control': '▶',
   'Six Gates': 'G',
   'Phase Progress': 'P',
   'API Cost': '$',
@@ -39,7 +41,7 @@ const navIcons: Record<string, string> = {
   Settings: 'T'
 }
 
-const primaryMobile = ['Backlog', 'Phase Progress', 'Six Gates', 'Agents', 'Deploy']
+const primaryMobile = ['Build Control', 'Phase Progress', 'Six Gates', 'Agents', 'Deploy']
 
 export function DashboardShell({ children, nav }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false)

@@ -65,7 +65,9 @@ export const optionalEnvVars = [
   'GITHUB_BRANCH',
   'PM2_ECOSYSTEM_FILE',
   'NOTION_API_KEY',
-  'NOTION_PROMPTS_DB_ID'
+  'NOTION_PROMPTS_DB_ID',
+  'NOTION_BUILD_CONTROL_DB_ID',
+  'NOTION_CLAUDE_MD_PAGE_ID'
 ]
 
 export function loadConfig() {

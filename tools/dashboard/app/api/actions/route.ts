@@ -63,6 +63,25 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Phase prompts synced or cache checked' : 'Phase prompt sync failed')
   }
 
+  if (action === 'phase-context') {
+    const phase = String(form.get('phase') ?? 'P01')
+    const result = runTool(['phase', 'context', '--phase', phase])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${phase} context prepared` : `${phase} context failed`)
+  }
+
+  if (action === 'phase-output-copied') {
+    const phase = String(form.get('phase') ?? 'P01')
+    const result = runTool(['phase', 'status', '--phase', phase, '--status', 'output-copied', '--notes', 'Output copied to repo from dashboard'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${phase} marked output copied` : `${phase} status update failed`)
+  }
+
+  if (action === 'phase-poll') {
+    const phase = String(form.get('phase') ?? 'P01')
+    const status = String(form.get('status') ?? 'output-copied')
+    const result = runTool(['phase', 'poll', '--phase', phase, '--status', status])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${phase} status matched ${status}` : `${phase} is not ${status} yet`)
+  }
+
   if (action === 'phase-build' || action === 'phase-build-dry-run') {
     const from = String(form.get('from') ?? 'P01')
     const args = ['phase', 'build', '--from', from]

@@ -38,10 +38,12 @@ const groups = [
     ]
   },
   {
-    title: 'Notion Prompt Sync',
+    title: 'Notion Build Sync',
     rows: [
       ['NOTION_API_KEY', 'Notion: Internal Integration Token', 'Create a Notion integration with read content permission.', 'https://www.notion.so/my-integrations'],
-      ['NOTION_PROMPTS_DB_ID', 'Notion: Phase Prompts Page ID', 'The 32-character ID from the Phase Prompts page URL.']
+      ['NOTION_PROMPTS_DB_ID', 'Notion: Phase Prompts Page ID', 'The 32-character ID from the Phase Prompts page URL.'],
+      ['NOTION_BUILD_CONTROL_DB_ID', 'Notion: Build Control Database ID', 'Created by the Build Control setup. Used for one-button phase continuation.'],
+      ['NOTION_CLAUDE_MD_PAGE_ID', 'Notion: CLAUDE.md Page ID', 'The CLAUDE.md architecture page used before each phase.']
     ]
   },
   {
@@ -145,8 +147,8 @@ const plainLanguageGroups = [
   },
   {
     title: 'Notion sync',
-    body: 'Needed only if you want phase prompts synced from Notion.',
-    names: ['NOTION_API_KEY', 'NOTION_PROMPTS_DB_ID']
+    body: 'Needed if you want prompts, architecture context, and build-control status synced from Notion.',
+    names: ['NOTION_API_KEY', 'NOTION_PROMPTS_DB_ID', 'NOTION_BUILD_CONTROL_DB_ID', 'NOTION_CLAUDE_MD_PAGE_ID']
   },
   {
     title: 'AI services',
