@@ -19,6 +19,11 @@ function commandOk(command: string) {
   return result.status === 0
 }
 
+function commandOutput(command: string) {
+  const result = spawnSync(command, { encoding: 'utf8', shell: true, stdio: 'pipe' })
+  return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
+}
+
 function envPresent(name: string) {
   return Boolean(process.env[name])
 }
@@ -61,6 +66,9 @@ function buildCategories(quick: boolean): Category[] {
   const promptFiles = fs.existsSync(promptsDir) ? fs.readdirSync(promptsDir).filter((name) => name.endsWith('.md')) : []
   const readyPrompts = phaseDefinitions.filter((phase) => phase.promptStatus === 'ready' || phase.promptStatus === 'locked')
   const unusableReadyPrompts = readyPrompts.filter((phase) => !promptUsable(phase.id)).map((phase) => phase.id)
+  const gitName = commandOutput('git config user.name')
+  const gitEmail = commandOutput('git config user.email')
+  const gitRemote = commandOutput('git remote get-url origin')
   const categories: Category[] = [
     {
       id: 'windows',
@@ -69,6 +77,10 @@ function buildCategories(quick: boolean): Category[] {
         { name: 'Node.js', status: commandOk('node') ? 'pass' : 'critical', message: commandOk('node') ? 'Node is available.' : 'Node is not available.', fix: 'Install Node.js 20 LTS.' },
         { name: 'pnpm', status: commandOk('pnpm') ? 'pass' : 'critical', message: commandOk('pnpm') ? 'pnpm is available.' : 'pnpm is not available.', fix: 'Install pnpm, then reopen the desktop tool.' },
         { name: 'Git', status: commandOk('git') ? 'pass' : 'critical', message: commandOk('git') ? 'Git is available.' : 'Git is not available.', fix: 'Install Git for Windows.' },
+        { name: 'Git user.name', status: gitName.ok && gitName.output ? 'pass' : 'critical', message: gitName.output || 'Git user.name is not configured.', fix: 'Run git config --global user.name "Your Name".' },
+        { name: 'Git user.email', status: gitEmail.ok && gitEmail.output ? 'pass' : 'critical', message: gitEmail.output || 'Git user.email is not configured.', fix: 'Run git config --global user.email "you@example.com".' },
+        { name: 'GitHub remote', status: gitRemote.ok && gitRemote.output ? 'pass' : 'critical', message: gitRemote.output || 'Git origin remote is not configured.', fix: 'Set the GitHub origin remote before phase auto-push.' },
+        { name: 'GitHub branch', status: envPresent('GITHUB_BRANCH') ? 'pass' : 'warning', message: envPresent('GITHUB_BRANCH') ? `GITHUB_BRANCH is ${process.env.GITHUB_BRANCH}.` : 'GITHUB_BRANCH is missing; current branch will be used.', fix: 'Set GITHUB_BRANCH in Settings.' },
         { name: 'LAN IP', status: localIp() === '127.0.0.1' ? 'warning' : 'pass', message: `Network URL is http://${localIp()}:4000.` },
         firewallCheck()
       ]

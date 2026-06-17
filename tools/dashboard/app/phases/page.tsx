@@ -28,7 +28,7 @@ const definitions = [
   ['P19', 'Compliance & Launch', 'codex', '1', 'draft']
 ] as const
 
-type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string }
+type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string; commitHash?: string; committedAt?: string }
 type PageProps = { searchParams?: { message?: string; error?: string } }
 
 function phases() {
@@ -48,6 +48,11 @@ function promptInfo(id: string) {
   const usable = !placeholder && text.trim().length >= 1000
   const issue = usable ? '' : placeholder ? 'placeholder prompt' : 'prompt too short'
   return { exists: true, usable, chars: text.length, synced: stat.mtime.toLocaleString(), issue }
+}
+
+function githubCommitUrl(hash?: string) {
+  if (!hash) return ''
+  return `https://github.com/JungleAsian/Creascent-Development/commit/${hash}`
 }
 
 export default function PhasesPage({ searchParams }: PageProps) {
@@ -93,7 +98,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
             <select name="from" className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
               {definitions.map(([id]) => <option key={id} value={id}>Resume from {id}</option>)}
             </select>
-            <button disabled={buildBlocked.length > 0} className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
+            <button className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
           </form>
           <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-build-dry-run" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Dry Run</button></form>
         </div>
@@ -102,7 +107,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
 
       <div className="mt-6 space-y-3">
         {definitions.map(([id, name, builder, business, prompt]) => {
-          const phase = byId.get(id) ?? { id, status: 'not-started' as const }
+          const phase: Phase = byId.get(id) ?? { id, status: 'not-started' as const }
           const info = promptInfo(id)
           return (
             <div key={id} className="rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -115,6 +120,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
                 <span className={builder === 'claude-code' ? 'rounded bg-purple-900 px-2 py-1 text-xs text-purple-100' : 'rounded bg-blue-900 px-2 py-1 text-xs text-blue-100'}>{builder}</span>
                 <span className={prompt === 'ready' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{prompt}</span>
                 <span className="rounded bg-slate-800 px-2 py-1 text-sm">{phase.status}</span>
+                {phase.commitHash && <a href={githubCommitUrl(phase.commitHash)} target="_blank" rel="noreferrer" className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-300 hover:bg-slate-800">commit {phase.commitHash}</a>}
                 <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-start" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status !== 'not-started' || (prompt === 'ready' && !info.usable)} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button></form>
                 <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-done" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status === 'done'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Mark Done</button></form>
               </div>

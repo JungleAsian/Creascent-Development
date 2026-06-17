@@ -16,6 +16,8 @@ export type PhaseState = {
   status: PhaseStatus
   startedAt?: string
   completedAt?: string
+  commitHash?: string
+  committedAt?: string
 }
 
 export const phaseDefinitions: PhaseDefinition[] = [

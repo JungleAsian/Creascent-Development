@@ -26,6 +26,54 @@ function promptPath(id: string) {
   return path.join(promptsDir, phaseFileName(id))
 }
 
+function git(args: string[]) {
+  return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: true, stdio: 'pipe' })
+}
+
+function gitOutput(args: string[]) {
+  const result = git(args)
+  return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
+}
+
+function currentBranch() {
+  const result = gitOutput(['branch', '--show-current'])
+  return result.ok && result.output ? result.output : 'main'
+}
+
+async function commitAndPushPhase(id: string, name: string) {
+  loadConfig()
+  const status = gitOutput(['status', '--porcelain'])
+  if (!status.ok) {
+    await sendNotification(`${id} git status failed. Build stopped before marking phase done.`, 'critical')
+    return { ok: false, commitHash: '', message: status.output }
+  }
+  if (!status.output) {
+    const current = gitOutput(['rev-parse', '--short', 'HEAD'])
+    const commitHash = current.ok ? current.output : ''
+    log('phase', `No changes to commit for ${id}; using current commit ${commitHash || 'unknown'}`)
+    return { ok: true, commitHash, message: 'No changes to commit' }
+  }
+  const add = gitOutput(['add', '.'])
+  if (!add.ok) {
+    await sendNotification(`${id} git add failed. Build stopped before marking phase done.`, 'critical')
+    return { ok: false, commitHash: '', message: add.output }
+  }
+  const commit = gitOutput(['commit', '-m', `build(${id}): ${name} - gates passed`])
+  if (!commit.ok) {
+    await sendNotification(`${id} git commit failed. Build stopped before marking phase done.`, 'critical')
+    return { ok: false, commitHash: '', message: commit.output }
+  }
+  const hash = gitOutput(['rev-parse', '--short', 'HEAD'])
+  const branch = process.env.GITHUB_BRANCH || currentBranch()
+  const push = gitOutput(['push', 'origin', `HEAD:${branch}`])
+  if (!push.ok) {
+    await sendNotification(`${id} git push failed for origin ${branch}. Build stopped before marking phase done.`, 'critical')
+    return { ok: false, commitHash: hash.output, message: push.output }
+  }
+  await sendNotification(`${id} pushed to GitHub - commit ${hash.output}`, 'development')
+  return { ok: true, commitHash: hash.output, message: 'Committed and pushed' }
+}
+
 function promptReadiness(id: string) {
   const file = promptPath(id)
   if (!fs.existsSync(file)) return { ok: false, reason: 'prompt file is missing' }
@@ -124,8 +172,16 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
     const state = phases()
     const current = state.find((item) => item.id === phase.id)
     if (current) {
+      const published = await commitAndPushPhase(phase.id, phase.name)
+      if (!published.ok) {
+        log('phase', `Cannot complete ${phase.id}; GitHub push failed: ${published.message}`, 'error')
+        process.exitCode = 1
+        return
+      }
       current.status = 'done'
       current.completedAt = new Date().toISOString()
+      current.commitHash = published.commitHash
+      current.committedAt = new Date().toISOString()
       save(state)
     }
     await notifyPhaseComplete(phase.id, phase.name)
@@ -172,8 +228,17 @@ phaseCmd.command('done').argument('<phase>').action(async (id: string) => {
   const phase = state.find((item) => item.id === id)
   const definition = phaseDefinitions.find((item) => item.id === id)
   if (!phase || !definition) throw new Error(`Unknown phase ${id}`)
+  const published = await commitAndPushPhase(id, definition.name)
+  if (!published.ok) {
+    log('phase', `Cannot mark ${id} done; GitHub push failed: ${published.message}`, 'error')
+    process.exitCode = 1
+    await closeDiscordClient()
+    return
+  }
   phase.status = 'done'
   phase.completedAt = new Date().toISOString()
+  phase.commitHash = published.commitHash
+  phase.committedAt = new Date().toISOString()
   save(state)
   log('phase', `Completed ${id}`)
   try {
