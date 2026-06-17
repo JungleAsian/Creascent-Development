@@ -22,17 +22,33 @@ const optionalVars = [
   'COST_ALERT_THRESHOLD_USD'
 ]
 
-const guidance: Record<string, string> = {
-  TOOLS_DB_URL: 'Supabase local start output. Usually http://localhost:54321.',
-  TOOLS_DB_SERVICE_KEY: 'Supabase local start output. Use the local service_role key only.',
-  MONOREPO_ROOT: 'Repo layout. Keep ../ when DevTools lives in /tools.',
-  NEXT_PUBLIC_DASHBOARD_PORT: 'Dashboard port. Keep 4000 unless another local service uses it.',
-  WEBHOOK_TARGET: 'Local API webhook route. Change only if your local API uses a different port/path.',
-  DEV_LICENSE_SIGNING_KEY: 'Local-only signing secret. Use a long random development string.',
-  DISCORD_BOT_TOKEN: 'Discord developer portal bot token. Leave blank until notifications are configured.',
-  DISCORD_CHANNEL_ID: 'Discord channel ID for DevTools notifications. Leave blank until Discord is configured.',
-  GATES_STRICT: 'Local gate behavior. Keep false during early setup.',
-  COST_ALERT_THRESHOLD_USD: 'Your daily local cost alert limit, such as 10.'
+const guidance: Record<string, { text: string; url?: string; label?: string }> = {
+  TOOLS_DB_URL: {
+    text: 'Supabase local start output. Usually http://localhost:54321.',
+    url: 'https://supabase.com/docs/guides/local-development/cli/getting-started',
+    label: 'Supabase local CLI docs'
+  },
+  TOOLS_DB_SERVICE_KEY: {
+    text: 'Supabase local start output. Use the local service_role key only.',
+    url: 'https://supabase.com/docs/guides/local-development/cli/getting-started',
+    label: 'Supabase local CLI docs'
+  },
+  MONOREPO_ROOT: { text: 'Repo layout. Keep ../ when DevTools lives in /tools.' },
+  NEXT_PUBLIC_DASHBOARD_PORT: { text: 'Dashboard port. Keep 4000 unless another local service uses it.' },
+  WEBHOOK_TARGET: { text: 'Local API webhook route. Change only if your local API uses a different port/path.' },
+  DEV_LICENSE_SIGNING_KEY: { text: 'Local-only signing secret. Use a long random development string.' },
+  DISCORD_BOT_TOKEN: {
+    text: 'Discord developer portal bot token. Leave blank until notifications are configured.',
+    url: 'https://discord.com/developers/applications',
+    label: 'Discord developer portal'
+  },
+  DISCORD_CHANNEL_ID: {
+    text: 'Discord channel ID for DevTools notifications. Leave blank until Discord is configured.',
+    url: 'https://support.discord.com/hc/en-us/articles/206346498',
+    label: 'Discord ID guide'
+  },
+  GATES_STRICT: { text: 'Local gate behavior. Keep false during early setup.' },
+  COST_ALERT_THRESHOLD_USD: { text: 'Your daily local cost alert limit, such as 10.' }
 }
 
 function parseEnv(content: string) {
@@ -86,7 +102,22 @@ export default function SettingsPage() {
                   {row.present ? 'present' : 'missing'}
                 </span>
               </td>
-              <td className="p-3 text-slate-400">{guidance[row.name]}</td>
+              <td className="p-3 text-slate-400">
+                {guidance[row.name].text}
+                {guidance[row.name].url && (
+                  <>
+                    {' '}
+                    <a
+                      href={guidance[row.name].url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                    >
+                      {guidance[row.name].label}
+                    </a>
+                  </>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
