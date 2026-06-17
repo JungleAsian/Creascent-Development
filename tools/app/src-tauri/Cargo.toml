@@ -9,7 +9,7 @@ edition = "2021"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
-tauri = { version = "1.6", features = ["shell-open", "shell-execute", "system-tray", "notification-all"] }
+tauri = { version = "1.6", features = ["fs-all", "shell-all", "system-tray", "notification-all"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
