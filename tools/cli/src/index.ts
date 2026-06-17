@@ -17,6 +17,8 @@ import { licenseCmd } from './commands/license.js'
 import { discordCmd } from './commands/discord.js'
 import { deployCmd } from './commands/deploy.js'
 import { acceptCmd } from './commands/accept.js'
+import { diagnoseCmd } from './commands/diagnose.js'
+import { agentsCmd } from './commands/agents.js'
 
 program.name('tool').description('Docmee DevTools CLI').version('0.1.0')
 program.addCommand(backlogCmd)
@@ -36,4 +38,6 @@ program.addCommand(licenseCmd)
 program.addCommand(discordCmd)
 program.addCommand(deployCmd)
 program.addCommand(acceptCmd)
+program.addCommand(diagnoseCmd)
+program.addCommand(agentsCmd)
 program.parse()

@@ -3,6 +3,8 @@ import Link from 'next/link'
 const cards = [
   ['Backlog', '/backlog', 'Track the 45 DevTools gaps.'],
   ['Gates', '/gates', 'Run typecheck, lint, DAL, env, RLS, and tests.'],
+  ['Diagnostics', '/diagnostics', 'Check local setup, services, and build readiness.'],
+  ['Agents', '/agents', 'Configure builder and reviewer AI agents.'],
   ['Webhooks', '/webhooks', 'Send local WhatsApp payloads with HMAC signatures.'],
   ['Settings', '/settings', 'Review local .env.tools status.']
 ]

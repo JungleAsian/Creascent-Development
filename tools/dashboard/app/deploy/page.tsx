@@ -22,6 +22,8 @@ export default function DeployPage({ searchParams }: PageProps) {
     ['deploy-status', 'VPS Status'],
     ['deploy-redis', 'Redis 7 Commands'],
     ['deploy-local', 'Start Local Plan'],
+    ['deploy-web', 'Start Web + QR'],
+    ['deploy-web-stop', 'Stop Web'],
     ['deploy-env', 'Sync .env Plan'],
     ['deploy-vps', 'Deploy to VPS Plan'],
     ['deploy-rollback', 'Rollback Plan']

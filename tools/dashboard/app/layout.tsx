@@ -7,6 +7,8 @@ const nav = [
   ['Six Gates', '/gates'],
   ['Phase Progress', '/phases'],
   ['API Cost', '/cost'],
+  ['Diagnostics', '/diagnostics'],
+  ['Agents', '/agents'],
   ['Logs', '/logs'],
   ['Webhook Console', '/webhooks'],
   ['Seed Generator', '/seed'],

@@ -109,6 +109,8 @@ export async function POST(request: Request) {
       'deploy-status': ['deploy', 'status'],
       'deploy-redis': ['deploy', 'redis'],
       'deploy-local': ['deploy', 'local'],
+      'deploy-web': ['deploy', 'web', '--qr'],
+      'deploy-web-stop': ['deploy', 'web', '--stop'],
       'deploy-env': ['deploy', 'env'],
       'deploy-vps': ['deploy', 'vps'],
       'deploy-rollback': ['deploy', 'rollback']
@@ -117,6 +119,37 @@ export async function POST(request: Request) {
     if (!args) return redirect(request, 'error', 'Unknown deploy action')
     const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Deploy command completed' : 'Deploy command reported a warning or failure')
+  }
+
+  if (action.startsWith('diagnose-')) {
+    const category = String(form.get('category') ?? '')
+    const commandByAction: Record<string, string[]> = {
+      'diagnose-run': ['diagnose'],
+      'diagnose-quick': ['diagnose', '--quick'],
+      'diagnose-fix': ['diagnose', '--fix']
+    }
+    const args = commandByAction[action]
+    if (!args) return redirect(request, 'error', 'Unknown diagnostic action')
+    if (category) args.push('--category', category)
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Diagnostics completed' : 'Diagnostics found critical issues')
+  }
+
+  if (action.startsWith('agents-')) {
+    const role = String(form.get('role') ?? '')
+    const service = String(form.get('service') ?? '')
+    const phase = String(form.get('phase') ?? 'P01')
+    const commandByAction: Record<string, string[]> = {
+      'agents-enable': ['agents', 'enable', '--role', role],
+      'agents-disable': ['agents', 'disable', '--role', role],
+      'agents-run': ['agents', 'run', '--role', role, '--phase', phase],
+      'agents-test': ['agents', 'test', '--service', service],
+      'agents-reset': ['agents', 'reset']
+    }
+    const args = commandByAction[action]
+    if (!args) return redirect(request, 'error', 'Unknown agent action')
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Agent action completed' : 'Agent action needs configuration')
   }
 
   if (action === 'accept-run') {
