@@ -88,7 +88,7 @@ export default function CostPage({ searchParams }: PageProps) {
         </div>
       ) : (
         <div className="mt-6 space-y-6">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="flex snap-x gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible">
             {[
               ['Claude Code', 'claude-code'],
               ['Codex Pro', 'codex-pro'],
@@ -96,15 +96,15 @@ export default function CostPage({ searchParams }: PageProps) {
             ].map(([label, tool]) => {
               const entries = development.filter((entry) => entry.tool === tool)
               const minutes = entries.reduce((total, entry) => total + entry.session_minutes, 0)
-              return <div key={tool} className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">{label}</h2><p className="mt-2 text-2xl">{money(sum(development, tool))}</p><p className="mt-1 text-sm text-slate-400">{entries.length} sessions · {minutes} min</p></div>
+              return <div key={tool} className="min-w-64 snap-start rounded-md border border-slate-800 bg-slate-900 p-4 md:min-w-0"><h2 className="text-sm font-semibold">{label}</h2><p className="mt-2 text-2xl">{money(sum(development, tool))}</p><p className="mt-1 text-sm text-slate-400">{entries.length} sessions · {minutes} min</p></div>
             })}
           </div>
 
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Phases complete</h2><p className="mt-2 text-2xl">{completedPhases.size}/19</p></div>
-            <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Cost to date</h2><p className="mt-2 text-2xl">{money(devTotal)}</p></div>
-            <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Avg cost/phase</h2><p className="mt-2 text-2xl">{money(avgPhase)}</p></div>
-            <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Projected total</h2><p className="mt-2 text-2xl">~{money(projection)}</p></div>
+          <div className="flex snap-x gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-4 md:overflow-visible">
+            <div className="min-w-56 snap-start rounded-md border border-slate-800 bg-slate-900 p-4 md:min-w-0"><h2 className="text-sm font-semibold">Phases complete</h2><p className="mt-2 text-2xl">{completedPhases.size}/19</p></div>
+            <div className="min-w-56 snap-start rounded-md border border-slate-800 bg-slate-900 p-4 md:min-w-0"><h2 className="text-sm font-semibold">Cost to date</h2><p className="mt-2 text-2xl">{money(devTotal)}</p></div>
+            <div className="min-w-56 snap-start rounded-md border border-slate-800 bg-slate-900 p-4 md:min-w-0"><h2 className="text-sm font-semibold">Avg cost/phase</h2><p className="mt-2 text-2xl">{money(avgPhase)}</p></div>
+            <div className="min-w-56 snap-start rounded-md border border-slate-800 bg-slate-900 p-4 md:min-w-0"><h2 className="text-sm font-semibold">Projected total</h2><p className="mt-2 text-2xl">~{money(projection)}</p></div>
           </div>
 
           <form action="/api/actions" method="post" className="rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -125,8 +125,9 @@ export default function CostPage({ searchParams }: PageProps) {
             </div>
           </form>
 
-          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <h2 className="text-sm font-semibold">Cost by Phase</h2>
+          <details className="rounded-md border border-slate-800 bg-slate-900 p-4" open>
+            <summary className="cursor-pointer text-sm font-semibold md:hidden">Cost by Phase</summary>
+            <div className="hidden md:block"><h2 className="text-sm font-semibold">Cost by Phase</h2></div>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-950"><tr><th className="p-3">Phase</th><th className="p-3">Claude Code</th><th className="p-3">Codex Pro</th><th className="p-3">Total</th><th className="p-3">Status</th></tr></thead>
@@ -138,7 +139,7 @@ export default function CostPage({ searchParams }: PageProps) {
                 </tbody>
               </table>
             </div>
-          </div>
+          </details>
 
           <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
             <h2 className="text-sm font-semibold">Session Log</h2>

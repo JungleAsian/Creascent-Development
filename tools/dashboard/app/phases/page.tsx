@@ -70,18 +70,18 @@ export default function PhasesPage({ searchParams }: PageProps) {
 
   return (
     <section className="max-w-6xl">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="sticky top-14 z-20 flex flex-wrap items-start justify-between gap-4 bg-slate-950 py-2 md:static md:bg-transparent md:py-0">
         <div>
           <h1 className="text-2xl font-semibold">Phase Progress</h1>
           <p className="mt-2 text-sm text-slate-400">{done}/19 phases complete</p>
         </div>
-        <div className="h-3 w-72 rounded bg-slate-800"><div className="h-3 rounded bg-cyan-500" style={{ width: `${Math.round((done / 19) * 100)}%` }} /></div>
+        <div className="h-3 w-full rounded bg-slate-800 md:w-72"><div className="h-3 rounded bg-cyan-500" style={{ width: `${Math.round((done / 19) * 100)}%` }} /></div>
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
       {p11Done && <div className="mt-4 rounded-md border border-amber-500 bg-amber-950/40 p-4 text-sm text-amber-200">Submit to Meta NOW. WhatsApp approval should start after P11, not after P19.</div>}
 
-      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+      <div id="build-panel" className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Prompt Sync Status</h2>
@@ -98,9 +98,9 @@ export default function PhasesPage({ searchParams }: PageProps) {
             <select name="from" className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
               {definitions.map(([id]) => <option key={id} value={id}>Resume from {id}</option>)}
             </select>
-            <button className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
+            <button className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
           </form>
-          <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-build-dry-run" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Dry Run</button></form>
+          <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-build-dry-run" /><button className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm">Dry Run</button></form>
         </div>
         <p className="mt-3 text-xs text-slate-500">Build output is written to /tools/logs/phase-YYYY-MM-DD.log.</p>
       </div>
@@ -113,7 +113,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
             <div key={id} className="rounded-md border border-slate-800 bg-slate-900 p-4">
               <div className="flex flex-wrap items-center gap-3">
                 <strong className="w-14">{id}</strong>
-                <div className="min-w-64 flex-1">
+                <div className="min-w-0 flex-1 md:min-w-64">
                   <div className="font-medium">{name}</div>
                   <div className={info.usable ? 'mt-1 text-xs text-slate-500' : 'mt-1 text-xs text-amber-300'}>Business phase {business} · {info.exists ? `${info.chars} chars · synced ${info.synced}${info.usable ? '' : ` · ${info.issue}`}` : 'prompt not synced'}</div>
                 </div>
@@ -121,13 +121,14 @@ export default function PhasesPage({ searchParams }: PageProps) {
                 <span className={prompt === 'ready' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{prompt}</span>
                 <span className="rounded bg-slate-800 px-2 py-1 text-sm">{phase.status}</span>
                 {phase.commitHash && <a href={githubCommitUrl(phase.commitHash)} target="_blank" rel="noreferrer" className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-300 hover:bg-slate-800">commit {phase.commitHash}</a>}
-                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-start" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status !== 'not-started' || (prompt === 'ready' && !info.usable)} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button></form>
-                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-done" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status === 'done'} className="rounded border border-slate-700 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Mark Done</button></form>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-start" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status !== 'not-started' || (prompt === 'ready' && !info.usable)} className="min-h-11 rounded border border-slate-700 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Start</button></form>
+                <form action="/api/actions" method="post"><input type="hidden" name="action" value="phase-done" /><input type="hidden" name="phase" value={id} /><button disabled={phase.status === 'done'} className="min-h-11 rounded border border-slate-700 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:text-slate-600">Mark Done</button></form>
               </div>
             </div>
           )
         })}
       </div>
+      <a href="#build-panel" className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-full bg-cyan-500 text-xl font-semibold text-slate-950 shadow-lg md:hidden">Go</a>
     </section>
   )
 }
