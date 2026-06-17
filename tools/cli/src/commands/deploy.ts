@@ -36,12 +36,13 @@ function recordLock(action: string) {
 }
 
 function localIp() {
+  const addresses: string[] = []
   for (const interfaces of Object.values(os.networkInterfaces())) {
     for (const item of interfaces ?? []) {
-      if (item.family === 'IPv4' && !item.internal) return item.address
+      if (item.family === 'IPv4' && !item.internal) addresses.push(item.address)
     }
   }
-  return '127.0.0.1'
+  return addresses.find((address) => address.startsWith('192.168.') || address.startsWith('10.') || /^172\.(1[6-9]|2\d|3[0-1])\./.test(address)) ?? addresses[0] ?? '127.0.0.1'
 }
 
 function pnpmCommand() {
