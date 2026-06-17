@@ -133,7 +133,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
 
           <div className="mt-5 flex flex-wrap gap-2">
             <form action="/api/actions" method="post">
-              <input type="hidden" name="action" value="phase-build" />
+              <input type="hidden" name="action" value="phase-build-watch" />
               <input type="hidden" name="from" value={currentId} />
               <button className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Start Automated Build</button>
             </form>
@@ -151,6 +151,10 @@ export default function BuildControlPage({ searchParams }: PageProps) {
               <input type="hidden" name="action" value="gates-run" />
               <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Re-run Gates</button>
             </form>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="phase-build-control-init" />
+              <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Set Up Build Control</button>
+            </form>
           </div>
 
           {currentControl.notes && <p className="mt-4 text-sm text-slate-400">{currentControl.notes}</p>}
@@ -159,10 +163,10 @@ export default function BuildControlPage({ searchParams }: PageProps) {
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
           <h2 className="text-sm font-semibold">How to continue</h2>
           <div className="mt-4 space-y-3 text-sm text-slate-300">
-            <p>1. Click Start Automated Build.</p>
-            <p>2. If Codex Pro opens, paste the prompt into Codex and apply the output to the repo.</p>
-            <p>3. Click Output Copied to Repo.</p>
-            <p>4. Run gates, then mark the phase done from Phase Progress.</p>
+            <p>1. Click Set Up Build Control once if the Notion database is not ready.</p>
+            <p>2. Click Start Automated Build.</p>
+            <p>3. If Codex Pro opens, paste the prompt into Codex and apply the output to the repo.</p>
+            <p>4. Click Output Copied to Repo. DevTools then runs gates, commits, pushes, and advances.</p>
           </div>
           <div className="mt-5 rounded border border-slate-800 p-3">
             <div className="text-xs text-slate-500">Polling check</div>

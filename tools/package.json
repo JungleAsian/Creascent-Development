@@ -16,7 +16,8 @@
     "tool": "tsx cli/src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "tsx ./node_modules/eslint/bin/eslint.js .",
-    "prepare": "node cli/src/lib/install-hooks.cjs"
+    "prepare": "node cli/src/lib/install-hooks.cjs",
+    "postinstall": "tsx cli/src/setup.ts"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.0",

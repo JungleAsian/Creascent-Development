@@ -6,6 +6,8 @@ dashboard/out
 app/src-tauri/target
 logs/*.log
 logs/*.json
+logs/.setup-complete
+logs/*.pid
 !logs/.gitkeep
 prompts/*.md
 !prompts/.gitkeep

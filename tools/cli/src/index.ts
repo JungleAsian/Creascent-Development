@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { program } from 'commander'
+import { setupCmd } from './commands/setup.js'
 import { backlogCmd } from './commands/backlog.js'
 import { migrateCmd } from './commands/migrate.js'
 import { rlsCmd } from './commands/rls.js'
@@ -20,7 +21,8 @@ import { acceptCmd } from './commands/accept.js'
 import { diagnoseCmd } from './commands/diagnose.js'
 import { agentsCmd } from './commands/agents.js'
 
-program.name('tool').description('Docmee DevTools CLI').version('0.1.0')
+program.name('tool').description('Docmee DevTools CLI').version('2.0.0')
+program.addCommand(setupCmd)
 program.addCommand(backlogCmd)
 program.addCommand(migrateCmd)
 program.addCommand(rlsCmd)

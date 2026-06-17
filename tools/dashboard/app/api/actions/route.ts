@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
@@ -28,6 +28,18 @@ function runTool(args: string[]) {
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   return { ok: result.status === 0, output }
+}
+
+function runToolDetached(args: string[]) {
+  const child = spawn(pnpmCommand(), ['tool', ...args], {
+    cwd: toolsRoot,
+    shell: false,
+    stdio: 'ignore',
+    detached: true,
+    windowsHide: true
+  })
+  child.unref()
+  return child.pid
 }
 
 export async function POST(request: Request) {
@@ -71,8 +83,10 @@ export async function POST(request: Request) {
 
   if (action === 'phase-output-copied') {
     const phase = String(form.get('phase') ?? 'P01')
-    const result = runTool(['phase', 'status', '--phase', phase, '--status', 'output-copied', '--notes', 'Output copied to repo from dashboard'])
-    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${phase} marked output copied` : `${phase} status update failed`)
+    const status = runTool(['phase', 'status', '--phase', phase, '--status', 'output-copied', '--notes', 'Output copied to repo from dashboard'])
+    if (!status.ok) return redirect(request, 'error', `${phase} status update failed`)
+    const pid = runToolDetached(['phase', 'continue', '--phase', phase])
+    return redirect(request, 'message', `${phase} marked output copied; completion worker started${pid ? ` (${pid})` : ''}`)
   }
 
   if (action === 'phase-poll') {
@@ -88,6 +102,17 @@ export async function POST(request: Request) {
     if (action === 'phase-build-dry-run') args.push('--dry-run')
     const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Phase build command completed' : 'Phase build command failed')
+  }
+
+  if (action === 'phase-build-watch') {
+    const from = String(form.get('from') ?? 'P01')
+    const pid = runToolDetached(['phase', 'watch', '--from', from])
+    return redirect(request, 'message', `Automated build watcher started from ${from}${pid ? ` (${pid})` : ''}`)
+  }
+
+  if (action === 'phase-build-control-init') {
+    const result = runTool(['phase', 'sync', '--init'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Build Control database ready' : 'Build Control setup failed')
   }
 
   if (action === 'backlog-done') {

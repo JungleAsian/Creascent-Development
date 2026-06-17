@@ -7,7 +7,7 @@ import { readJson, writeJson } from '../lib/json-store.js'
 import { checkGates } from './gates.js'
 import { loadConfig } from '../lib/config.js'
 import { log } from '../lib/logger.js'
-import { promptsDir } from '../lib/paths.js'
+import { envFile, promptsDir } from '../lib/paths.js'
 import { defaultPhaseState, phaseDefinitions, phaseFileName, type PhaseState } from '../lib/phases.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
@@ -66,6 +66,24 @@ function setLocalBuildStatus(phaseId: string, status: BuildControlStatus, notes?
   return record
 }
 
+async function setBuildStatus(phaseId: string, status: BuildControlStatus, notes?: string) {
+  const record = setLocalBuildStatus(phaseId, status, notes)
+  const remoteUpdated = await setNotionBuildStatus(phaseId, status, notes)
+  if (remoteUpdated) log('phase', `${phaseId} Notion Build Control status updated`)
+  return record
+}
+
+function updateEnvValue(name: string, value: string) {
+  const line = `${name}=${value}`
+  const content = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : ''
+  const pattern = new RegExp(`^${name}=.*$`, 'm')
+  const next = pattern.test(content)
+    ? content.replace(pattern, line)
+    : `${content.trimEnd()}\n${line}\n`
+  fs.writeFileSync(envFile, next)
+  process.env[name] = value
+}
+
 function git(args: string[]) {
   return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: true, stdio: 'pipe' })
 }
@@ -114,8 +132,7 @@ async function commitAndPushPhase(id: string, name: string) {
   return { ok: true, commitHash: hash.output, message: 'Committed and pushed' }
 }
 
-function promptReadiness(id: string) {
-  const file = promptPath(id)
+function fileReadiness(file: string) {
   if (!fs.existsSync(file)) return { ok: false, reason: 'prompt file is missing' }
   const text = fs.readFileSync(file, 'utf8')
   const placeholder = text.includes('Paste the full') || text.includes('No prompt content found') || text.includes('record P01 to Notion') || text.includes('record P02 to Notion')
@@ -224,7 +241,12 @@ async function assemblePhaseContext(phaseId: string, opts: { preview?: boolean }
   log('phase', `Context ready: ${context.length} chars from ${sources.length} sources -> ${file}`)
   if (sources.length > 0) log('phase', `Sources: ${sources.join('; ')}`)
   if (opts.preview) console.log(context)
-  return { file, context, sources }
+  return { file, context, sources, promptChars: prompt.trim().length }
+}
+
+function assembledReadiness(promptChars: number, file: string) {
+  if (promptChars < 1000) return { ok: false, reason: 'phase prompt is too short to be a build prompt' }
+  return fileReadiness(file)
 }
 
 async function readNotionBuildStatus(phaseId: string) {
@@ -237,6 +259,11 @@ async function readNotionBuildStatus(phaseId: string) {
   })
   const page = result.results[0] as { properties?: Record<string, { type?: string; select?: { name?: string } }> } | undefined
   return page?.properties?.Status?.select?.name ?? null
+}
+
+async function currentBuildStatus(phaseId: string) {
+  const notion = await readNotionBuildStatus(phaseId)
+  return notion ?? buildControl().find((record) => record.phaseId === phaseId)?.status ?? 'pending'
 }
 
 async function setNotionBuildStatus(phaseId: string, status: BuildControlStatus, notes?: string) {
@@ -265,10 +292,70 @@ async function setNotionBuildStatus(phaseId: string, status: BuildControlStatus,
   return true
 }
 
+async function initBuildControl() {
+  loadConfig()
+  if (!process.env.NOTION_API_KEY) {
+    log('phase', 'NOTION_API_KEY is missing; cannot create the Notion Build Control database.', 'error')
+    process.exitCode = 1
+    return
+  }
+  if (process.env.NOTION_BUILD_CONTROL_DB_ID) {
+    log('phase', `Build Control database already configured: ${process.env.NOTION_BUILD_CONTROL_DB_ID}`)
+    return
+  }
+  const parentPageId = process.env.NOTION_PROMPTS_DB_ID || process.env.NOTION_CLAUDE_MD_PAGE_ID
+  if (!parentPageId) {
+    log('phase', 'Set NOTION_PROMPTS_DB_ID or NOTION_CLAUDE_MD_PAGE_ID before initializing Build Control.', 'error')
+    process.exitCode = 1
+    return
+  }
+  const notion = new Client({ auth: process.env.NOTION_API_KEY })
+  const database = await notion.databases.create({
+    parent: { type: 'page_id', page_id: parentPageId },
+    title: [{ type: 'text', text: { content: 'Build Control' } }],
+    properties: {
+      'Phase Name': { title: {} },
+      'Phase ID': { rich_text: {} },
+      Builder: {
+        select: {
+          options: [
+            { name: 'codex', color: 'blue' },
+            { name: 'claude-code', color: 'purple' }
+          ]
+        }
+      },
+      Status: {
+        select: {
+          options: [
+            { name: 'pending', color: 'gray' },
+            { name: 'awaiting-output', color: 'yellow' },
+            { name: 'in-progress', color: 'blue' },
+            { name: 'output-copied', color: 'green' },
+            { name: 'gates-running', color: 'purple' },
+            { name: 'pushing', color: 'orange' },
+            { name: 'complete', color: 'green' },
+            { name: 'failed', color: 'red' }
+          ]
+        }
+      },
+      'Prompt Link': { url: {} },
+      'Started At': { date: {} },
+      'Completed At': { date: {} },
+      'Commit Hash': { rich_text: {} },
+      Notes: { rich_text: {} }
+    }
+  })
+  updateEnvValue('NOTION_BUILD_CONTROL_DB_ID', database.id)
+  for (const phase of phaseDefinitions) {
+    await setNotionBuildStatus(phase.id, 'pending', 'Initialized by DevTools')
+  }
+  log('phase', `Created Build Control database: ${database.id}`)
+}
+
 async function syncPrompts(opts: { phase?: string; dryRun?: boolean; force?: boolean; init?: boolean }) {
   loadConfig()
   if (opts.init) {
-    log('phase', 'Phase Prompts page already exists in Notion; set NOTION_PROMPTS_DB_ID to its page ID.')
+    await initBuildControl()
     return
   }
   const selected = phaseDefinitions.filter((phase) => {
@@ -305,10 +392,10 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
   if (!opts.noSync) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
-    const file = phase.builder === 'claude-code' ? contextPath(phase.id) : promptPath(phase.id)
-    const readiness = promptReadiness(phase.id)
+    const context = await assemblePhaseContext(phase.id)
+    const file = context.file
+    const readiness = assembledReadiness(context.promptChars, file)
     log('phase', `${opts.dryRun ? 'Plan' : 'Build'} ${phase.id} ${phase.name} (${phase.builder}) ${readiness.ok ? file : readiness.reason}`)
-    if (phase.builder === 'claude-code' || opts.dryRun) await assemblePhaseContext(phase.id)
     if (opts.dryRun) continue
     if (!readiness.ok) {
       log('phase', `Cannot build ${phase.id}; ${readiness.reason}. Add the full prompt in Notion, then run phase sync.`, 'error')
@@ -316,7 +403,7 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       return
     }
     if (phase.builder === 'codex') {
-      setLocalBuildStatus(phase.id, 'awaiting-output', 'Prompt opened for Codex Pro')
+      await setBuildStatus(phase.id, 'awaiting-output', 'Prompt opened for Codex Pro')
       if (process.platform === 'win32') {
         const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
         editor.unref()
@@ -324,18 +411,18 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       log('phase', `${phase.id} opened for Codex Pro. Paste into Codex, apply changes, then rerun or continue manually.`)
       return
     }
-    setLocalBuildStatus(phase.id, 'in-progress', 'Claude Code build started')
+    await setBuildStatus(phase.id, 'in-progress', 'Claude Code build started')
     const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
     if (claude.status !== 0) {
-      setLocalBuildStatus(phase.id, 'failed', 'Claude Code returned a failure')
+      await setBuildStatus(phase.id, 'failed', 'Claude Code returned a failure')
       await sendNotification(`Claude Code phase ${phase.id} failed. Fix and retry.`, 'critical')
       process.exitCode = 1
       return
     }
-    setLocalBuildStatus(phase.id, 'gates-running', 'Running quality gates')
+    await setBuildStatus(phase.id, 'gates-running', 'Running quality gates')
     const gates = checkGates()
     if (gates.some((gate) => !gate.ok)) {
-      setLocalBuildStatus(phase.id, 'failed', 'One or more gates failed')
+      await setBuildStatus(phase.id, 'failed', 'One or more gates failed')
       await sendNotification(`${phase.id} gates failed after build.`, 'critical')
       process.exitCode = 1
       return
@@ -345,7 +432,7 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
     if (current) {
       const published = await commitAndPushPhase(phase.id, phase.name)
       if (!published.ok) {
-        setLocalBuildStatus(phase.id, 'failed', `GitHub push failed: ${published.message}`)
+        await setBuildStatus(phase.id, 'failed', `GitHub push failed: ${published.message}`)
         log('phase', `Cannot complete ${phase.id}; GitHub push failed: ${published.message}`, 'error')
         process.exitCode = 1
         return
@@ -354,7 +441,7 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
       current.completedAt = new Date().toISOString()
       current.commitHash = published.commitHash
       current.committedAt = new Date().toISOString()
-      const control = setLocalBuildStatus(phase.id, 'complete', 'Phase committed and pushed')
+      const control = await setBuildStatus(phase.id, 'complete', 'Phase committed and pushed')
       control.commitHash = published.commitHash
       saveBuildControl(buildControl().map((record) => record.phaseId === phase.id ? control : record))
       save(state)
@@ -362,6 +449,119 @@ async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolea
     await notifyPhaseComplete(phase.id, phase.name)
     if (phase.id === 'P11') {
       await sendNotification('Submit to Meta for WhatsApp approval now. Do not wait for P19.', 'critical')
+    }
+  }
+  await closeDiscordClient()
+}
+
+async function completePhaseAfterOutput(phaseId: string) {
+  const definition = phaseDefinitions.find((item) => item.id === phaseId)
+  if (!definition) throw new Error(`Unknown phase ${phaseId}`)
+  await setBuildStatus(phaseId, 'gates-running', 'Running gates after output copied')
+  const results = checkGates()
+  if (results.some((result) => !result.ok)) {
+    await setBuildStatus(phaseId, 'failed', 'One or more gates failed')
+    await sendNotification(`${phaseId} gates failed after output copied.`, 'critical')
+    process.exitCode = 1
+    return false
+  }
+  await setBuildStatus(phaseId, 'pushing', 'Committing and pushing phase changes')
+  const published = await commitAndPushPhase(phaseId, definition.name)
+  if (!published.ok) {
+    await setBuildStatus(phaseId, 'failed', `GitHub push failed: ${published.message}`)
+    log('phase', `Cannot complete ${phaseId}; GitHub push failed: ${published.message}`, 'error')
+    process.exitCode = 1
+    return false
+  }
+  const state = phases()
+  const phase = state.find((item) => item.id === phaseId)
+  if (!phase) throw new Error(`Unknown phase ${phaseId}`)
+  phase.status = 'done'
+  phase.completedAt = new Date().toISOString()
+  phase.commitHash = published.commitHash
+  phase.committedAt = new Date().toISOString()
+  save(state)
+  const control = await setBuildStatus(phaseId, 'complete', 'Phase committed and pushed')
+  control.commitHash = published.commitHash
+  saveBuildControl(buildControl().map((record) => record.phaseId === phaseId ? control : record))
+  await notifyPhaseComplete(phaseId, definition.name)
+  if (phaseId === 'P11') await sendNotification('Submit to Meta for WhatsApp approval now. Do not wait for P19.', 'critical')
+  return true
+}
+
+async function runClaudePhase(phaseId: string) {
+  const definition = phaseDefinitions.find((item) => item.id === phaseId)
+  if (!definition) throw new Error(`Unknown phase ${phaseId}`)
+  const context = await assemblePhaseContext(phaseId)
+  const file = context.file
+  const readiness = assembledReadiness(context.promptChars, file)
+  if (!readiness.ok) {
+    log('phase', `Cannot build ${phaseId}; ${readiness.reason}.`, 'error')
+    process.exitCode = 1
+    return false
+  }
+  await setBuildStatus(phaseId, 'in-progress', 'Claude Code build started')
+  const claude = spawnSync('claude', [file], { shell: true, stdio: 'inherit' })
+  if (claude.status !== 0) {
+    await setBuildStatus(phaseId, 'failed', 'Claude Code returned a failure')
+    await sendNotification(`Claude Code phase ${phaseId} failed. Fix and retry.`, 'critical')
+    process.exitCode = 1
+    return false
+  }
+  return completePhaseAfterOutput(phaseId)
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?: string; noSync?: boolean; dryRun?: boolean }) {
+  if (!opts.noSync) await syncPrompts({ force: false, dryRun: opts.dryRun })
+  const intervalMs = Math.max(5, Number(opts.interval ?? 30)) * 1000
+  const deadline = Date.now() + Math.max(1, Number(opts.maxMinutes ?? 720)) * 60 * 1000
+  const plan = buildPlan(opts.from)
+  for (const phase of plan) {
+    if (phases().find((item) => item.id === phase.id)?.status === 'done') continue
+    const context = await assemblePhaseContext(phase.id)
+    const file = context.file
+    const readiness = assembledReadiness(context.promptChars, file)
+    log('phase', `${opts.dryRun ? 'Watch plan' : 'Watch'} ${phase.id} ${phase.name} (${phase.builder}) ${readiness.ok ? 'ready' : readiness.reason}`)
+    if (opts.dryRun) continue
+    if (!readiness.ok) {
+      await setBuildStatus(phase.id, 'failed', readiness.reason)
+      process.exitCode = 1
+      return
+    }
+    if (phase.builder === 'claude-code') {
+      const completed = await runClaudePhase(phase.id)
+      if (!completed) return
+      continue
+    }
+    await setBuildStatus(phase.id, 'awaiting-output', 'Prompt opened for Codex Pro; waiting for output-copied')
+    if (process.platform === 'win32') {
+      const editor = spawn('notepad.exe', [file], { detached: true, stdio: 'ignore' })
+      editor.unref()
+    }
+    await sendNotification(`${phase.id} is waiting for Codex Pro output. Click Output Copied to Repo when done.`, 'development')
+    while (Date.now() < deadline) {
+      const status = await currentBuildStatus(phase.id)
+      if (status === 'output-copied') {
+        const completed = await completePhaseAfterOutput(phase.id)
+        if (!completed) return
+        break
+      }
+      if (status === 'failed') {
+        log('phase', `${phase.id} is marked failed; watch stopped.`, 'error')
+        process.exitCode = 1
+        return
+      }
+      log('phase', `${phase.id} waiting for output-copied; current status is ${status}`)
+      await sleep(intervalMs)
+    }
+    if (Date.now() >= deadline) {
+      await setBuildStatus(phase.id, 'failed', 'Build watch timed out')
+      process.exitCode = 1
+      return
     }
   }
   await closeDiscordClient()
@@ -436,6 +636,30 @@ phaseCmd.command('build')
   .option('--no-sync')
   .action(runBuild)
 
+phaseCmd.command('watch')
+  .option('--from <phase>')
+  .option('--interval <seconds>', 'Polling interval in seconds', '30')
+  .option('--max-minutes <minutes>', 'Maximum watch time', '720')
+  .option('--no-sync')
+  .option('--dry-run')
+  .action(watchBuild)
+
+phaseCmd.command('continue')
+  .requiredOption('--phase <phase>')
+  .action(async (opts: { phase: string }) => {
+    const status = await currentBuildStatus(opts.phase)
+    if (status !== 'output-copied') {
+      log('phase', `${opts.phase} status is ${status}; waiting for output-copied`, 'warn')
+      process.exitCode = 1
+      return
+    }
+    try {
+      await completePhaseAfterOutput(opts.phase)
+    } finally {
+      await closeDiscordClient()
+    }
+  })
+
 phaseCmd.command('context')
   .option('--phase <phase>')
   .option('--preview')
@@ -469,8 +693,6 @@ phaseCmd.command('status')
   .requiredOption('--status <status>')
   .option('--notes <notes>')
   .action(async (opts: { phase: string; status: BuildControlStatus; notes?: string }) => {
-    setLocalBuildStatus(opts.phase, opts.status, opts.notes)
-    const remoteUpdated = await setNotionBuildStatus(opts.phase, opts.status, opts.notes)
+    await setBuildStatus(opts.phase, opts.status, opts.notes)
     log('phase', `${opts.phase} status set to ${opts.status}`)
-    if (remoteUpdated) log('phase', `${opts.phase} Notion Build Control status updated`)
   })

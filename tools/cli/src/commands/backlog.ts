@@ -54,6 +54,18 @@ const seedTitles = [
   ['P00', 'infrastructure', 'operations runbook']
 ] as const
 
+export function seedBacklog() {
+  const tasks = seedTitles.map(([phase, priority, title], index) => ({
+    id: index + 1,
+    phase,
+    priority,
+    title,
+    status: 'todo' as const
+  }))
+  saveTasks(tasks)
+  return tasks.length
+}
+
 function getTasks() {
   return readJson<Task[]>('backlog.json', [])
 }
@@ -67,15 +79,8 @@ export const backlogCmd = new Command('backlog')
   .command('init')
   .description('Seed 45 known gaps')
   .action(() => {
-    const tasks = seedTitles.map(([phase, priority, title], index) => ({
-      id: index + 1,
-      phase,
-      priority,
-      title,
-      status: 'todo' as const
-    }))
-    saveTasks(tasks)
-    log('backlog', `Seeded ${tasks.length} backlog tasks`)
+    const count = seedBacklog()
+    log('backlog', `Seeded ${count} backlog tasks`)
   })
   .parent!
 
