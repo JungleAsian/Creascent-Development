@@ -1,42 +1,99 @@
-export type ConversationStatus = 'open' | 'assigned' | 'resolved' | 'handoff'
+// ── Client boundary ────────────────────────────────────────────────────────────
+export { createDbClient, createServiceDbClient, withClinicContext, toJson } from './client.js'
+export type { Sql, TxSql } from './client.js'
 
-export interface Conversation {
-  id: string
-  clinicId: string
-  patientPhone: string
-  status: ConversationStatus
-  assignedTo: string | null
-  createdAt: string
-  updatedAt: string
-}
+// ── Types ──────────────────────────────────────────────────────────────────────
+export type {
+  ClinicPlan,
+  ClinicStatus,
+  Channel,
+  Clinic,
+  ClinicUser,
+  ClinicUserStatus,
+  Role,
+  Permission,
+  RolePermission,
+  UserRole,
+  AuditEvent,
+  Patient,
+  PatientStatus,
+  PatientContact,
+  Conversation,
+  ConversationStatus,
+  ConversationMessage,
+  ContentType,
+  MessageRole,
+  ConversationTag,
+  ConversationTagLink,
+  InternalNote,
+  ChannelAccount,
+  ChannelAccountStatus,
+  WebhookEvent,
+  MessageDeliveryEvent,
+  DeliveryStatus,
+  Service,
+  Provider,
+  ProviderAvailability,
+  Appointment,
+  AppointmentStatus,
+  AppointmentEvent,
+  AppointmentEventType,
+  IaProfile,
+  IaRule,
+  IaRuleType,
+  KnowledgeDocument,
+  DocumentType,
+  DocumentStatus,
+  KnowledgeChunk,
+  AiUsageEvent,
+  NotificationEvent,
+  NotificationType,
+  NotificationStatus,
+  ErrorReview,
+  ErrorReviewStatus,
+  FeatureFlag,
+  DevSeedRun,
+  SeedRunStatus,
+} from './types/index.js'
 
-export interface Message {
-  id: string
-  conversationId: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  audioUrl: string | null
-  transcription: string | null
-  createdAt: string
-}
+// ── Repository factories ───────────────────────────────────────────────────────
+export {
+  createClinicsRepository,
+  createPatientsRepository,
+  createConversationsRepository,
+  createMessagesRepository,
+  createAppointmentsRepository,
+  createKnowledgeRepository,
+  createAuditRepository,
+} from './repositories/index.js'
 
-export interface ConversationRepo {
-  findById(id: string): Promise<Conversation | null>
-  findByClinic(clinicId: string): Promise<Conversation[]>
-  countActive(clinicId: string): Promise<number>
-  create(data: Omit<Conversation, 'id' | 'createdAt' | 'updatedAt'>): Promise<Conversation>
-  update(id: string, data: Partial<Conversation>): Promise<Conversation>
-}
-
-export interface MessageRepo {
-  findByConversation(conversationId: string): Promise<Message[]>
-  create(data: Omit<Message, 'id' | 'createdAt'>): Promise<Message>
-}
-
-export function createConversationRepo(_client: unknown): ConversationRepo {
-  throw new Error('ConversationRepo: not implemented — requires DbClient (P02+)')
-}
-
-export function createMessageRepo(_client: unknown): MessageRepo {
-  throw new Error('MessageRepo: not implemented — requires DbClient (P02+)')
-}
+export type {
+  ClinicsRepository,
+  CreateClinicInput,
+  UpdateClinicInput,
+  PatientsRepository,
+  CreatePatientInput,
+  UpdatePatientInput,
+  CreatePatientContactInput,
+  ConversationsRepository,
+  CreateConversationInput,
+  UpdateConversationInput,
+  CreateTagInput,
+  CreateNoteInput,
+  MessagesRepository,
+  CreateMessageInput,
+  AppointmentsRepository,
+  CreateAppointmentInput,
+  UpdateAppointmentInput,
+  CreateProviderInput,
+  CreateServiceInput,
+  KnowledgeRepository,
+  CreateDocumentInput,
+  CreateChunkInput,
+  CreateIaProfileInput,
+  UpdateIaProfileInput,
+  CreateIaRuleInput,
+  AuditRepository,
+  CreateAuditEventInput,
+  AuditEventFilter,
+} from './repositories/index.js'
