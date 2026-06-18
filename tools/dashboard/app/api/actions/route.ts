@@ -8,6 +8,7 @@ const toolsRoot = path.resolve(process.cwd(), '..')
 const repoRoot = path.resolve(toolsRoot, '..')
 const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
 const logsRoot = path.join(toolsRoot, 'logs')
+const runtimeRoot = path.join(toolsRoot, 'runtime')
 const buildRunFile = path.join(logsRoot, 'build-run.json')
 const claudeUsageGuardFile = path.join(logsRoot, 'claude-usage-guard.json')
 const appLaunchFile = path.join(logsRoot, 'app-launch.json')
@@ -19,6 +20,8 @@ type PostDeploymentCheck = {
   message: string
   detail?: string
 }
+
+type CheckResponse = PostDeploymentCheck & { rawBody?: string }
 
 type PostDeploymentRun = {
   id: string
@@ -109,7 +112,7 @@ async function fetchCheck(
   url: string,
   options: RequestInit = {},
   expectedStatus = 200
-): Promise<PostDeploymentCheck> {
+): Promise<CheckResponse> {
   const started = Date.now()
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 6000)
@@ -121,7 +124,8 @@ async function fetchCheck(
       name,
       status: response.status === expectedStatus ? 'pass' : 'fail',
       message: response.status === expectedStatus ? `HTTP ${response.status} in ${elapsed}ms` : `Expected HTTP ${expectedStatus}, got HTTP ${response.status}`,
-      detail: body.slice(0, 500)
+      detail: body.slice(0, 500),
+      rawBody: body
     }
   } catch (error) {
     return {
@@ -143,22 +147,29 @@ async function runPostDeploymentChecks() {
     stdio: 'pipe',
     windowsHide: true
   })
-  checks.push({
+  const dockerCheck: PostDeploymentCheck = {
     name: 'Docker engine',
     status: docker.status === 0 ? 'pass' : 'fail',
     message: docker.status === 0 ? 'Docker Desktop engine is running.' : dockerOutput(`${docker.stdout ?? ''}${docker.stderr ?? ''}`) || 'Docker Desktop engine is not running.'
-  })
+  }
+  checks.push(dockerCheck)
 
+  const postgresReachable = await portOpen(5432)
   checks.push({
     name: 'Postgres port',
-    status: await portOpen(5432) ? 'pass' : 'fail',
-    message: await portOpen(5432) ? 'Postgres is reachable on localhost:5432.' : 'Postgres is not reachable on localhost:5432.'
+    status: postgresReachable ? 'pass' : 'fail',
+    message: postgresReachable ? 'Postgres is reachable on localhost:5432.' : 'Postgres is not reachable on localhost:5432.'
   })
+  const redisReachable = await portOpen(6379)
   checks.push({
     name: 'Redis port',
-    status: await portOpen(6379) ? 'pass' : 'fail',
-    message: await portOpen(6379) ? 'Redis is reachable on localhost:6379.' : 'Redis is not reachable on localhost:6379.'
+    status: redisReachable ? 'pass' : 'fail',
+    message: redisReachable ? 'Redis is reachable on localhost:6379.' : 'Redis is not reachable on localhost:6379.'
   })
+  if (dockerCheck.status === 'fail' && postgresReachable && redisReachable) {
+    dockerCheck.status = 'warning'
+    dockerCheck.message = 'Docker Desktop engine is unavailable, but portable Postgres and Redis are running for local deployment.'
+  }
   checks.push({
     name: 'Inbox UI',
     status: await portOpen(3000) ? 'pass' : 'fail',
@@ -182,7 +193,7 @@ async function runPostDeploymentChecks() {
   let clinicId = ''
   if (login.status === 'pass' && login.detail) {
     try {
-      const payload = JSON.parse(login.detail) as { accessToken?: string; user?: { clinicId?: string } }
+      const payload = JSON.parse(login.rawBody ?? login.detail) as { accessToken?: string; user?: { clinicId?: string } }
       accessToken = payload.accessToken ?? ''
       clinicId = payload.user?.clinicId ?? ''
       login.message = accessToken ? 'Demo login succeeded.' : 'Login response did not include an access token.'
@@ -245,13 +256,14 @@ function runToolDetached(args: string[]) {
   return child.pid
 }
 
-function runRepoDetached(args: string[]) {
+function runRepoDetached(args: string[], extraEnv: Record<string, string> = {}) {
   const child = spawn(pnpmCommand(), args, {
     cwd: repoRoot,
     shell: false,
     stdio: 'ignore',
     detached: true,
-    windowsHide: true
+    windowsHide: true,
+    env: { ...process.env, ...extraEnv }
   })
   child.unref()
   return child.pid
@@ -284,8 +296,107 @@ function portOpen(port: number, host = '127.0.0.1') {
   })
 }
 
+function localRuntimeEnv() {
+  return {
+    DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:5432/docmee',
+    REDIS_URL: 'redis://127.0.0.1:6379',
+    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET || 'local-dev-access-secret',
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'local-dev-refresh-secret',
+    LLM_STUB: process.env.LLM_STUB || 'true'
+  }
+}
+
+async function startPortableRuntime() {
+  const steps: Array<{ name: string; status: 'pass' | 'warning' | 'fail'; message: string }> = []
+  const pgBin = path.join(runtimeRoot, 'pgsql', 'bin')
+  const pgData = path.join(runtimeRoot, 'pgdata')
+  const pgCtl = path.join(pgBin, 'pg_ctl.exe')
+  const initDb = path.join(pgBin, 'initdb.exe')
+  const createdb = path.join(pgBin, 'createdb.exe')
+  const pgLog = path.join(logsRoot, 'portable-postgres.log')
+  const redisExe = path.join(runtimeRoot, 'redis', 'redis-server.exe')
+
+  if (!existsSync(pgCtl) || !existsSync(initDb) || !existsSync(redisExe)) {
+    return {
+      ok: false,
+      steps: [{ name: 'Portable runtime', status: 'fail' as const, message: 'Portable Postgres/Redis binaries are missing from tools/runtime.' }]
+    }
+  }
+
+  if (!existsSync(pgData)) {
+    const pwFile = path.join(runtimeRoot, 'pgpass.txt')
+    writeFileSync(pwFile, 'postgres')
+    const init = spawnSync(initDb, ['-D', pgData, '-U', 'postgres', `--pwfile=${pwFile}`, '-A', 'scram-sha-256', '--encoding=UTF8', '--locale=C'], {
+      cwd: runtimeRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      windowsHide: true
+    })
+    steps.push({
+      name: 'Portable Postgres data',
+      status: init.status === 0 ? 'pass' : 'fail',
+      message: init.status === 0 ? 'Portable Postgres data directory initialized.' : shortOutput(`${init.stdout ?? ''}${init.stderr ?? ''}`) || 'Portable Postgres initialization failed.'
+    })
+    if (init.status !== 0) return { ok: false, steps }
+  }
+
+  if (!(await portOpen(5432))) {
+    const started = spawnSync(pgCtl, ['-D', pgData, '-l', pgLog, '-o', '-p 5432', 'start'], {
+      cwd: pgBin,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      windowsHide: true
+    })
+    steps.push({
+      name: 'Portable Postgres',
+      status: started.status === 0 ? 'pass' : 'fail',
+      message: started.status === 0 ? 'Portable Postgres started on port 5432.' : shortOutput(`${started.stdout ?? ''}${started.stderr ?? ''}`) || 'Portable Postgres failed to start.'
+    })
+  } else {
+    steps.push({ name: 'Portable Postgres', status: 'pass', message: 'Postgres is already reachable on port 5432.' })
+  }
+
+  if (!(await portOpen(6379))) {
+    runDetachedProcess(redisExe, ['--port', '6379', '--bind', '127.0.0.1', '--save', ''], path.join(runtimeRoot, 'redis'))
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const redisReady = await portOpen(6379)
+    steps.push({
+      name: 'Portable Redis',
+      status: redisReady ? 'pass' : 'fail',
+      message: redisReady ? 'Portable Redis started on port 6379.' : 'Portable Redis failed to start.'
+    })
+  } else {
+    steps.push({ name: 'Portable Redis', status: 'pass', message: 'Redis is already reachable on port 6379.' })
+  }
+
+  if (await portOpen(5432)) {
+    spawnSync(createdb, ['-h', '127.0.0.1', '-p', '5432', '-U', 'postgres', 'docmee'], {
+      cwd: pgBin,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      windowsHide: true,
+      env: { ...process.env, PGPASSWORD: 'postgres' }
+    })
+  }
+
+  return { ok: !steps.some((step) => step.status === 'fail'), steps }
+}
+
+function runDetachedProcess(file: string, args: string[], cwd: string) {
+  const child = spawn(file, args, {
+    cwd,
+    shell: false,
+    stdio: 'ignore',
+    detached: true,
+    windowsHide: true
+  })
+  child.unref()
+  return child.pid
+}
+
 async function launchProductApp() {
   const steps: Array<{ name: string; status: 'pass' | 'warning' | 'fail'; message: string }> = []
+  let usingPortableRuntime = false
 
   if (process.platform === 'win32') {
     const docker = spawnSync('docker.exe', ['compose', 'up', '-d'], {
@@ -309,16 +420,28 @@ async function launchProductApp() {
   }
 
   if (steps.some((step) => step.status === 'fail')) {
-    const payload = {
-      createdAt: new Date().toISOString(),
-      url: 'http://127.0.0.1:3000',
-      healthUrl: 'http://127.0.0.1:3001/health',
-      demoLogin: { email: 'admin@demo-a.test', password: 'demo1234' },
-      pids: {},
-      steps
+    const portable = await startPortableRuntime()
+    usingPortableRuntime = portable.ok
+    steps.push(...portable.steps)
+    if (portable.ok) {
+      const dockerStep = steps.find((step) => step.name === 'Local database' && step.status === 'fail')
+      if (dockerStep) {
+        dockerStep.status = 'warning'
+        dockerStep.message = 'Docker Desktop is unavailable; using portable Postgres and Redis for local deployment.'
+      }
     }
-    writeFileSync(appLaunchFile, JSON.stringify(payload, null, 2))
-    return { ok: false, steps, message: steps.find((step) => step.status === 'fail')?.message ?? 'Local launch failed.' }
+    if (!portable.ok) {
+      const payload = {
+        createdAt: new Date().toISOString(),
+        url: 'http://127.0.0.1:3000',
+        healthUrl: 'http://127.0.0.1:3001/health',
+        demoLogin: { email: 'admin@demo-a.test', password: 'demo1234' },
+        pids: {},
+        steps
+      }
+      writeFileSync(appLaunchFile, JSON.stringify(payload, null, 2))
+      return { ok: false, steps, message: steps.find((step) => step.status === 'fail')?.message ?? 'Local launch failed.' }
+    }
   }
 
   const migrate = runRepo(['--filter', '@docmee/db', 'db:migrate'])
@@ -364,7 +487,7 @@ async function launchProductApp() {
       steps.push({ name: service.name, status: 'pass', message: `${service.name} is already running.` })
       continue
     }
-    pids[service.name] = runRepoDetached([...service.args])
+    pids[service.name] = runRepoDetached([...service.args], usingPortableRuntime ? localRuntimeEnv() : {})
     steps.push({ name: service.name, status: 'pass', message: `${service.name} started in the background.` })
   }
 

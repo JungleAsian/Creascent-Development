@@ -8,6 +8,7 @@ export default [
       'app/**',
       'dashboard/**',
       'node_modules/**',
+      'runtime/**',
       'dist/**',
       'cli/src/lib/install-hooks.cjs'
     ]

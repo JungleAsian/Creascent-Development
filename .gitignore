@@ -16,6 +16,8 @@ out/
 
 # Logs (keep tools/logs tracked by tools/.gitignore rules)
 *.log
+tools/logs/fix-docker-runtime.ps1
+tools/runtime/
 
 # OS
 .DS_Store
