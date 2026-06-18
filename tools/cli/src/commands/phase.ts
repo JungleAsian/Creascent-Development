@@ -87,7 +87,7 @@ function updateEnvValue(name: string, value: string) {
 }
 
 function git(args: string[]) {
-  return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: true, stdio: 'pipe' })
+  return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: false, stdio: 'pipe' })
 }
 
 function repoRoot() {
