@@ -287,6 +287,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             <p>2. Click Start Automated Build.</p>
             <p>3. DevTools sends each prepared context file to Claude Code automatically.</p>
             <p>4. After each phase, DevTools runs gates, commits, pushes, notifies Discord, and advances.</p>
+            <p>5. After all phases complete, launch locally for checking, then request VPS deployment.</p>
           </div>
           <div className="mt-5 rounded border border-slate-800 p-3">
             <div className="text-xs text-slate-500">Polling check</div>
@@ -324,6 +325,66 @@ export default function BuildControlPage({ searchParams }: PageProps) {
               </div>
             )
           })}
+          <div className={done === 19 ? 'rounded border border-emerald-800 bg-emerald-950/30 px-3 py-3' : 'rounded border border-slate-800 bg-slate-950/40 px-3 py-3'}>
+            <div className="flex flex-wrap items-center gap-3">
+              <BuildProgressGauge size="sm" showLabel={false} />
+              <strong className="w-16">Check</strong>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-200">Launch application for checking</div>
+                <div className="text-xs text-slate-500">
+                  {done === 19
+                    ? 'Starts the local app, opens the Inbox UI, and uses the demo login.'
+                    : 'Available after all 19 build phases are complete.'}
+                </div>
+              </div>
+              <form action="/api/actions" method="post">
+                <input type="hidden" name="action" value="app-launch" />
+                <button
+                  disabled={done !== 19}
+                  className="min-h-11 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  Launch Application
+                </button>
+              </form>
+            </div>
+            {done === 19 && (
+              <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
+                <div className="rounded border border-slate-800 bg-slate-950/40 p-2">App: http://127.0.0.1:3000</div>
+                <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Email: admin@demo-a.test</div>
+                <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Password: demo1234</div>
+              </div>
+            )}
+          </div>
+          <div className={done === 19 ? 'rounded border border-sky-800 bg-sky-950/30 px-3 py-3' : 'rounded border border-slate-800 bg-slate-950/40 px-3 py-3'}>
+            <div className="flex flex-wrap items-center gap-3">
+              <BuildProgressGauge size="sm" showLabel={false} />
+              <strong className="w-16">Deploy</strong>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-200">Final deployment to VPS</div>
+                <div className="text-xs text-slate-500">
+                  {done === 19
+                    ? 'Requests the VPS deployment plan and posts a critical Discord confirmation.'
+                    : 'Available after all 19 build phases are complete.'}
+                </div>
+              </div>
+              <form action="/api/actions" method="post">
+                <input type="hidden" name="action" value="deploy-vps" />
+                <button
+                  disabled={done !== 19}
+                  className="min-h-11 rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  Deploy to VPS
+                </button>
+              </form>
+            </div>
+            {done === 19 && (
+              <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
+                <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Target: VPS/domain from Settings</div>
+                <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Type: production deployment request</div>
+                <a href="/deploy" className="rounded border border-slate-800 bg-slate-950/40 p-2 text-sky-300 hover:bg-slate-900">Open Deploy page</a>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </section>

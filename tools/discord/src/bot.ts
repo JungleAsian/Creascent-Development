@@ -65,6 +65,14 @@ function translateLine(line: string) {
     'Claude limit refreshed; resuming build': 'El limite de Claude se actualizo; reanudando la compilacion',
     'Claude limit refreshed; resuming automatically': 'El limite de Claude se actualizo; DevTools reanudara automaticamente',
     'Claude session limit reached': 'Se alcanzo el limite de sesion de Claude',
+    'Docmee application is ready for local checking.': 'La aplicacion Docmee esta lista para revision local.',
+    'App URL: http://127.0.0.1:3000': 'URL de la aplicacion: http://127.0.0.1:3000',
+    'API Health: http://127.0.0.1:3001/health': 'Estado de la API: http://127.0.0.1:3001/health',
+    'Demo login email: admin@demo-a.test': 'Correo demo: admin@demo-a.test',
+    'Demo password: demo1234': 'Contrasena demo: demo1234',
+    'Post-deployment functionality check completed.': 'Comprobacion de funcionalidades post-despliegue completada.',
+    'Findings:': 'Hallazgos:',
+    'Note: This is local to the DevTools computer. Use VPS/domain after deployment for external access.': 'Nota: Esto es local en la computadora de DevTools. Usa el VPS/dominio despues del despliegue para acceso externo.',
     'DevTools Ready - start automated build from /build-control.': 'DevTools esta listo: inicia la compilacion automatizada desde /build-control.',
     'Submit to Meta for WhatsApp approval now. Do not wait for P19.': 'Envia ahora a Meta para la aprobacion de WhatsApp. No esperes hasta P19.'
   }
@@ -94,7 +102,12 @@ function translateLine(line: string) {
     [/^(P\d+) Claude limit refreshed\. DevTools is resuming automatically\.$/i, (_full, phase) => `${phase} el limite de Claude se actualizo. DevTools se esta reanudando automaticamente.`],
     [/^Claude usage is (.+)%, at or above the (.+)% pause guard$/i, (_full, usage, threshold) => `El uso de Claude esta en ${usage}%, igual o por encima del limite preventivo de ${threshold}%`],
     [/^Ready Check passed\. Claude Pro, Notion, GitHub, prompts, and Discord are usable\.$/i, () => 'La verificacion Ready Check aprobo. Claude Pro, Notion, GitHub, prompts y Discord estan disponibles.'],
-    [/^DevTools NOT Ready - (.+) critical issue\(s\)\.$/i, (_full, count) => `DevTools NO esta listo - ${count} problema(s) critico(s).`]
+    [/^DevTools NOT Ready - (.+) critical issue\(s\)\.$/i, (_full, count) => `DevTools NO esta listo - ${count} problema(s) critico(s).`],
+    [/^Result: (.+) passed, (.+) warnings, (.+) issues\.$/i, (_full, pass, warnings, issues) => `Resultado: ${pass} aprobados, ${warnings} advertencias, ${issues} problemas.`],
+    [/^Run time: (.+)$/i, (_full, time) => `Hora de ejecucion: ${time}`],
+    [/^- PASS: (.+) - (.+)$/i, (_full, name, message) => `- APROBADO: ${name} - ${translateLine(message)}`],
+    [/^- WARNING: (.+) - (.+)$/i, (_full, name, message) => `- ADVERTENCIA: ${name} - ${translateLine(message)}`],
+    [/^- ISSUE: (.+) - (.+)$/i, (_full, name, message) => `- PROBLEMA: ${name} - ${translateLine(message)}`]
   ]
 
   for (const [pattern, translate] of patterns) {

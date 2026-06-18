@@ -36,6 +36,7 @@ const spanishLabels: Record<string, string> = {
   'Webhook Console': 'Webhooks',
   'Seed Generator': 'Datos',
   'Discord Status': 'Discord',
+  'Post-Deployment Log': 'Post-Deploy',
   Deploy: 'Despliegue',
   Settings: 'Configuracion'
 }
@@ -56,6 +57,7 @@ const navIcons: Record<string, ReactNode> = {
   'Webhook Console': '/lineicons/webhooks.svg',
   'Seed Generator': '/lineicons/database-2.svg',
   'Discord Status': '/lineicons/discord-chat.svg',
+  'Post-Deployment Log': '/lineicons/file-multiple.svg',
   Deploy: '/lineicons/cloud-upload.svg',
   Settings: '/lineicons/gear-1.svg'
 }

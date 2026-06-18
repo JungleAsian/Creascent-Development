@@ -18,6 +18,7 @@ const nav = [
   ['Webhook Console', '/webhooks'],
   ['Seed Generator', '/seed'],
   ['Discord Status', '/discord'],
+  ['Post-Deployment Log', '/post-deployment'],
   ['Deploy', '/deploy'],
   ['Settings', '/settings']
 ]

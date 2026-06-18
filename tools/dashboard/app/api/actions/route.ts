@@ -1,13 +1,31 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import net from 'node:net'
 import { NextResponse } from 'next/server'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
+const repoRoot = path.resolve(toolsRoot, '..')
 const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
 const logsRoot = path.join(toolsRoot, 'logs')
 const buildRunFile = path.join(logsRoot, 'build-run.json')
 const claudeUsageGuardFile = path.join(logsRoot, 'claude-usage-guard.json')
+const appLaunchFile = path.join(logsRoot, 'app-launch.json')
+const postDeploymentFile = path.join(logsRoot, 'post-deployment.json')
+
+type PostDeploymentCheck = {
+  name: string
+  status: 'pass' | 'warning' | 'fail'
+  message: string
+  detail?: string
+}
+
+type PostDeploymentRun = {
+  id: string
+  createdAt: string
+  summary: { pass: number; warning: number; fail: number }
+  checks: PostDeploymentCheck[]
+}
 
 function pnpmCommand() {
   if (process.platform !== 'win32') return 'pnpm'
@@ -34,8 +52,163 @@ function runTool(args: string[]) {
   return { ok: result.status === 0, output }
 }
 
+function runRepo(args: string[]) {
+  const result = spawnSync(pnpmCommand(), args, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    shell: false,
+    stdio: 'pipe',
+    windowsHide: true
+  })
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+  return { ok: result.status === 0, output }
+}
+
 function shortOutput(output: string) {
   return output.replace(/\s+/g, ' ').trim().slice(0, 220)
+}
+
+function dockerOutput(output: string) {
+  const cleaned = output
+    .split(/\r?\n/)
+    .filter((line) => !line.includes('the attribute `version` is obsolete'))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return (cleaned || output.replace(/\s+/g, ' ').trim()).slice(0, 320)
+}
+
+function readJson<T>(file: string, fallback: T) {
+  if (!existsSync(file)) return fallback
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as T
+  } catch {
+    return fallback
+  }
+}
+
+function appendPostDeploymentRun(checks: PostDeploymentCheck[]) {
+  const runs = readJson<PostDeploymentRun[]>(postDeploymentFile, [])
+  const summary = {
+    pass: checks.filter((check) => check.status === 'pass').length,
+    warning: checks.filter((check) => check.status === 'warning').length,
+    fail: checks.filter((check) => check.status === 'fail').length
+  }
+  const run: PostDeploymentRun = {
+    id: `post-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    summary,
+    checks
+  }
+  writeFileSync(postDeploymentFile, JSON.stringify([run, ...runs].slice(0, 50), null, 2))
+  return run
+}
+
+async function fetchCheck(
+  name: string,
+  url: string,
+  options: RequestInit = {},
+  expectedStatus = 200
+): Promise<PostDeploymentCheck> {
+  const started = Date.now()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 6000)
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    const body = await response.text()
+    const elapsed = Date.now() - started
+    return {
+      name,
+      status: response.status === expectedStatus ? 'pass' : 'fail',
+      message: response.status === expectedStatus ? `HTTP ${response.status} in ${elapsed}ms` : `Expected HTTP ${expectedStatus}, got HTTP ${response.status}`,
+      detail: body.slice(0, 500)
+    }
+  } catch (error) {
+    return {
+      name,
+      status: 'fail',
+      message: error instanceof Error ? error.message : String(error)
+    }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function runPostDeploymentChecks() {
+  const checks: PostDeploymentCheck[] = []
+
+  const docker = spawnSync(process.platform === 'win32' ? 'docker.exe' : 'docker', ['info'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    windowsHide: true
+  })
+  checks.push({
+    name: 'Docker engine',
+    status: docker.status === 0 ? 'pass' : 'fail',
+    message: docker.status === 0 ? 'Docker Desktop engine is running.' : dockerOutput(`${docker.stdout ?? ''}${docker.stderr ?? ''}`) || 'Docker Desktop engine is not running.'
+  })
+
+  checks.push({
+    name: 'Postgres port',
+    status: await portOpen(5432) ? 'pass' : 'fail',
+    message: await portOpen(5432) ? 'Postgres is reachable on localhost:5432.' : 'Postgres is not reachable on localhost:5432.'
+  })
+  checks.push({
+    name: 'Redis port',
+    status: await portOpen(6379) ? 'pass' : 'fail',
+    message: await portOpen(6379) ? 'Redis is reachable on localhost:6379.' : 'Redis is not reachable on localhost:6379.'
+  })
+  checks.push({
+    name: 'Inbox UI',
+    status: await portOpen(3000) ? 'pass' : 'fail',
+    message: await portOpen(3000) ? 'Inbox UI is reachable on localhost:3000.' : 'Inbox UI is not reachable on localhost:3000.'
+  })
+  checks.push({
+    name: 'API port',
+    status: await portOpen(3001) ? 'pass' : 'fail',
+    message: await portOpen(3001) ? 'API is reachable on localhost:3001.' : 'API is not reachable on localhost:3001.'
+  })
+
+  checks.push(await fetchCheck('API health', 'http://127.0.0.1:3001/health'))
+  checks.push(await fetchCheck('Login page', 'http://127.0.0.1:3000/login'))
+
+  const login = await fetchCheck('Demo login', 'http://127.0.0.1:3001/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@demo-a.test', password: 'demo1234' })
+  })
+  let accessToken = ''
+  let clinicId = ''
+  if (login.status === 'pass' && login.detail) {
+    try {
+      const payload = JSON.parse(login.detail) as { accessToken?: string; user?: { clinicId?: string } }
+      accessToken = payload.accessToken ?? ''
+      clinicId = payload.user?.clinicId ?? ''
+      login.message = accessToken ? 'Demo login succeeded.' : 'Login response did not include an access token.'
+      login.status = accessToken ? 'pass' : 'fail'
+    } catch {
+      login.status = 'fail'
+      login.message = 'Login response was not valid JSON.'
+    }
+  }
+  checks.push(login)
+
+  if (accessToken) {
+    const authHeaders = { authorization: `Bearer ${accessToken}` }
+    checks.push(await fetchCheck('Conversations API', 'http://127.0.0.1:3001/conversations', { headers: authHeaders }))
+    if (clinicId) {
+      checks.push(await fetchCheck('Clinic team API', `http://127.0.0.1:3001/clinics/${clinicId}/team`, { headers: authHeaders }))
+      checks.push(await fetchCheck('Clinic patients API', `http://127.0.0.1:3001/clinics/${clinicId}/patients`, { headers: authHeaders }))
+      checks.push(await fetchCheck('Clinic metrics API', `http://127.0.0.1:3001/clinics/${clinicId}/metrics`, { headers: authHeaders }))
+    } else {
+      checks.push({ name: 'Clinic API checks', status: 'warning', message: 'Skipped because login did not return a clinic ID.' })
+    }
+  } else {
+    checks.push({ name: 'Authenticated API checks', status: 'warning', message: 'Skipped because demo login failed.' })
+  }
+
+  return appendPostDeploymentRun(checks)
 }
 
 function claudeSmokeBlocker(output: string) {
@@ -70,6 +243,168 @@ function runToolDetached(args: string[]) {
   })
   child.unref()
   return child.pid
+}
+
+function runRepoDetached(args: string[]) {
+  const child = spawn(pnpmCommand(), args, {
+    cwd: repoRoot,
+    shell: false,
+    stdio: 'ignore',
+    detached: true,
+    windowsHide: true
+  })
+  child.unref()
+  return child.pid
+}
+
+function openUrl(url: string) {
+  if (process.platform === 'win32') {
+    const child = spawn('explorer.exe', [url], { detached: true, stdio: 'ignore', windowsHide: true })
+    child.unref()
+    return
+  }
+  const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
+  const child = spawn(command, [url], { detached: true, stdio: 'ignore' })
+  child.unref()
+}
+
+function portOpen(port: number, host = '127.0.0.1') {
+  return new Promise<boolean>((resolve) => {
+    const socket = net.connect(port, host)
+    socket.setTimeout(900)
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('timeout', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once('error', () => resolve(false))
+  })
+}
+
+async function launchProductApp() {
+  const steps: Array<{ name: string; status: 'pass' | 'warning' | 'fail'; message: string }> = []
+
+  if (process.platform === 'win32') {
+    const docker = spawnSync('docker.exe', ['compose', 'up', '-d'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      windowsHide: true
+    })
+    steps.push({
+      name: 'Local database',
+      status: docker.status === 0 ? 'pass' : 'fail',
+      message: docker.status === 0 ? 'Postgres and Redis are running.' : dockerOutput(`${docker.stdout ?? ''}${docker.stderr ?? ''}`) || 'Docker was not available. Use Docker Desktop, then retry.'
+    })
+  } else {
+    const docker = spawnSync('docker', ['compose', 'up', '-d'], { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' })
+    steps.push({
+      name: 'Local database',
+      status: docker.status === 0 ? 'pass' : 'fail',
+      message: docker.status === 0 ? 'Postgres and Redis are running.' : dockerOutput(`${docker.stdout ?? ''}${docker.stderr ?? ''}`) || 'Docker was not available. Start Docker, then retry.'
+    })
+  }
+
+  if (steps.some((step) => step.status === 'fail')) {
+    const payload = {
+      createdAt: new Date().toISOString(),
+      url: 'http://127.0.0.1:3000',
+      healthUrl: 'http://127.0.0.1:3001/health',
+      demoLogin: { email: 'admin@demo-a.test', password: 'demo1234' },
+      pids: {},
+      steps
+    }
+    writeFileSync(appLaunchFile, JSON.stringify(payload, null, 2))
+    return { ok: false, steps, message: steps.find((step) => step.status === 'fail')?.message ?? 'Local launch failed.' }
+  }
+
+  const migrate = runRepo(['--filter', '@docmee/db', 'db:migrate'])
+  steps.push({
+    name: 'Database tables',
+    status: migrate.ok ? 'pass' : 'fail',
+    message: migrate.ok ? 'Database tables are ready.' : shortOutput(migrate.output) || 'Database migration failed.'
+  })
+
+  if (migrate.ok) {
+    const seed = runRepo(['--filter', '@docmee/db', 'db:seed'])
+    steps.push({
+      name: 'Demo login',
+      status: seed.ok ? 'pass' : 'warning',
+      message: seed.ok ? 'Demo clinic data is ready.' : shortOutput(seed.output) || 'Demo data may already exist.'
+    })
+  }
+
+  if (steps.some((step) => step.status === 'fail')) {
+    const payload = {
+      createdAt: new Date().toISOString(),
+      url: 'http://127.0.0.1:3000',
+      healthUrl: 'http://127.0.0.1:3001/health',
+      demoLogin: { email: 'admin@demo-a.test', password: 'demo1234' },
+      pids: {},
+      steps
+    }
+    writeFileSync(appLaunchFile, JSON.stringify(payload, null, 2))
+    return { ok: false, steps, message: steps.find((step) => step.status === 'fail')?.message ?? 'Local launch failed.' }
+  }
+
+  const services = [
+    { name: 'API', port: 3001, args: ['--filter', '@docmee/api', 'dev'] },
+    { name: 'Inbox UI', port: 3000, args: ['--filter', '@docmee/inboxos', 'dev'] },
+    { name: 'Workers', port: 0, args: ['--filter', '@docmee/workers', 'dev'] },
+    { name: 'License service', port: 3002, args: ['--filter', '@docmee/licensekit', 'dev'] }
+  ] as const
+
+  const pids: Record<string, number | undefined> = {}
+  for (const service of services) {
+    const alreadyRunning = service.port > 0 ? await portOpen(service.port) : false
+    if (alreadyRunning) {
+      steps.push({ name: service.name, status: 'pass', message: `${service.name} is already running.` })
+      continue
+    }
+    pids[service.name] = runRepoDetached([...service.args])
+    steps.push({ name: service.name, status: 'pass', message: `${service.name} started in the background.` })
+  }
+
+  const payload = {
+    createdAt: new Date().toISOString(),
+    url: 'http://127.0.0.1:3000',
+    healthUrl: 'http://127.0.0.1:3001/health',
+    demoLogin: { email: 'admin@demo-a.test', password: 'demo1234' },
+    pids,
+    steps
+  }
+  writeFileSync(appLaunchFile, JSON.stringify(payload, null, 2))
+  openUrl('http://127.0.0.1:3000')
+  return { ok: true, steps, message: 'Application launched.' }
+}
+
+function productAccessMessage() {
+  return [
+    'Docmee application is ready for local checking.',
+    'App URL: http://127.0.0.1:3000',
+    'API Health: http://127.0.0.1:3001/health',
+    'Demo login email: admin@demo-a.test',
+    'Demo password: demo1234',
+    'Note: This is local to the DevTools computer. Use VPS/domain after deployment for external access.'
+  ].join('\n')
+}
+
+function postDeploymentDiscordMessage(run: PostDeploymentRun) {
+  const lines = [
+    'Post-deployment functionality check completed.',
+    `Result: ${run.summary.pass} passed, ${run.summary.warning} warnings, ${run.summary.fail} issues.`,
+    `Run time: ${new Date(run.createdAt).toLocaleString()}`,
+    '',
+    'Findings:'
+  ]
+  for (const check of run.checks) {
+    const label = check.status === 'pass' ? 'PASS' : check.status === 'warning' ? 'WARNING' : 'ISSUE'
+    lines.push(`- ${label}: ${check.name} - ${check.message}`)
+  }
+  return lines.join('\n').slice(0, 1800)
 }
 
 function isProcessAlive(pid?: number) {
@@ -109,6 +444,31 @@ function stopProcessTree(pid?: number) {
 export async function POST(request: Request) {
   const form = await request.formData()
   const action = String(form.get('action') ?? '')
+
+  if (action === 'app-launch') {
+    const result = await launchProductApp()
+    if (result.ok) {
+      runTool(['discord', 'send', '--type', 'development', '--message', productAccessMessage()])
+    }
+    return redirect(
+      request,
+      result.ok ? 'message' : 'error',
+      result.ok ? 'Application launched. Access details were posted to Discord.' : `Application launch blocked: ${result.message}`
+    )
+  }
+
+  if (action === 'post-deploy-check') {
+    const run = await runPostDeploymentChecks()
+    runTool(['discord', 'send', '--type', run.summary.fail > 0 ? 'critical' : 'development', '--message', postDeploymentDiscordMessage(run)])
+    const failed = run.summary.fail > 0
+    return redirect(
+      request,
+      failed ? 'error' : 'message',
+      failed
+        ? `Post-deployment check found ${run.summary.fail} issue${run.summary.fail === 1 ? '' : 's'}.`
+        : 'Post-deployment check passed.'
+    )
+  }
 
   if (action === 'gates-run') {
     const result = runTool(['gates', 'check'])
