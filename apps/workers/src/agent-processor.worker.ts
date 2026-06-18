@@ -11,6 +11,7 @@ import {
   searchKb,
   isInsideBusinessHours,
   detectLanguage,
+  matchCustomFlow,
   type BusinessHours,
   type ClinicBotConfig,
   type Language,
@@ -25,6 +26,8 @@ import {
   createKnowledgeRepository,
   createErrorReviewsRepository,
   createConversationsRepository,
+  createCustomFlowsRepository,
+  type Sql,
   type Clinic,
   type Patient,
   type ChannelAccount,
@@ -120,6 +123,53 @@ function outsideHoursMessage(language: Language): string {
     : 'We are outside business hours. Please leave your name and reason for your inquiry and we will contact you tomorrow.'
 }
 
+/**
+ * P18 (Gap #34): if an enabled custom flow's trigger matches, run its scripted
+ * messages + optional terminal action and return true (caller skips the LLM).
+ */
+async function runMatchingCustomFlow(
+  sql: Sql,
+  data: AgentJobData,
+  patient: Patient | null,
+  sendReply: (text: string) => Promise<void>,
+): Promise<boolean> {
+  const flows = await createCustomFlowsRepository(sql).listEnabled(data.clinicId)
+  if (flows.length === 0) return false
+
+  const language = data.isNewPatient ? detectLanguage(data.message) : getPatientLanguage(patient)
+  const matched = matchCustomFlow(
+    data.message,
+    flows.map((f) => ({
+      id: f.id,
+      triggerKeywords: f.triggerKeywords,
+      messages: f.messages,
+      action: f.action,
+      language: f.language,
+    })),
+    language,
+  )
+  if (!matched) return false
+
+  for (const text of matched.messages) await sendReply(text)
+
+  if (data.conversationId) {
+    const conversations = createConversationsRepository(sql)
+    const existing = await conversations.findById(data.clinicId, data.conversationId)
+    if (existing) {
+      await conversations.update(data.clinicId, data.conversationId, {
+        metadata: { ...existing.metadata, lastIntent: 'custom_flow', customFlowId: matched.id },
+      })
+    }
+  }
+
+  if (matched.action === 'book') {
+    await schedulingQueue.add('schedule', { ...data, action: 'book' })
+  } else if (matched.action === 'handoff') {
+    await notificationQueue.add('notify', { ...data, reason: 'human_handoff' })
+  }
+  return true
+}
+
 export async function processAgentJob(job: Job): Promise<void> {
   const data = AgentJobSchema.parse(job.data)
   const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
@@ -142,6 +192,13 @@ export async function processAgentJob(job: Job): Promise<void> {
 
     // Channel-aware reply transport (WhatsApp account or Messenger Page token).
     const sendReply = resolveSendReply(data.channel, clinic, account, data.patientWaId)
+
+    // P18 (Gap #34): custom flows run BEFORE intent classification. A keyword match
+    // runs the clinic's scripted message sequence (and optional terminal action)
+    // and skips the LLM entirely.
+    if (sendReply && (await runMatchingCustomFlow(sql, data, patient, sendReply))) {
+      return
+    }
 
     const patientOptedOut = isPatientOptedOut(patient)
     const insideHours = isInsideBusinessHours(getBusinessHours(clinic), clinic.timezone)
@@ -202,6 +259,7 @@ export async function processAgentJob(job: Job): Promise<void> {
           break
         }
         const chunks = await knowledge.listEmbeddedChunks(data.clinicId)
+        let kbHit = false
 
         await runClinicBot(
           {
@@ -214,7 +272,11 @@ export async function processAgentJob(job: Job): Promise<void> {
             clinic: getClinicBotConfig(clinic),
           },
           {
-            searchKb: (query) => searchKb(query, chunks, embedText),
+            searchKb: async (query) => {
+              const matches = await searchKb(query, chunks, embedText)
+              if (matches.length > 0) kbHit = true
+              return matches
+            },
             complete: claudeComplete,
             sendText: (text) => sendReply(text),
             logError: (info) =>
@@ -228,6 +290,17 @@ export async function processAgentJob(job: Job): Promise<void> {
                 .then(() => {}),
           },
         )
+
+        // Record KB usage for the analytics KB-hit rate (Gap #39).
+        if (kbHit && data.conversationId) {
+          const conversations = createConversationsRepository(sql)
+          const existing = await conversations.findById(data.clinicId, data.conversationId)
+          if (existing) {
+            await conversations.update(data.clinicId, data.conversationId, {
+              metadata: { ...existing.metadata, kbHit: true },
+            })
+          }
+        }
         break
       }
     }

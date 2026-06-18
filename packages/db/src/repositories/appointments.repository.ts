@@ -13,7 +13,10 @@ import type {
 export interface CreateAppointmentInput {
   clinicId: string
   patientId: string
-  providerId: string
+  /** Legacy provider booking. Omit when booking under a doctor instead. */
+  providerId?: string
+  /** P18 (Gap #32) — book under a doctor. At least one of provider/doctor is required. */
+  doctorId?: string
   serviceId?: string
   conversationId?: string
   startTime: string
@@ -55,6 +58,10 @@ export interface AppointmentsRepository {
   listByClinic(clinicId: string, status?: AppointmentStatus): Promise<Appointment[]>
   listByPatient(clinicId: string, patientId: string): Promise<Appointment[]>
   listByProvider(clinicId: string, providerId: string, from: string, to: string): Promise<Appointment[]>
+  /** Completed appointments whose end_time falls in [from, to] — drives review requests (P18). */
+  listCompletedForReview(clinicId: string, from: string, to: string): Promise<Appointment[]>
+  /** Count appointments created in [from, to] — powers the automatic reports (P18). */
+  countCreatedBetween(clinicId: string, from: string, to: string): Promise<number>
   create(data: CreateAppointmentInput): Promise<Appointment>
   update(clinicId: string, id: string, data: UpdateAppointmentInput): Promise<Appointment>
   addEvent(clinicId: string, appointmentId: string, eventType: AppointmentEventType, actorId?: string): Promise<AppointmentEvent>
@@ -107,14 +114,36 @@ export function createAppointmentsRepository(sql: Sql): AppointmentsRepository {
       `
     },
 
+    async listCompletedForReview(clinicId, from, to) {
+      return sql<Appointment[]>`
+        SELECT * FROM appointments
+        WHERE clinic_id = ${clinicId}
+          AND status    = 'completed'
+          AND end_time >= ${from}::timestamptz
+          AND end_time <= ${to}::timestamptz
+        ORDER BY end_time
+      `
+    },
+
+    async countCreatedBetween(clinicId, from, to) {
+      const rows = await sql<[{ count: string }]>`
+        SELECT COUNT(*) AS count FROM appointments
+        WHERE clinic_id = ${clinicId}
+          AND created_at >= ${from}::timestamptz
+          AND created_at <= ${to}::timestamptz
+      `
+      return parseInt(rows[0]?.count ?? '0', 10)
+    },
+
     async create(data) {
       const rows = await sql<Appointment[]>`
         INSERT INTO appointments
-          (clinic_id, patient_id, provider_id, service_id, conversation_id, start_time, end_time, notes, metadata)
+          (clinic_id, patient_id, provider_id, doctor_id, service_id, conversation_id, start_time, end_time, notes, metadata)
         VALUES (
           ${data.clinicId},
           ${data.patientId},
-          ${data.providerId},
+          ${data.providerId     ?? null},
+          ${data.doctorId       ?? null},
           ${data.serviceId      ?? null},
           ${data.conversationId ?? null},
           ${data.startTime}::timestamptz,

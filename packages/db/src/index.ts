@@ -40,6 +40,7 @@ export type {
   DeliveryStatus,
   Service,
   Provider,
+  Doctor,
   ProviderAvailability,
   Appointment,
   AppointmentStatus,
@@ -61,6 +62,11 @@ export type {
   FeatureFlag,
   DevSeedRun,
   SeedRunStatus,
+  CustomFlow,
+  CustomFlowAction,
+  CustomFlowLanguage,
+  FollowUp,
+  FollowUpStatus,
 } from './types/index.js'
 
 // ── Repository factories ───────────────────────────────────────────────────────
@@ -71,6 +77,9 @@ export {
   createConversationsRepository,
   createMessagesRepository,
   createAppointmentsRepository,
+  createDoctorsRepository,
+  createCustomFlowsRepository,
+  createFollowUpsRepository,
   createKnowledgeRepository,
   createErrorReviewsRepository,
   createAiUsageRepository,
@@ -80,6 +89,7 @@ export {
   createQuickReplyTemplatesRepository,
   createMessageTemplatesRepository,
   createMetricsRepository,
+  createAnalyticsRepository,
 } from './repositories/index.js'
 
 export type {
@@ -104,6 +114,14 @@ export type {
   UpdateAppointmentInput,
   CreateProviderInput,
   CreateServiceInput,
+  DoctorsRepository,
+  CreateDoctorInput,
+  UpdateDoctorInput,
+  CustomFlowsRepository,
+  CreateCustomFlowInput,
+  UpdateCustomFlowInput,
+  FollowUpsRepository,
+  CreateFollowUpInput,
   KnowledgeRepository,
   CreateDocumentInput,
   CreateChunkInput,
@@ -128,4 +146,7 @@ export type {
   CreateMessageTemplateInput,
   MetricsRepository,
   MetricsDashboard,
+  AnalyticsRepository,
+  AdvancedAnalytics,
+  ConversationExportRow,
 } from './repositories/index.js'

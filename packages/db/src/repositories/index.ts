@@ -4,6 +4,9 @@ export { createPatientsRepository }      from './patients.repository.js'
 export { createConversationsRepository } from './conversations.repository.js'
 export { createMessagesRepository }      from './messages.repository.js'
 export { createAppointmentsRepository }  from './appointments.repository.js'
+export { createDoctorsRepository }       from './doctors.repository.js'
+export { createCustomFlowsRepository }   from './custom-flows.repository.js'
+export { createFollowUpsRepository }     from './follow-ups.repository.js'
 export { createKnowledgeRepository }     from './knowledge.repository.js'
 export { createErrorReviewsRepository }  from './error-reviews.repository.js'
 export { createAiUsageRepository }       from './ai-usage.repository.js'
@@ -13,6 +16,7 @@ export { createAuditRepository }         from './audit.repository.js'
 export { createQuickReplyTemplatesRepository } from './quick-reply-templates.repository.js'
 export { createMessageTemplatesRepository }    from './message-templates.repository.js'
 export { createMetricsRepository }             from './metrics.repository.js'
+export { createAnalyticsRepository }           from './analytics.repository.js'
 
 export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput }                          from './clinics.repository.js'
 export type { ChannelAccountsRepository, CreateChannelAccountInput }                             from './channel-accounts.repository.js'
@@ -23,6 +27,9 @@ export type { ConversationsRepository, CreateConversationInput, UpdateConversati
 export type { MessagesRepository, CreateMessageInput }                                            from './messages.repository.js'
 export type { AppointmentsRepository, CreateAppointmentInput, UpdateAppointmentInput,
               CreateProviderInput, CreateServiceInput }                                            from './appointments.repository.js'
+export type { DoctorsRepository, CreateDoctorInput, UpdateDoctorInput }                           from './doctors.repository.js'
+export type { CustomFlowsRepository, CreateCustomFlowInput, UpdateCustomFlowInput }               from './custom-flows.repository.js'
+export type { FollowUpsRepository, CreateFollowUpInput }                                          from './follow-ups.repository.js'
 export type { KnowledgeRepository, CreateDocumentInput, CreateChunkInput,
               CreateIaProfileInput, UpdateIaProfileInput, CreateIaRuleInput,
               EmbeddedChunkRow }                                                                  from './knowledge.repository.js'
@@ -34,3 +41,4 @@ export type { AuditRepository, CreateAuditEventInput, AuditEventFilter }        
 export type { QuickReplyTemplatesRepository, CreateQuickReplyTemplateInput }                     from './quick-reply-templates.repository.js'
 export type { MessageTemplatesRepository, CreateMessageTemplateInput }                           from './message-templates.repository.js'
 export type { MetricsRepository, MetricsDashboard }                                              from './metrics.repository.js'
+export type { AnalyticsRepository, AdvancedAnalytics, ConversationExportRow }                    from './analytics.repository.js'

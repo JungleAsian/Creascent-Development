@@ -40,6 +40,7 @@ export type {
   // Appointments
   Service,
   Provider,
+  Doctor,
   ProviderAvailability,
   Appointment,
   AppointmentStatus,
@@ -63,4 +64,11 @@ export type {
   FeatureFlag,
   DevSeedRun,
   SeedRunStatus,
+  // Custom flows (P18)
+  CustomFlow,
+  CustomFlowAction,
+  CustomFlowLanguage,
+  // Follow-ups (P18)
+  FollowUp,
+  FollowUpStatus,
 } from './database.js'

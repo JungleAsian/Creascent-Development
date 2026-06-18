@@ -2,9 +2,10 @@
 
 // IA Studio — Knowledge Base management. Pick a clinic, then list / add / delete
 // its documents and trigger a re-index (re-embed) of the whole clinic KB.
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/shared/api/client'
+import { api, API_BASE } from '@/shared/api/client'
+import { authSnapshot } from '@/shared/store/auth'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { useI18n } from '@/shared/hooks/useI18n'
 import type { DocumentStatus, DocumentType, KnowledgeDocument } from '@/shared/types'
@@ -69,6 +70,8 @@ export default function KbPage() {
             {reembedDone && <span className="text-xs text-emerald-600">{t('studio.kb.reembedQueued')}</span>}
           </div>
 
+          <UploadDocForm clinicId={clinicId} onUploaded={() => qc.invalidateQueries({ queryKey: key })} />
+
           <NewDocForm clinicId={clinicId} />
 
           {query.isLoading ? (
@@ -119,6 +122,65 @@ export default function KbPage() {
             </ul>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+// Gap #33 — document training. Uploads a file (PDF/Word/text/FAQ) which the API
+// extracts, chunks and embeds. Uses a raw FormData fetch (the JSON api client can't
+// carry multipart) with the bearer token from the auth store.
+function UploadDocForm({ clinicId, onUploaded }: { clinicId: string; onUploaded: () => void }) {
+  const { t } = useI18n()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setMessage(null)
+    setError(false)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const { accessToken } = authSnapshot()
+      const res = await fetch(`${API_BASE}/clinics/${clinicId}/kb/upload`, {
+        method: 'POST',
+        headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+        body: form,
+      })
+      if (!res.ok) throw new Error(String(res.status))
+      const data = (await res.json()) as { chunks: number }
+      setMessage(t('studio.kb.uploadSuccess', { n: data.chunks }))
+      onUploaded()
+    } catch {
+      setError(true)
+      setMessage(t('studio.kb.uploadError'))
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+      <label className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
+        {busy ? t('common.loading') : t('studio.kb.upload')}
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pdf,.docx,.txt,.md,.text,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={onChange}
+          disabled={busy}
+          className="hidden"
+        />
+      </label>
+      <span className="text-xs text-gray-400">{t('studio.kb.uploadHint')}</span>
+      {message && (
+        <span className={`text-xs ${error ? 'text-red-600' : 'text-emerald-600'}`}>{message}</span>
       )}
     </div>
   )

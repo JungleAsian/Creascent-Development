@@ -1,6 +1,12 @@
 import 'dotenv/config'
 
-import { createWorker, licenseHeartbeatQueue } from '@docmee/queue'
+import {
+  createWorker,
+  licenseHeartbeatQueue,
+  reportsQueue,
+  sheetsSyncQueue,
+  reviewRequestQueue,
+} from '@docmee/queue'
 import { RATE_LIMITS } from '@docmee/config'
 import { processConversationJob } from './conversation-processor.worker.js'
 import { processTranscriptionJob } from './transcription-processor.worker.js'
@@ -10,6 +16,9 @@ import { processNotificationJob } from './notification-processor.worker.js'
 import { processLicenseHeartbeatJob } from './license-heartbeat.worker.js'
 import { processKbEmbedJob } from './kb-embed.worker.js'
 import { processFollowUpJob } from './follow-up.worker.js'
+import { processReportsJob } from './reports.worker.js'
+import { processSheetsSyncJob } from './sheets-sync.worker.js'
+import { processReviewRequestJob } from './review-request.worker.js'
 import { runTimeoutChecks } from './timeout-monitor.js'
 
 export const conversationWorker = createWorker(
@@ -44,6 +53,10 @@ export const licenseHeartbeatWorker = createWorker(
 )
 export const kbEmbedWorker = createWorker('kb-embed', processKbEmbedJob, 3)
 export const followUpWorker = createWorker('follow-up', processFollowUpJob, 5)
+// P18 — Phase 3 scheduled workers (reports, Sheets export, review requests).
+export const reportsWorker = createWorker('reports', processReportsJob, 1)
+export const sheetsSyncWorker = createWorker('sheets-sync', processSheetsSyncJob, 1)
+export const reviewRequestWorker = createWorker('review-request', processReviewRequestJob, 1)
 
 // Timeout monitor: detects secretary inactivity + stale conversations every 5 min.
 const TIMEOUT_CHECK_INTERVAL_MS = 5 * 60 * 1000
@@ -64,4 +77,15 @@ export const licenseHeartbeatScheduler = setInterval(() => {
 }, LICENSE_HEARTBEAT_INTERVAL_MS)
 if (typeof licenseHeartbeatScheduler.unref === 'function') licenseHeartbeatScheduler.unref()
 
-console.log('[workers] all 8 workers registered and listening')
+// P18 — Phase 3 schedulers. An hourly tick drives the reports, Sheets sync and
+// review-request workers; each worker gates on the clinic's local time / state so
+// the hourly cadence yields exactly the intended per-clinic schedule.
+const HOURLY_MS = 60 * 60 * 1000
+export const phase3Scheduler = setInterval(() => {
+  void reportsQueue.add('tick', {}).catch((err) => console.error('[reports] enqueue failed:', err))
+  void sheetsSyncQueue.add('tick', {}).catch((err) => console.error('[sheets-sync] enqueue failed:', err))
+  void reviewRequestQueue.add('tick', {}).catch((err) => console.error('[review-request] enqueue failed:', err))
+}, HOURLY_MS)
+if (typeof phase3Scheduler.unref === 'function') phase3Scheduler.unref()
+
+console.log('[workers] all 11 workers registered and listening')

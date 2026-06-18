@@ -38,11 +38,13 @@ import {
   createConversationsRepository,
   createAppointmentsRepository,
   createChannelAccountsRepository,
+  createDoctorsRepository,
   type Clinic,
   type Patient,
   type ChannelAccount,
   type Appointment,
   type Provider,
+  type Doctor,
 } from '@docmee/db'
 
 const SchedulingJobSchema = z.object({
@@ -80,6 +82,33 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
   return accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
 }
 
+// P18 (Gap #32): a doctor's own Google Calendar, decrypted from their row.
+// Returns null when the doctor has no calendar connected (→ fall back to clinic).
+function getDoctorCalendarConfig(doctor: Doctor): CalendarConfig | null {
+  const acc = doctor.googleCalendarAccessTokenEncrypted
+  const ref = doctor.googleCalendarRefreshTokenEncrypted
+  if (!acc || !ref) return null
+  try {
+    return {
+      accessToken: decryptValue(acc),
+      refreshToken: decryptValue(ref),
+      calendarId: doctor.googleCalendarId ?? 'primary',
+    }
+  } catch {
+    return null
+  }
+}
+
+// Placeholder bound to the booking flow on early turns (doctor not yet chosen) when
+// no clinic calendar exists. The flow never touches the calendar before a doctor is
+// selected, so these throws are unreachable in practice — they guard against misuse.
+const unconfiguredCalendar: CalendarOps = {
+  listSlots: () => Promise.reject(new Error('calendar not configured')),
+  createEvent: () => Promise.reject(new Error('calendar not configured')),
+  updateEvent: () => Promise.reject(new Error('calendar not configured')),
+  deleteEvent: () => Promise.reject(new Error('calendar not configured')),
+}
+
 function getCalendarConfig(clinic: Clinic): CalendarConfig | null {
   const gc = (clinic.settings as { googleCalendar?: unknown }).googleCalendar
   if (!gc || typeof gc !== 'object') return null
@@ -105,7 +134,7 @@ function toUpcoming(appt: Appointment, providers: Provider[]): UpcomingAppointme
   const provider = providers.find((p) => p.id === appt.providerId)
   return {
     id: appt.id,
-    providerId: appt.providerId,
+    providerId: appt.providerId ?? appt.doctorId ?? '',
     providerName: provider?.fullName ?? 'el doctor',
     date: appt.startTime.slice(0, 10),
     time: appt.startTime.slice(11, 16),
@@ -230,25 +259,48 @@ export async function processSchedulingJob(job: Job): Promise<void> {
       }
 
       case 'book': {
-        if (!calendar) {
+        const stored = loadStoredFlow(metadata, 'book')
+        const state = stored?.action === 'book' ? stored.state : initialBookingState()
+
+        // P18 (Gap #32): prefer the clinic's doctors as bookable resources. When a
+        // doctor is chosen (state.providerId holds the doctor id), use THAT doctor's
+        // own calendar, falling back to the clinic calendar.
+        const doctors = await createDoctorsRepository(sql).listByClinic(data.clinicId)
+        const doctorMode = doctors.length > 0
+
+        let bookingCalendar: CalendarOps | null = calendar
+        if (doctorMode && state.providerId) {
+          const doctor = doctors.find((d) => d.id === state.providerId)
+          const docCal = doctor ? getDoctorCalendarConfig(doctor) : null
+          bookingCalendar = docCal
+            ? createGoogleCalendarOps({ ...docCal, timezone: clinic.timezone })
+            : calendar
+        }
+
+        // A calendar is required once we have a selection (or in legacy provider mode);
+        // before a doctor is picked it isn't touched, so we can proceed without one.
+        if (!bookingCalendar && (state.providerId || !doctorMode)) {
           await reply(calendarUnavailable(language))
           await notificationQueue.add('notify', { ...data, reason: 'human_handoff' })
           break
         }
-        const stored = loadStoredFlow(metadata, 'book')
-        const state = stored?.action === 'book' ? stored.state : initialBookingState()
+
+        const resourceList: ProviderRef[] = doctorMode
+          ? doctors.map((d) => ({ id: d.id, fullName: d.name }))
+          : providers.map(toProviderRef)
+
         const result = await advanceBookingFlow(state, data.message, {
           language,
           clinic: clinicInfo,
-          providers: providers.map(toProviderRef),
+          providers: resourceList,
           patientName: patient?.fullName ?? null,
         }, {
-          calendar,
+          calendar: bookingCalendar ?? unconfiguredCalendar,
           saveAppointment: async ({ providerId, startTime, endTime, reason, googleEventId }) => {
             const created = await appointments.create({
               clinicId: data.clinicId,
               patientId,
-              providerId,
+              ...(doctorMode ? { doctorId: providerId } : { providerId }),
               conversationId: data.conversationId,
               startTime,
               endTime,

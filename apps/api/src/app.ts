@@ -19,6 +19,11 @@ import licenseRoute from './routes/license.js'
 import quickRepliesRoute from './routes/quick-replies.js'
 import metricsRoute from './routes/metrics.js'
 import templatesRoute from './routes/templates.js'
+import doctorsRoute from './routes/doctors.js'
+import customFlowsRoute from './routes/custom-flows.js'
+import kbUploadRoute from './routes/kb-upload.js'
+import analyticsRoute from './routes/analytics.js'
+import reviewsRoute from './routes/reviews.js'
 
 export async function buildApp() {
   const env = parseEnv()
@@ -49,6 +54,13 @@ export async function buildApp() {
   await app.register(quickRepliesRoute)
   await app.register(metricsRoute)
   await app.register(templatesRoute)
+  // P18 — Phase 3 routes. doctors/custom-flows/kb-upload/analytics declare their own
+  // /clinics/:id/… paths; reviews exposes the public /r/:id review redirector.
+  await app.register(doctorsRoute)
+  await app.register(customFlowsRoute)
+  await app.register(kbUploadRoute)
+  await app.register(analyticsRoute)
+  await app.register(reviewsRoute)
   await app.register(notificationsRoute, { prefix: '/notifications' })
   await app.register(calendarRoute)
   await app.register(userRoute, { prefix: '/user' })

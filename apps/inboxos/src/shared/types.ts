@@ -244,3 +244,46 @@ export interface ClinicUsageRow {
   totalTokens: number
   eventCount: number
 }
+
+// ── P18 — Phase 3 ────────────────────────────────────────────────────────────────
+
+/** A doctor (redacted — calendar tokens are never returned to the panel). */
+export interface Doctor {
+  id: string
+  clinicId: string
+  name: string
+  specialty: string | null
+  googleCalendarId: string | null
+  availableDays: Record<string, unknown>
+  isActive: boolean
+  calendarConnected: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CustomFlowAction = 'book' | 'handoff' | 'end'
+export type CustomFlowLanguage = 'es' | 'en' | 'both'
+
+export interface CustomFlow {
+  id: string
+  clinicId: string
+  name: string
+  triggerKeywords: string[]
+  messages: string[]
+  action: CustomFlowAction | null
+  language: CustomFlowLanguage
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdvancedAnalytics {
+  totalConversations: number
+  resolutionRate: number
+  avgConversationLength: number
+  handoffRate: number
+  kbHitRate: number
+  newPatients: number
+  returningPatients: number
+  peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
+}

@@ -301,6 +301,23 @@ export interface Provider {
   updatedAt: string
 }
 
+/** P18 (Gap #32) — a doctor with their own Google Calendar and weekly availability. */
+export interface Doctor {
+  id: string
+  clinicId: string
+  name: string
+  specialty: string | null
+  googleCalendarId: string | null
+  /** Encrypted OAuth tokens for this doctor's calendar (null → use clinic calendar). */
+  googleCalendarAccessTokenEncrypted: string | null
+  googleCalendarRefreshTokenEncrypted: string | null
+  /** Weekly availability, e.g. `{ "mon": ["09:00","17:00"], "tue": [...] }`. */
+  availableDays: Record<string, unknown>
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface ProviderAvailability {
   id: string
   providerId: string
@@ -317,7 +334,10 @@ export interface Appointment {
   id: string
   clinicId: string
   patientId: string
-  providerId: string
+  /** Legacy provider booking. Null when booked under a P18 doctor instead. */
+  providerId: string | null
+  /** P18 (Gap #32) — the doctor this appointment is booked with. */
+  doctorId: string | null
   serviceId: string | null
   conversationId: string | null
   googleEventId: string | null
@@ -466,4 +486,42 @@ export interface DevSeedRun {
   ranAt: string
   status: SeedRunStatus
   metadata: Record<string, unknown>
+}
+
+// ── Custom flows (P18 — Gap #34) ────────────────────────────────────────────────
+
+export type CustomFlowAction   = 'book' | 'handoff' | 'end'
+export type CustomFlowLanguage = 'es' | 'en' | 'both'
+
+/** A keyword-triggered scripted conversation flow that bypasses intent/LLM. */
+export interface CustomFlow {
+  id: string
+  clinicId: string
+  name: string
+  triggerKeywords: string[]
+  messages: string[]
+  action: CustomFlowAction | null
+  language: CustomFlowLanguage
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// ── Follow-ups (P18 — Gap #37) ──────────────────────────────────────────────────
+
+export type FollowUpStatus = 'pending' | 'sent' | 'clicked' | 'skipped'
+
+/** Tracks an automated follow-up (e.g. a post-appointment review request). */
+export interface FollowUp {
+  id: string
+  clinicId: string
+  patientId: string
+  appointmentId: string | null
+  type: string
+  status: FollowUpStatus
+  reviewSentAt: string | null
+  reviewClickedAt: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
 }

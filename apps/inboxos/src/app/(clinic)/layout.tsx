@@ -18,6 +18,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
     const base: NavLink[] = [{ href: '/inbox', label: t('nav.inbox') }]
     if (user?.role === 'clinic_admin' || user?.role === 'ia_studio_admin') {
       base.push({ href: '/metrics', label: t('nav.metrics') })
+      base.push({ href: '/analytics', label: t('nav.analytics') })
     }
     if (user?.role === 'ia_studio_admin') base.push({ href: '/studio', label: t('nav.studio') })
     return base

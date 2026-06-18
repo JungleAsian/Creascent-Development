@@ -27,3 +27,23 @@ export {
   type ClinicBotResult,
   type BotErrorInfo,
 } from './clinic-bot.js'
+
+export {
+  trainDocument,
+  extractText,
+  parseFaqPairs,
+  looksLikeFaq,
+  chunkText,
+  detectFormat,
+  type DocumentFormat,
+  type TrainedChunk,
+  type TrainDocumentInput,
+  type QAPair,
+} from './document-trainer.js'
+
+export {
+  matchCustomFlow,
+  type CustomFlowDef,
+  type CustomFlowAction,
+  type CustomFlowLanguage,
+} from './custom-flows.js'
