@@ -1,0 +1,100 @@
+// API client — a thin fetch wrapper that injects the bearer token, transparently
+// refreshes a single time on 401, and redirects to /login when refresh fails.
+import { authSnapshot, useAuthStore } from '../store/auth'
+
+const API_BASE =
+  process.env['NEXT_PUBLIC_API_URL']?.replace(/\/$/, '') ?? 'http://localhost:3001'
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+function redirectToLogin() {
+  useAuthStore.getState().logout()
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
+
+// Single in-flight refresh shared by concurrent 401s, so we never stampede /auth/refresh.
+let refreshing: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  const { refreshToken } = authSnapshot()
+  if (!refreshToken) return null
+  if (!refreshing) {
+    refreshing = fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return null
+        const data = (await res.json()) as { accessToken?: string }
+        if (!data.accessToken) return null
+        useAuthStore.getState().setAccessToken(data.accessToken)
+        return data.accessToken
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshing = null
+      })
+  }
+  return refreshing
+}
+
+export interface ApiOptions {
+  method?: string
+  body?: unknown
+  /** Skip the bearer header (used by the login call). */
+  anonymous?: boolean
+}
+
+async function request<T>(path: string, opts: ApiOptions = {}, isRetry = false): Promise<T> {
+  const { accessToken } = authSnapshot()
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (!opts.anonymous && accessToken) headers['authorization'] = `Bearer ${accessToken}`
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: opts.method ?? 'GET',
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  })
+
+  if (res.status === 401 && !opts.anonymous && !isRetry) {
+    const next = await refreshAccessToken()
+    if (next) return request<T>(path, opts, true)
+    redirectToLogin()
+    throw new ApiError(401, 'Unauthorized')
+  }
+
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data?.error) message = data.error
+    } catch {
+      // non-JSON error body — keep the status text
+    }
+    throw new ApiError(res.status, message)
+  }
+
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
+    request<T>(path, { ...opts, method: 'POST', body }),
+  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
+  del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+}
+
+export { API_BASE }
