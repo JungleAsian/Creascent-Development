@@ -88,6 +88,7 @@ const exactTranslations: Record<string, string> = {
   'Setup Check': 'Comprobacion de configuracion',
   'Stack intelligence': 'Inteligencia del stack',
   'Start Automated Build': 'Iniciar compilacion automatica',
+  'Start': 'Iniciar',
   'Start Build Control': 'Iniciar Control de compilacion',
   'Start Check': 'Comprobacion de inicio',
   'Start Readiness needs a check': 'La preparacion de inicio necesita comprobacion',
@@ -108,6 +109,11 @@ const exactTranslations: Record<string, string> = {
   'not synced': 'no sincronizado',
   'not updated': 'sin actualizar',
   'not yet': 'todavia no',
+  'done': 'listo',
+  'in-progress': 'en progreso',
+  'not-started': 'no iniciado',
+  'pending': 'pendiente',
+  'ready': 'listo',
   'updated': 'actualizado',
   'warnings': 'advertencias'
 }
@@ -151,6 +157,17 @@ function translateText(value: string) {
 
   const charsMatch = trimmed.match(/^(\d+) chars$/)
   if (charsMatch) return value.replace(trimmed, `${charsMatch[1]} caracteres`)
+
+  const businessMatch = trimmed.match(/^Business phase (\d+) · (.+)$/)
+  if (businessMatch) {
+    return value.replace(trimmed, `Fase de negocio ${businessMatch[1]} · ${businessMatch[2].replaceAll(' chars', ' caracteres').replaceAll('prompt', 'prompt').replaceAll('synced', 'sincronizado')}`)
+  }
+
+  const workingMatch = trimmed.match(/^(P\d{2}) Claude Code is working$/)
+  if (workingMatch) return value.replace(trimmed, `${workingMatch[1]} Claude Code esta trabajando`)
+
+  const startingMatch = trimmed.match(/^(P\d{2}) Claude Code build starting$/)
+  if (startingMatch) return value.replace(trimmed, `Compilacion de ${startingMatch[1]} con Claude Code iniciando`)
 
   const word = wordTranslations[trimmed]
   return word ? value.replace(trimmed, word) : value
