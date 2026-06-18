@@ -22,3 +22,11 @@ export function isDevelopment(): boolean {
 export function isLlmStub(): boolean {
   return process.env['LLM_STUB'] !== 'false'
 }
+
+export const RATE_LIMITS = {
+  WORKER_CONCURRENCY_CONVERSATION: 10,
+  WORKER_CONCURRENCY_TRANSCRIPTION: 5,
+  WORKER_CONCURRENCY_AGENT: 10,
+  WORKER_CONCURRENCY_SCHEDULING: 5,
+  WORKER_CONCURRENCY_NOTIFICATION: 10,
+} as const

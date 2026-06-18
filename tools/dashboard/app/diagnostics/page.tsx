@@ -30,7 +30,7 @@ export default function DiagnosticsPage({ searchParams }: PageProps) {
   const issues = categories.flatMap((category) => category.checks.filter((check) => check.status === 'critical' || check.status === 'warning').map((check) => ({ ...check, category: category.label })))
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Diagnostics</h1>
@@ -73,7 +73,7 @@ export default function DiagnosticsPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-3 md:grid-cols-2">
+      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {categories.map((category) => {
           const passed = category.checks.filter((check) => check.status === 'pass').length
           const worst = category.checks.some((check) => check.status === 'critical') ? 'critical' : category.checks.some((check) => check.status === 'warning') ? 'warning' : 'pass'

@@ -104,14 +104,14 @@ function claudeJsonlFiles() {
 function phaseForTimestamp(timestamp?: string) {
   const when = timestamp ? Date.parse(timestamp) : Number.NaN
   const state = readJson<PhaseState[]>('phases.json', [])
-  if (Number.isNaN(when)) return state.find((phase) => phase.status === 'in-progress')?.id ?? 'unassigned'
+  if (Number.isNaN(when)) return null
   const matched = state.find((phase) => {
     if (!phase.startedAt) return false
     const started = Date.parse(phase.startedAt)
     const completed = phase.completedAt ? Date.parse(phase.completedAt) : Date.now()
     return when >= started && when <= completed
   })
-  return matched?.id ?? state.find((phase) => phase.status === 'in-progress')?.id ?? 'unassigned'
+  return matched?.id ?? null
 }
 
 function phaseFeature(phaseId: string) {
@@ -122,6 +122,7 @@ function phaseFeature(phaseId: string) {
 export function syncClaudeUsage() {
   const root = normalizeFilePath(repoRoot())
   const data = store()
+  data.development = data.development.filter((entry) => !(entry.id.startsWith('claude-') && entry.tool === 'claude-code' && entry.capture_method === 'auto'))
   const existingIds = new Set(data.development.map((entry) => entry.id))
   const seenRequests = new Set<string>()
   const entries: DevCostEntry[] = []
@@ -152,6 +153,7 @@ export function syncClaudeUsage() {
       const cached = Number(usage.cache_read_input_tokens ?? 0)
       if (input + output + cached <= 0) continue
       const phase = phaseForTimestamp(item.timestamp)
+      if (!phase) continue
       entries.push({
         id,
         timestamp: item.timestamp ?? new Date().toISOString(),

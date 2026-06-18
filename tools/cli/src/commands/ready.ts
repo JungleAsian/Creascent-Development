@@ -118,7 +118,8 @@ function claudeCodeAccountCheck(): ReadyCheck {
 }
 
 function claudeCodeBuildSmokeCheck(): ReadyCheck {
-  const result = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', toolsRoot], {
+  const commandPath = claudeCodeCommand()
+  const result = spawnSync(commandPath, ['--print', '--dangerously-skip-permissions', '--add-dir', toolsRoot], {
     cwd: toolsRoot,
     encoding: 'utf8',
     env: claudeCodeEnvironment(),
@@ -130,6 +131,14 @@ function claudeCodeBuildSmokeCheck(): ReadyCheck {
   const normalized = output.toLowerCase()
   if (result.status === 0) {
     return { name: 'Claude Code build smoke test', status: 'pass', message: output || 'Claude Code can run automated build prompts.' }
+  }
+  if (normalized.includes('session limit') || normalized.includes('resets')) {
+    return {
+      name: 'Claude Code build smoke test',
+      status: 'critical',
+      message: `${output || 'Claude Code session limit reached.'} Tested CLI: ${commandPath}`,
+      fix: 'The desktop Claude account switch has not reached Claude Code CLI yet. In Claude Code, send one manual message on the new account, then use the Claude Account Switch finalize action or rerun Ready Check. If it still reports the old limit, sign out and back in to Claude Code CLI.'
+    }
   }
   if (normalized.includes('credit balance is too low')) {
     return {
@@ -247,7 +256,7 @@ async function buildReadyResult(): Promise<ReadyResult> {
 function printResult(result: ReadyResult) {
   if (result.ready) {
     log('ready', `DEVTOOLS READY - ${result.summary.pass} checks passed${result.summary.warning ? `, ${result.summary.warning} warnings` : ''}`)
-    log('ready', 'Open http://localhost:4000/build-control and click Start Automated Build')
+    log('ready', 'Open Docmee DevTools desktop app and click Build Control, then Start Automated Build')
   } else {
     log('ready', `NOT READY - ${result.summary.critical} critical issues, ${result.summary.warning} warnings`, 'error')
     for (const check of result.categories.flatMap((category) => category.checks).filter((item) => item.status === 'critical')) {

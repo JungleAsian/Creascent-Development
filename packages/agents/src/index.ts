@@ -1,6 +1,9 @@
-export type AgentRoute = 'booking' | 'reschedule' | 'cancel' | 'faq' | 'handoff'
+import type { AgentRoute } from './router.js'
 
-export interface AgentContext {
+export type { AgentRoute, RouteContext } from './router.js'
+export { routeIntent } from './router.js'
+
+export interface MessageContext {
   clinicId: string
   conversationId: string
   patientPhone: string
@@ -31,6 +34,6 @@ export interface CalendarClient {
 
 export { createGoogleCalendarClient } from './calbot/google-calendar-client.js'
 
-export async function routeMessage(_context: AgentContext): Promise<AgentResult> {
+export async function routeMessage(_context: MessageContext): Promise<AgentResult> {
   throw new Error('routeMessage: not implemented — wire LLM router in P05+')
 }

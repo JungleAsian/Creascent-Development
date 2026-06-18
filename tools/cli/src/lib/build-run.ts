@@ -4,9 +4,10 @@ import { readJson, writeJson } from './json-store.js'
 export type BuildRunState = {
   pid?: number
   phase?: string
-  status: 'idle' | 'starting' | 'running' | 'stopped' | 'failed' | 'complete'
+  status: 'idle' | 'starting' | 'running' | 'paused' | 'stopped' | 'failed' | 'complete'
   startedAt?: string
   heartbeatAt?: string
+  resumeAt?: string
   message?: string
 }
 

@@ -14,8 +14,9 @@ import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 import { touchBuildRun } from '../lib/build-run.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
+import { syncClaudeUsage } from './cost.js'
 
-type BuildControlStatus = 'pending' | 'awaiting-output' | 'in-progress' | 'output-copied' | 'gates-running' | 'pushing' | 'complete' | 'failed'
+type BuildControlStatus = 'pending' | 'awaiting-output' | 'in-progress' | 'paused' | 'output-copied' | 'gates-running' | 'pushing' | 'complete' | 'failed'
 type BuildControlRecord = {
   phaseId: string
   status: BuildControlStatus
@@ -24,6 +25,33 @@ type BuildControlRecord = {
   commitHash?: string
 }
 type BacklogTask = { id: number; phase: string; priority: string; title: string; status: string }
+type ClaudeUsageGuardState = {
+  learnedSessionTokenLimit?: number
+  thresholdPercent?: number
+  resetAt?: string
+  lastUsageTokens?: number
+  lastUsagePercent?: number
+  updatedAt?: string
+  notes?: string
+}
+type ClaudeUsageLogEntry = {
+  cwd?: string
+  requestId?: string
+  uuid?: string
+  timestamp?: string
+  message?: {
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+      cache_creation_input_tokens?: number
+      cache_read_input_tokens?: number
+    }
+  }
+}
+
+const claudeUsageGuardFile = 'claude-usage-guard.json'
+const claudeUsageWindowMs = 5 * 60 * 60 * 1000
+const claudeLimitResumeBufferMs = 2 * 60 * 1000
 
 function phases() {
   const current = readJson<PhaseState[]>('phases.json', defaultPhaseState())
@@ -102,6 +130,145 @@ function gitOutput(args: string[]) {
 
 function shortFailure(output: string) {
   return output.replace(/\s+/g, ' ').trim().slice(0, 180) || 'Claude Code returned a failure or is not available'
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function readClaudeUsageGuard() {
+  return readJson<ClaudeUsageGuardState>(claudeUsageGuardFile, { thresholdPercent: 95 })
+}
+
+function writeClaudeUsageGuard(state: ClaudeUsageGuardState) {
+  writeJson(claudeUsageGuardFile, { ...state, updatedAt: new Date().toISOString() })
+}
+
+function normalizeFilePath(value?: string) {
+  return path.resolve(value ?? '').toLowerCase()
+}
+
+function claudeProjectDirs() {
+  const root = path.join(os.homedir(), '.claude', 'projects')
+  if (!fs.existsSync(root)) return []
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, entry.name))
+}
+
+function claudeUsageSince(startAt: Date) {
+  const root = normalizeFilePath(repoRoot())
+  const seen = new Set<string>()
+  let tokens = 0
+  for (const dir of claudeProjectDirs()) {
+    const files = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+      .map((entry) => path.join(dir, entry.name))
+    for (const file of files) {
+      for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+        if (!line.trim()) continue
+        let item: ClaudeUsageLogEntry
+        try {
+          item = JSON.parse(line) as ClaudeUsageLogEntry
+        } catch {
+          continue
+        }
+        if (!item.message?.usage || !item.timestamp || Date.parse(item.timestamp) < startAt.getTime()) continue
+        if (!normalizeFilePath(item.cwd).startsWith(root)) continue
+        const id = item.requestId || item.uuid
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        const usage = item.message.usage
+        tokens += Number(usage.input_tokens ?? 0)
+        tokens += Number(usage.output_tokens ?? 0)
+        tokens += Number(usage.cache_creation_input_tokens ?? 0)
+        tokens += Number(usage.cache_read_input_tokens ?? 0)
+      }
+    }
+  }
+  return tokens
+}
+
+function parseClaudeResetTime(output: string) {
+  const match = output.match(/resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i)
+  if (!match) return null
+  const reset = new Date()
+  let hour = Number(match[1])
+  const minute = Number(match[2] ?? '0')
+  const meridiem = match[3].toLowerCase()
+  if (meridiem === 'pm' && hour < 12) hour += 12
+  if (meridiem === 'am' && hour === 12) hour = 0
+  reset.setHours(hour, minute, 0, 0)
+  if (reset.getTime() <= Date.now()) reset.setDate(reset.getDate() + 1)
+  return reset
+}
+
+function isClaudeLimitMessage(output: string) {
+  return /usage limit|session limit|rate limit|resets?\s+\d/i.test(output)
+}
+
+function currentUsageWindowStart(resetAt?: string) {
+  const reset = resetAt ? Date.parse(resetAt) : Number.NaN
+  if (!Number.isNaN(reset) && reset > Date.now()) return new Date(reset - claudeUsageWindowMs)
+  return new Date(Date.now() - claudeUsageWindowMs)
+}
+
+function claudeUsageSnapshot() {
+  const guard = readClaudeUsageGuard()
+  const thresholdPercent = Number(process.env.CLAUDE_SESSION_PAUSE_PERCENT || guard.thresholdPercent || 95)
+  const configuredLimit = Number(process.env.CLAUDE_SESSION_TOKEN_LIMIT || '0')
+  const learnedLimit = guard.learnedSessionTokenLimit ?? 0
+  const limit = configuredLimit > 0 ? configuredLimit : learnedLimit
+  const usageTokens = claudeUsageSince(currentUsageWindowStart(guard.resetAt))
+  const usagePercent = limit > 0 ? Math.min(100, (usageTokens / limit) * 100) : 0
+  writeClaudeUsageGuard({
+    ...guard,
+    thresholdPercent,
+    lastUsageTokens: usageTokens,
+    lastUsagePercent: usagePercent,
+    notes: limit > 0 ? 'Claude usage guard active.' : 'Waiting to learn Claude session limit from the next Claude limit response.'
+  })
+  return { ...guard, thresholdPercent, limit, usageTokens, usagePercent }
+}
+
+async function waitForClaudeRefresh(phaseId: string, resetAt: Date, reason: string) {
+  const resumeAt = new Date(resetAt.getTime() + claudeLimitResumeBufferMs)
+  const message = `${phaseId} paused: ${reason}. Resume at ${resumeAt.toLocaleString()}`
+  touchBuildRun({ phase: phaseId, status: 'paused', resumeAt: resumeAt.toISOString(), message })
+  await setBuildStatus(phaseId, 'paused', message)
+  await sendNotification(message, 'critical')
+  while (Date.now() < resumeAt.getTime()) {
+    touchBuildRun({ phase: phaseId, status: 'paused', resumeAt: resumeAt.toISOString(), message })
+    await sleep(Math.min(60_000, Math.max(1_000, resumeAt.getTime() - Date.now())))
+  }
+  touchBuildRun({ phase: phaseId, status: 'running', resumeAt: undefined, message: `${phaseId} Claude limit refreshed; resuming build` })
+  await setBuildStatus(phaseId, 'in-progress', 'Claude limit refreshed; resuming automatically')
+  await sendNotification(`${phaseId} Claude limit refreshed. DevTools is resuming automatically.`, 'development')
+}
+
+async function pauseIfClaudeUsageNearLimit(phaseId: string) {
+  const snapshot = claudeUsageSnapshot()
+  if (snapshot.limit <= 0 || snapshot.usagePercent < snapshot.thresholdPercent) return false
+  const guard = readClaudeUsageGuard()
+  const resetAt = guard.resetAt ? new Date(guard.resetAt) : new Date(Date.now() + claudeUsageWindowMs)
+  if (resetAt.getTime() <= Date.now()) return false
+  await waitForClaudeRefresh(phaseId, resetAt, `Claude usage is ${snapshot.usagePercent.toFixed(0)}%, at or above the ${snapshot.thresholdPercent}% pause guard`)
+  return true
+}
+
+async function learnClaudeLimitAndPause(phaseId: string, output: string) {
+  const resetAt = parseClaudeResetTime(output) ?? new Date(Date.now() + claudeUsageWindowMs)
+  const usageTokens = claudeUsageSince(new Date(resetAt.getTime() - claudeUsageWindowMs))
+  const guard = readClaudeUsageGuard()
+  writeClaudeUsageGuard({
+    ...guard,
+    learnedSessionTokenLimit: Math.max(usageTokens, guard.learnedSessionTokenLimit ?? 0),
+    resetAt: resetAt.toISOString(),
+    lastUsageTokens: usageTokens,
+    lastUsagePercent: 100,
+    notes: 'Learned from Claude session limit response.'
+  })
+  await waitForClaudeRefresh(phaseId, resetAt, 'Claude session limit reached')
 }
 
 function currentBranch() {
@@ -356,6 +523,7 @@ async function initBuildControl() {
             { name: 'pending', color: 'gray' },
             { name: 'awaiting-output', color: 'yellow' },
             { name: 'in-progress', color: 'blue' },
+            { name: 'paused', color: 'yellow' },
             { name: 'output-copied', color: 'green' },
             { name: 'gates-running', color: 'purple' },
             { name: 'pushing', color: 'orange' },
@@ -430,11 +598,23 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
   }
   await sendNotification(`${phaseId} Claude Code build started.`, 'development')
   const prompt = fs.readFileSync(file, 'utf8')
-  const { status, output } = await runClaudeWithHeartbeat(phaseId, prompt)
-  if (output) {
-    for (const line of output.split(/\r?\n/).filter(Boolean)) log('phase', `${phaseId} Claude Code: ${line}`)
-  }
-  if (status !== 0) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    await pauseIfClaudeUsageNearLimit(phaseId)
+    const { status, output } = await runClaudeWithHeartbeat(phaseId, prompt)
+    if (output) {
+      for (const line of output.split(/\r?\n/).filter(Boolean)) log('phase', `${phaseId} Claude Code: ${line}`)
+    }
+    try {
+      const costSync = syncClaudeUsage()
+      log('phase', `${phaseId} cost sync imported ${costSync.imported} Claude Code usage entr${costSync.imported === 1 ? 'y' : 'ies'}`)
+    } catch (error) {
+      log('phase', `${phaseId} cost sync skipped: ${error instanceof Error ? error.message : String(error)}`, 'warn')
+    }
+    if (status === 0) break
+    if (isClaudeLimitMessage(output) && attempt < 4) {
+      await learnClaudeLimitAndPause(phaseId, output)
+      continue
+    }
     const failure = shortFailure(output)
     touchBuildRun({ phase: phaseId, status: 'failed', message: `${phaseId} Claude Code failed: ${failure}` })
     await setBuildStatus(phaseId, 'failed', `Claude Code failed: ${failure}`)
@@ -508,6 +688,15 @@ function runClaudeWithHeartbeat(phaseId: string, prompt: string) {
 }
 
 async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolean; sync?: boolean }) {
+  if (!opts.dryRun) {
+    const preflight = checkGates()
+    if (preflight.some((gate) => !gate.ok)) {
+      log('phase', 'Cannot start automated build; Six Gates found one or more blockers.', 'error')
+      await sendNotification('Automated build did not start because Six Gates found one or more blockers.', 'critical')
+      process.exitCode = 1
+      return
+    }
+  }
   if (shouldSync(opts)) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
@@ -564,6 +753,16 @@ async function completePhaseAfterOutput(phaseId: string) {
 
 async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?: string; noSync?: boolean; sync?: boolean; dryRun?: boolean }) {
   if (!opts.dryRun) touchBuildRun({ phase: opts.from ?? 'P01', status: 'starting', startedAt: new Date().toISOString(), message: 'Automated build watcher starting' })
+  if (!opts.dryRun) {
+    const preflight = checkGates()
+    if (preflight.some((gate) => !gate.ok)) {
+      touchBuildRun({ phase: opts.from ?? 'P01', status: 'failed', message: 'Six Gates found one or more blockers before build start' })
+      log('phase', 'Cannot start automated build watcher; Six Gates found one or more blockers.', 'error')
+      await sendNotification('Automated build watcher did not start because Six Gates found one or more blockers.', 'critical')
+      process.exitCode = 1
+      return
+    }
+  }
   if (shouldSync(opts)) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const plan = buildPlan(opts.from)
   for (const phase of plan) {

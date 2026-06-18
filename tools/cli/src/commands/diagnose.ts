@@ -1,7 +1,6 @@
 import { Command } from 'commander'
-import { execSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { envFile, logsDir, promptsDir, toolsRoot } from '../lib/paths.js'
 import { loadConfig, requiredEnvVars } from '../lib/config.js'
@@ -44,26 +43,6 @@ function promptUsable(id: string) {
   return promptReady || contextReady
 }
 
-function localIp() {
-  const addresses: string[] = []
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const item of interfaces ?? []) {
-      if (item.family === 'IPv4' && !item.internal) addresses.push(item.address)
-    }
-  }
-  return addresses.find((address) => address.startsWith('192.168.') || address.startsWith('10.') || /^172\.(1[6-9]|2\d|3[0-1])\./.test(address)) ?? addresses[0] ?? '127.0.0.1'
-}
-
-function firewallCheck(): Check {
-  if (process.platform !== 'win32') return { name: 'Firewall rule', status: 'info', message: 'Firewall check is Windows-specific.' }
-  try {
-    const output = execSync('powershell -NoProfile -Command "Get-NetFirewallRule -DisplayName \\"Docmee DevTools (port 4000)\\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Enabled"', { encoding: 'utf8' })
-    return output.trim() ? { name: 'Firewall rule', status: 'pass', message: 'Port 4000 firewall rule exists.' } : { name: 'Firewall rule', status: 'warning', message: 'Port 4000 firewall rule was not found.', fix: 'Run the firewall rule command from the Web Access Notion page as Administrator.' }
-  } catch {
-    return { name: 'Firewall rule', status: 'warning', message: 'Unable to inspect Windows Firewall.', fix: 'Open Windows Defender Firewall and allow inbound TCP 4000 for private networks.' }
-  }
-}
-
 function buildCategories(quick: boolean): Category[] {
   loadConfig()
   const monorepoRoot = path.resolve(toolsRoot, process.env.MONOREPO_ROOT || '..')
@@ -84,9 +63,7 @@ function buildCategories(quick: boolean): Category[] {
         { name: 'Git user.name', status: gitName.ok && gitName.output ? 'pass' : 'critical', message: gitName.output || 'Git user.name is not configured.', fix: 'Run git config --global user.name "Your Name".' },
         { name: 'Git user.email', status: gitEmail.ok && gitEmail.output ? 'pass' : 'critical', message: gitEmail.output || 'Git user.email is not configured.', fix: 'Run git config --global user.email "you@example.com".' },
         { name: 'GitHub remote', status: gitRemote.ok && gitRemote.output ? 'pass' : 'critical', message: gitRemote.output || 'Git origin remote is not configured.', fix: 'Set the GitHub origin remote before phase auto-push.' },
-        { name: 'GitHub branch', status: envPresent('GITHUB_BRANCH') ? 'pass' : 'warning', message: envPresent('GITHUB_BRANCH') ? `GITHUB_BRANCH is ${process.env.GITHUB_BRANCH}.` : 'GITHUB_BRANCH is missing; current branch will be used.', fix: 'Set GITHUB_BRANCH in Settings.' },
-        { name: 'LAN IP', status: localIp() === '127.0.0.1' ? 'warning' : 'pass', message: `Network URL is http://${localIp()}:4000.` },
-        firewallCheck()
+        { name: 'GitHub branch', status: envPresent('GITHUB_BRANCH') ? 'pass' : 'warning', message: envPresent('GITHUB_BRANCH') ? `GITHUB_BRANCH is ${process.env.GITHUB_BRANCH}.` : 'GITHUB_BRANCH is missing; current branch will be used.', fix: 'Set GITHUB_BRANCH in Settings.' }
       ]
     },
     {

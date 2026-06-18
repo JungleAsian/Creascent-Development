@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { BuildProgressGauge } from '../build-progress-gauge'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
@@ -38,7 +39,7 @@ type Control = { phaseId: string; status: string; updatedAt: string; notes?: str
 type ReadyCheck = { name: string; status: 'pass' | 'warning' | 'critical'; message: string; fix?: string }
 type ReadyResult = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string; categories?: Array<{ id: string; label: string; checks: ReadyCheck[] }> }
 type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
-type BuildRun = { pid?: number; phase?: string; status?: string; startedAt?: string; heartbeatAt?: string; message?: string }
+type BuildRun = { pid?: number; phase?: string; status?: string; startedAt?: string; heartbeatAt?: string; resumeAt?: string; message?: string }
 
 function readJson<T>(file: string, fallback: T) {
   if (!fs.existsSync(file)) return fallback
@@ -83,7 +84,7 @@ function isProcessAlive(pid?: number) {
 
 function buildRunState() {
   const run = readJson<BuildRun>(buildRunFile, { status: 'idle' })
-  return { ...run, live: isProcessAlive(run.pid) && ['starting', 'running'].includes(run.status ?? '') }
+  return { ...run, live: isProcessAlive(run.pid) && ['starting', 'running', 'paused'].includes(run.status ?? '') }
 }
 
 function promptInfo(id: string) {
@@ -97,6 +98,7 @@ function promptInfo(id: string) {
 function statusClass(status: string) {
   if (status === 'complete' || status === 'done') return 'bg-emerald-900 text-emerald-100'
   if (status === 'failed') return 'bg-red-900 text-red-100'
+  if (status === 'paused') return 'bg-amber-900 text-amber-100'
   if (status === 'output-copied' || status === 'gates-running' || status === 'pushing') return 'bg-cyan-900 text-cyan-100'
   if (status === 'awaiting-output' || status === 'in-progress') return 'bg-amber-900 text-amber-100'
   return 'bg-slate-800 text-slate-300'
@@ -134,7 +136,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
   const githubCheck = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'GitHub push access')
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Build Control</h1>
@@ -193,14 +195,11 @@ export default function BuildControlPage({ searchParams }: PageProps) {
 
         <div className="mt-4 rounded border border-slate-800 bg-slate-950/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs text-slate-500">Live build process</div>
-              <div className={buildRun.live ? 'mt-1 text-sm font-medium text-emerald-300' : 'mt-1 text-sm font-medium text-slate-300'}>{buildRun.live ? 'Running' : 'Not running'}</div>
-              <div className="mt-1 text-xs text-slate-500">{buildRun.message ?? 'No active build watcher'}</div>
-            </div>
+            <BuildProgressGauge size="md" />
             <div className="text-right text-xs text-slate-500">
               <div>{buildRun.pid ? `PID ${buildRun.pid}` : 'No PID'}</div>
               <div>{buildRun.heartbeatAt ? `Heartbeat ${new Date(buildRun.heartbeatAt).toLocaleTimeString()}` : 'No heartbeat yet'}</div>
+              <div>{buildRun.resumeAt ? `Resume ${new Date(buildRun.resumeAt).toLocaleTimeString()}` : ''}</div>
             </div>
           </div>
           {buildRun.live && (
@@ -302,7 +301,10 @@ export default function BuildControlPage({ searchParams }: PageProps) {
       </div>
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
-        <h2 className="text-sm font-semibold">Build Progress</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Build Progress</h2>
+          <BuildProgressGauge size="md" />
+        </div>
         <div className="mt-4 grid gap-3">
           {definitions.map(([id, name, builder, business]) => {
             const phase = phaseById.get(id)
@@ -310,6 +312,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             const hash = phase?.commitHash ?? control?.commitHash
             return (
               <div key={id} className="flex flex-wrap items-center gap-3 rounded border border-slate-800 px-3 py-2">
+                <BuildProgressGauge phaseId={id} size="sm" showLabel={false} />
                 <strong className="w-12">{id}</strong>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-slate-200">{name}</div>

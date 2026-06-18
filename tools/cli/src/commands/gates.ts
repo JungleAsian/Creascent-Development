@@ -1,12 +1,16 @@
 import { Command } from 'commander'
+import fs from 'node:fs'
+import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { envStatus } from '../lib/config.js'
 import { log } from '../lib/logger.js'
+import { logsDir } from '../lib/paths.js'
 import { closeDiscordClient } from '../../../discord/src/bot.js'
 import { notifyGateFailed } from '../../../discord/src/notifications/gate-failed.js'
 import { notifyGatePassed } from '../../../discord/src/notifications/gate-passed.js'
 
 type GateResult = { gate: number; name: string; ok: boolean; detail: string }
+const gatesFile = path.join(logsDir, 'six-gates.json')
 
 function run(command: string, args: string[]) {
   const result = spawnSync(command, args, { stdio: 'pipe', shell: true, encoding: 'utf8' })
@@ -27,7 +31,15 @@ export function checkGates(selected?: number): GateResult[] {
     },
     { gate: 6, name: 'DAL', ...run('pnpm', ['tool', 'dal', 'check']) }
   ]
-  return selected ? gates.filter((gate) => gate.gate === selected) : gates
+  const results = selected ? gates.filter((gate) => gate.gate === selected) : gates
+  fs.mkdirSync(logsDir, { recursive: true })
+  fs.writeFileSync(gatesFile, JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    selected: selected ?? 'all',
+    ok: results.every((gate) => gate.ok),
+    results
+  }, null, 2))
+  return results
 }
 
 export const gatesCmd = new Command('gates')

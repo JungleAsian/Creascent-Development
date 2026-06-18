@@ -1,7 +1,40 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::{path::PathBuf, process::Command};
 use tauri::{
-    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
+    CustomMenuItem, LogicalPosition, LogicalSize, Manager, Position, Size, SystemTray,
+    SystemTrayEvent, SystemTrayMenu,
 };
+
+fn fit_window_to_monitor(window: &tauri::Window) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    };
+
+    let size = monitor.size();
+    let scale = monitor.scale_factor();
+    let available_width = (size.width as f64 / scale - 80.0).max(720.0);
+    let available_height = (size.height as f64 / scale - 120.0).max(520.0);
+    let width = available_width.min(960.0);
+    let height = available_height.min(680.0);
+    let monitor_position = monitor.position();
+    let monitor_width = size.width as f64 / scale;
+    let monitor_height = size.height as f64 / scale;
+    let x = monitor_position.x as f64 / scale + ((monitor_width - width) / 2.0).max(0.0);
+    let y = monitor_position.y as f64 / scale + ((monitor_height - height) / 2.0).max(0.0);
+
+    let _ = window.set_size(Size::Logical(LogicalSize { width, height }));
+    let _ = window.set_position(Position::Logical(LogicalPosition { x, y }));
+    let _ = window.show();
+    let _ = window.set_focus();
+}
 
 fn main() {
     let tools_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -22,14 +55,19 @@ fn main() {
     );
 
     tauri::Builder::default()
+        .setup(|app| {
+            if let Some(window) = app.get_window("main") {
+                fit_window_to_monitor(&window);
+            }
+            Ok(())
+        })
         .system_tray(tray)
         .on_system_tray_event(move |app, event| {
             if let SystemTrayEvent::MenuItemClick { id, .. } = event {
                 match id.as_str() {
                     "open" => {
                         if let Some(window) = app.get_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            fit_window_to_monitor(&window);
                         }
                     }
                     "gates" => {

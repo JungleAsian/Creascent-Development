@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -35,84 +35,11 @@ function recordLock(action: string) {
   fs.writeFileSync(path.join(logsDir, 'deploy-lock.json'), `${JSON.stringify({ action, createdAt: new Date().toISOString() }, null, 2)}\n`)
 }
 
-function localIp() {
-  const addresses: string[] = []
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const item of interfaces ?? []) {
-      if (item.family === 'IPv4' && !item.internal) addresses.push(item.address)
-    }
-  }
-  return addresses.find((address) => address.startsWith('192.168.') || address.startsWith('10.') || /^172\.(1[6-9]|2\d|3[0-1])\./.test(address)) ?? addresses[0] ?? '127.0.0.1'
-}
-
-function pnpmCommand() {
-  if (process.platform !== 'win32') return 'pnpm'
-  const localAppData = process.env.LOCALAPPDATA
-  const pnpmExe = localAppData ? path.join(localAppData, 'pnpm', 'pnpm.exe') : ''
-  return pnpmExe && fs.existsSync(pnpmExe) ? pnpmExe : 'pnpm.exe'
-}
-
 function keyPath() {
   return (process.env.VPS_SSH_KEY_PATH || '~/.ssh/id_ed25519').replace(/^~/, os.homedir())
 }
 
-async function printQr(url: string) {
-  try {
-    const qr = await import('qrcode-terminal')
-    qr.default.generate(url, { small: true })
-  } catch {
-    log('deploy', 'QR package is not installed yet. Run pnpm install in tools.', 'warn')
-  }
-}
-
 export const deployCmd = new Command('deploy').description('Deploy locally or to Hostinger VPS')
-
-deployCmd.command('web')
-  .option('--qr', 'Print QR code')
-  .option('--stop', 'Stop the remembered web process')
-  .action(async (opts: { qr?: boolean; stop?: boolean }) => {
-    const pidFile = path.join(logsDir, 'web-dev.pid')
-    if (opts.stop) {
-      if (!fs.existsSync(pidFile)) {
-        log('deploy', 'No remembered web dashboard process was found.', 'warn')
-        return
-      }
-      const pid = Number(fs.readFileSync(pidFile, 'utf8').trim())
-      try {
-        process.kill(pid)
-        fs.rmSync(pidFile, { force: true })
-        log('deploy', `Stopped web dashboard process ${pid}`)
-      } catch {
-        log('deploy', `Unable to stop process ${pid}. It may already be closed.`, 'warn')
-      }
-      return
-    }
-
-    const url = `http://${localIp()}:4000`
-    const running = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty LocalPort'], {
-      encoding: 'utf8',
-      shell: false,
-      stdio: 'pipe'
-    })
-    if (!running.stdout.trim()) {
-      const child = spawn(pnpmCommand(), ['--dir', 'dashboard', 'dev'], {
-        cwd: toolsRoot,
-        shell: false,
-        stdio: 'ignore',
-        detached: true,
-        windowsHide: true
-      })
-      child.unref()
-      fs.mkdirSync(logsDir, { recursive: true })
-      fs.writeFileSync(pidFile, `${child.pid ?? ''}\n`)
-      log('deploy', `Started dashboard process ${child.pid}`)
-    }
-    fs.mkdirSync(logsDir, { recursive: true })
-    log('deploy', `Local URL: http://localhost:4000`)
-    log('deploy', `Network URL: ${url}`)
-    log('deploy', 'Internal use only. Do not expose this dashboard to the internet.')
-    if (opts.qr) await printQr(url)
-  })
 
 deployCmd.command('redis').action(() => {
   log('deploy', 'Install Redis 7 from the official Redis repository; do not use the Ubuntu apt default Redis 6 package.')

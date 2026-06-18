@@ -22,21 +22,19 @@ export default function DeployPage({ searchParams }: PageProps) {
     ['deploy-status', 'VPS Status'],
     ['deploy-redis', 'Redis 7 Commands'],
     ['deploy-local', 'Start Local Plan'],
-    ['deploy-web', 'Start Web + QR'],
-    ['deploy-web-stop', 'Stop Web'],
     ['deploy-env', 'Sync .env Plan'],
     ['deploy-vps', 'Deploy to VPS Plan'],
     ['deploy-rollback', 'Rollback Plan']
   ]
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <h1 className="text-2xl font-semibold">Deploy</h1>
       <p className="mt-2 text-sm text-slate-400">Local machine and Hostinger VPS deployment controls.</p>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
 
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
+      <div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">SSH connection</h2><p className={vpsReady ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{vpsReady ? 'Configured' : 'Missing VPS settings'}</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Deploy path</h2><p className="mt-2 text-sm text-slate-300">{env.VPS_DEPLOY_PATH || 'not set'}</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Domain</h2><p className="mt-2 text-sm text-slate-300">{env.VPS_DOMAIN || 'not set'}</p></div>

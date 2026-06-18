@@ -9,7 +9,7 @@ const envExampleFile = path.join(toolsRoot, '.env.tools.example')
 const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
 
 function settingsRedirect(request: Request, key: 'message' | 'error', value: string) {
-  const url = new URL('/settings', request.url)
+  const url = new URL('/settings', 'http://127.0.0.1:4000')
   url.searchParams.set(key, value)
   return NextResponse.redirect(url, 303)
 }
@@ -90,7 +90,7 @@ function setupStatus() {
   const issues = [
     existsSync(envFile) ? '' : '.env.tools',
     missing.length === 0 ? '' : `required settings (${missing.join(', ')})`,
-    backlogCount() === 45 ? '' : 'backlog'
+    backlogCount() >= 45 ? '' : 'backlog'
   ].filter(Boolean)
   return { ok: issues.length === 0, issues }
 }
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
 
   if (body.action === 'auto-setup') {
     const setupOk = runTool(['setup'])
-    const backlogOk = backlogCount() === 45
+    const backlogOk = backlogCount() >= 45
     runTool(['agents', 'reset'])
     const status = setupStatus()
     const ok = setupOk && backlogOk && status.issues.filter((issue) => issue !== 'backlog').length === 0

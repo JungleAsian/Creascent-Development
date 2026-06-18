@@ -1,6 +1,7 @@
 import { Command } from 'commander'
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { loadConfig } from '../lib/config.js'
 import { log } from '../lib/logger.js'
 import { logsDir, toolsRoot } from '../lib/paths.js'
@@ -41,23 +42,38 @@ type StackStore = {
   advisories: Advisory[]
   priceChanges: NewsItem[]
 }
+type PackageUpdate = {
+  name: string
+  manifest: string
+  from: string
+  to: string
+  status: 'updated' | 'skipped'
+}
 
 const stackFile = path.join(logsDir, 'stack-intelligence.json')
 const packages = ['fastify', 'next', 'typescript', 'bullmq', '@anthropic-ai/sdk', '@supabase/supabase-js', '@notionhq/client', 'vitest', 'tailwindcss', 'discord.js', 'commander', 'dotenv']
+const manifestFiles = [
+  path.join(toolsRoot, 'package.json'),
+  path.join(toolsRoot, 'dashboard', 'package.json'),
+  path.join(toolsRoot, 'discord', 'package.json'),
+  path.join(toolsRoot, 'eslint', 'package.json')
+]
 
 function readPackageVersions() {
-  const candidates = [
-    path.join(toolsRoot, 'package.json'),
-    path.join(toolsRoot, 'dashboard', 'package.json'),
-    path.join(toolsRoot, 'discord', 'package.json')
-  ]
   const versions = new Map<string, string>()
-  for (const file of candidates) {
+  for (const file of manifestFiles) {
     if (!fs.existsSync(file)) continue
     const data = JSON.parse(fs.readFileSync(file, 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
     for (const [name, version] of Object.entries({ ...data.dependencies, ...data.devDependencies })) versions.set(name, version)
   }
   return versions
+}
+
+function pnpmCommand() {
+  if (process.platform !== 'win32') return 'pnpm'
+  const localAppData = process.env.LOCALAPPDATA
+  const pnpmExe = localAppData ? path.join(localAppData, 'pnpm', 'pnpm.exe') : ''
+  return pnpmExe && fs.existsSync(pnpmExe) ? pnpmExe : 'pnpm.exe'
 }
 
 async function latestNpmVersion(name: string) {
@@ -91,6 +107,67 @@ async function checkPackages(): Promise<PackageStatus[]> {
 
 function normalize(version: string) {
   return version.replace(/^[~^]/, '')
+}
+
+function withExistingPrefix(currentVersion: string, latestVersion: string) {
+  if (currentVersion.startsWith('^')) return `^${latestVersion}`
+  if (currentVersion.startsWith('~')) return `~${latestVersion}`
+  return latestVersion
+}
+
+async function updateAllPackages() {
+  const latest = new Map<string, string>()
+  for (const name of packages) latest.set(name, await latestNpmVersion(name))
+
+  const updates: PackageUpdate[] = []
+  for (const file of manifestFiles) {
+    if (!fs.existsSync(file)) continue
+    const data = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+    let changed = false
+    for (const section of ['dependencies', 'devDependencies'] as const) {
+      const dependencies = data[section]
+      if (!dependencies) continue
+      for (const name of packages) {
+        const currentVersion = dependencies[name]
+        const latestVersion = latest.get(name)
+        if (!currentVersion || !latestVersion) continue
+        const target = withExistingPrefix(currentVersion, latestVersion)
+        const status: PackageUpdate['status'] = normalize(currentVersion) === latestVersion ? 'skipped' : 'updated'
+        updates.push({
+          name,
+          manifest: path.relative(toolsRoot, file),
+          from: currentVersion,
+          to: target,
+          status
+        })
+        if (status === 'updated') {
+          dependencies[name] = target
+          changed = true
+        }
+      }
+    }
+    if (changed) fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`)
+  }
+
+  if (updates.some((item) => item.status === 'updated')) {
+    const install = spawnSync(pnpmCommand(), ['install'], {
+      cwd: toolsRoot,
+      encoding: 'utf8',
+      shell: false,
+      stdio: 'pipe'
+    })
+    if (install.status !== 0) {
+      throw new Error(`${install.stdout ?? ''}${install.stderr ?? ''}`.trim() || 'pnpm install failed')
+    }
+  }
+
+  const rows = await checkPackages()
+  const current = readStore()
+  saveStore({ ...current, generatedAt: new Date().toISOString(), packages: rows })
+  return updates
 }
 
 async function checkSecurity(): Promise<Advisory[]> {
@@ -253,3 +330,10 @@ stackCmd.command('all')
     const data = await runAll({ noDiscord: opts.noDiscord, weekly: true })
     console.table({ packages: data.packages.length, advisories: data.advisories.length, news: data.news.length })
   })
+
+stackCmd.command('update-all').action(async () => {
+  const updates = await updateAllPackages()
+  const changed = updates.filter((item) => item.status === 'updated').length
+  console.table(updates)
+  log('stack', changed > 0 ? `Updated ${changed} technology package entr${changed === 1 ? 'y' : 'ies'}` : 'All listed technology packages are already current')
+})

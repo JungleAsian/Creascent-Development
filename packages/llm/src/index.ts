@@ -23,9 +23,7 @@ export interface LlmOptions {
   systemPrompt?: string
 }
 
-export { createClaudeProvider } from './providers/claude.js'
-export { createOpenAiProvider } from './providers/openai.js'
-export { createDeepSeekProvider } from './providers/deepseek.js'
+export * from './gateway.js'
 
 export function createStubProvider(): LlmProvider {
   return {

@@ -51,7 +51,10 @@ const seedTitles = [
   ['P00', 'infrastructure', 'CI/CD pipeline'],
   ['P00', 'infrastructure', 'vitest config'],
   ['P00', 'infrastructure', 'docker-compose'],
-  ['P00', 'infrastructure', 'operations runbook']
+  ['P00', 'infrastructure', 'operations runbook'],
+  ['P00', 'infrastructure', 'Claude usage-limit pause and automatic resume guard'],
+  ['P00', 'infrastructure', 'Build Control paused state with Claude reset countdown'],
+  ['P00', 'infrastructure', 'Discord notice when Claude usage guard pauses or resumes']
 ] as const
 
 export function seedBacklog() {

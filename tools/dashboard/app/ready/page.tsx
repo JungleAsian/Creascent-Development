@@ -34,7 +34,7 @@ export default function ReadyPage({ searchParams }: PageProps) {
   const summary = data.summary ?? { pass: 0, warning: 0, critical: 1 }
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Readiness Gate</h1>

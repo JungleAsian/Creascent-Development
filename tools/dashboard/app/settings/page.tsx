@@ -1,5 +1,4 @@
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
@@ -185,16 +184,6 @@ function parseEnv(content: string) {
   )
 }
 
-function localIp() {
-  const addresses: string[] = []
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const item of interfaces ?? []) {
-      if (item.family === 'IPv4' && !item.internal) addresses.push(item.address)
-    }
-  }
-  return addresses.find((address) => address.startsWith('192.168.') || address.startsWith('10.') || /^172\.(1[6-9]|2\d|3[0-1])\./.test(address)) ?? addresses[0] ?? '127.0.0.1'
-}
-
 type SettingsPageProps = { searchParams?: { message?: string; error?: string } }
 
 export default function SettingsPage({ searchParams }: SettingsPageProps) {
@@ -204,11 +193,10 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
   const backlogCount = fs.existsSync(backlogFile) ? JSON.parse(fs.readFileSync(backlogFile, 'utf8')).length as number : 0
   const allRows = groups.flatMap((group) => group.rows.map(([name]) => name))
   const missingRequired = requiredVars.filter((name) => !env[name])
-  const networkUrl = `http://${localIp()}:4000`
   const rowByName = new Map(groups.flatMap((group) => group.rows.map((row) => [row[0], row])))
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup</h1>
@@ -247,7 +235,7 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
             <button className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white">Set Up This Computer</button>
           </form>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {setupSteps.map(([number, title, body, action]) => (
             <div key={title} className="rounded border border-slate-800 p-3">
               <div className="flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-slate-800 text-xs">{number}</span><h3 className="text-sm font-semibold">{title}</h3></div>
@@ -261,11 +249,11 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
       <div className="mt-6 grid gap-3 md:grid-cols-4">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Configuration file</h2><p className={envExists ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{envExists ? 'Ready' : 'Missing'}</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Required settings</h2><p className={missingRequired.length === 0 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-red-300'}>{missingRequired.length === 0 ? 'Ready' : `${missingRequired.length} missing`}</p></div>
-        <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Backlog</h2><p className={backlogCount === 45 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{backlogCount}/45 tasks</p></div>
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Backlog</h2><p className={backlogCount >= 45 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{backlogCount}/45 tasks</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Credential fields</h2><p className="mt-2 text-sm text-slate-300">{allRows.length} tracked</p></div>
       </div>
 
-      <div className="mt-6 grid gap-3 md:grid-cols-2">
+      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {plainLanguageGroups.map((group) => {
           const total = group.names.length
           const ready = group.names.filter((name) => Boolean(env[name])).length
@@ -304,25 +292,6 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">Network Access</h2>
-            <p className="mt-1 text-sm text-slate-400">Use this only on your private local network. Never expose DevTools to the internet.</p>
-          </div>
-          <div className="flex gap-2">
-            <form action="/api/actions" method="post"><input type="hidden" name="action" value="deploy-web" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Show QR</button></form>
-            <form action="/api/actions" method="post"><input type="hidden" name="action" value="deploy-web-stop" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Stop Web</button></form>
-          </div>
-        </div>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          <div className="rounded border border-slate-800 px-3 py-2"><span className="text-sm text-slate-400">Local URL</span><p className="mt-1 text-sm text-slate-200">http://localhost:4000</p></div>
-          <div className="rounded border border-slate-800 px-3 py-2"><span className="text-sm text-slate-400">Network URL</span><p className="mt-1 text-sm text-sky-300">{networkUrl}</p></div>
-          <div className="rounded border border-slate-800 px-3 py-2"><span className="text-sm text-slate-400">Bind address</span><p className="mt-1 text-sm text-emerald-300">0.0.0.0</p></div>
-          <div className="rounded border border-slate-800 px-3 py-2"><span className="text-sm text-slate-400">Firewall</span><p className="mt-1 text-sm text-amber-300">Allow inbound TCP 4000 on private networks</p></div>
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-sm font-semibold">Backlog setup</h2><p className="mt-1 text-sm text-slate-400">Seed the local DevTools backlog if it is not ready.</p></div>
           <form action="/api/settings/env" method="post"><input type="hidden" name="action" value="seed-backlog" /><button type="submit" className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Seed backlog</button></form>
         </div>
@@ -330,7 +299,7 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <h2 className="text-sm font-semibold">Safe local defaults</h2>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {safeDefaults.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2"><span className="text-sm text-slate-400">{label}</span><code className="text-xs text-slate-200">{value}</code></div>
           ))}

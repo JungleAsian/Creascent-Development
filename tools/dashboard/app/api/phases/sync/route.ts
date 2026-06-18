@@ -13,7 +13,7 @@ function pnpmCommand() {
 }
 
 function redirect(request: Request, key: 'message' | 'error', value: string) {
-  const referer = request.headers.get('referer') ?? 'http://localhost:4000/phases'
+  const referer = request.headers.get('referer') ?? 'http://127.0.0.1:4000/phases'
   const url = new URL(referer)
   url.searchParams.set(key, value)
   return NextResponse.redirect(url, 303)

@@ -1,7 +1,7 @@
 {
   "build": {
     "beforeDevCommand": "cd ../dashboard && pnpm dev",
-    "devPath": "http://localhost:4000",
+    "devPath": "http://127.0.0.1:4000",
     "distDir": "../dashboard/.next"
   },
   "package": {
@@ -16,15 +16,18 @@
     "windows": [
       {
         "title": "Docmee DevTools",
-        "width": 1280,
-        "height": 800,
-        "url": "http://localhost:4000",
-        "visible": true
+        "width": 960,
+        "height": 680,
+        "url": "http://127.0.0.1:4000",
+        "center": true,
+        "visible": false,
+        "minWidth": 720,
+        "minHeight": 520
       }
     ],
     "systemTray": {
       "iconPath": "icons/tray.png",
-      "iconAsTemplate": true,
+      "iconAsTemplate": false,
       "menuOnLeftClick": false
     },
     "allowlist": {

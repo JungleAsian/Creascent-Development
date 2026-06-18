@@ -5,7 +5,9 @@ import { NextResponse } from 'next/server'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
-const buildRunFile = path.join(toolsRoot, 'logs', 'build-run.json')
+const logsRoot = path.join(toolsRoot, 'logs')
+const buildRunFile = path.join(logsRoot, 'build-run.json')
+const claudeUsageGuardFile = path.join(logsRoot, 'claude-usage-guard.json')
 
 function pnpmCommand() {
   if (process.platform !== 'win32') return 'pnpm'
@@ -15,7 +17,7 @@ function pnpmCommand() {
 }
 
 function redirect(request: Request, key: 'message' | 'error', value: string) {
-  const referer = request.headers.get('referer') ?? 'http://localhost:4000/settings'
+  const referer = request.headers.get('referer') ?? 'http://127.0.0.1:4000/settings'
   const url = new URL(referer)
   url.searchParams.set(key, value)
   return NextResponse.redirect(url, 303)
@@ -34,6 +36,17 @@ function runTool(args: string[]) {
 
 function shortOutput(output: string) {
   return output.replace(/\s+/g, ' ').trim().slice(0, 220)
+}
+
+function claudeSmokeBlocker(output: string) {
+  try {
+    const result = JSON.parse(output) as { categories?: Array<{ checks?: Array<{ name?: string; status?: string; message?: string; fix?: string }> }> }
+    return result.categories
+      ?.flatMap((category) => category.checks ?? [])
+      .find((check) => check.name === 'Claude Code build smoke test' && check.status === 'critical')
+  } catch {
+    return undefined
+  }
 }
 
 function saveStartReadiness(phase: string, steps: Array<{ name: string; status: 'pass' | 'fail'; message: string }>) {
@@ -73,7 +86,7 @@ function activeBuildRun() {
   if (!existsSync(buildRunFile)) return null
   try {
     const data = JSON.parse(readFileSync(buildRunFile, 'utf8')) as { pid?: number; status?: string; phase?: string }
-    return isProcessAlive(data.pid) && ['starting', 'running'].includes(data.status ?? '') ? data : null
+    return isProcessAlive(data.pid) && ['starting', 'running', 'paused'].includes(data.status ?? '') ? data : null
   } catch {
     return null
   }
@@ -150,7 +163,8 @@ export async function POST(request: Request) {
   if (action === 'webhook-send') {
     const payload = String(form.get('payload') ?? 'text-message')
     const result = runTool(['webhook', 'send', '--payload', payload])
-    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Sent ${payload}` : `Send ${payload} failed`)
+    const label = payload.split('-').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ')
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${label} test sent` : `${label} test failed`)
   }
 
   if (action === 'phase-start' || action === 'phase-done') {
@@ -236,6 +250,56 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Build Control database ready' : 'Build Control setup failed')
   }
 
+  if (action === 'claude-switch-reset-guard') {
+    try {
+      writeFileSync(claudeUsageGuardFile, JSON.stringify({
+        thresholdPercent: 95,
+        notes: 'Reset after Claude account switch. DevTools will relearn the active Max session limit.',
+        updatedAt: new Date().toISOString()
+      }, null, 2))
+      return redirect(request, 'message', 'Claude usage guard reset for the new account')
+    } catch {
+      return redirect(request, 'error', 'Claude usage guard reset failed')
+    }
+  }
+
+  if (action === 'claude-switch-finalize') {
+    const current = existsSync(buildRunFile)
+      ? JSON.parse(readFileSync(buildRunFile, 'utf8')) as { pid?: number; phase?: string; startedAt?: string }
+      : {}
+    stopProcessTree(current.pid)
+    writeFileSync(claudeUsageGuardFile, JSON.stringify({
+      thresholdPercent: 95,
+      notes: 'Reset after Claude account switch. DevTools will relearn the active account limit after Claude refresh.',
+      updatedAt: new Date().toISOString()
+    }, null, 2))
+    writeFileSync(buildRunFile, JSON.stringify({
+      ...current,
+      status: 'stopped',
+      heartbeatAt: new Date().toISOString(),
+      message: 'Build stopped for Claude account switch. Ready Check will verify the new account.'
+    }, null, 2))
+    const result = runTool(['ready', '--json'])
+    if (!result.ok) {
+      const blocker = claudeSmokeBlocker(result.output)
+      if (blocker) {
+        writeFileSync(buildRunFile, JSON.stringify({
+          ...current,
+          status: 'stopped',
+          heartbeatAt: new Date().toISOString(),
+          message: `${blocker.message}${blocker.fix ? ` Fix: ${blocker.fix}` : ''}`
+        }, null, 2))
+      }
+    }
+    return redirect(
+      request,
+      result.ok ? 'message' : 'error',
+      result.ok
+        ? 'Claude account verified. You can resume the build.'
+        : shortOutput(claudeSmokeBlocker(result.output)?.message ?? '') || 'Claude account saved, but Ready Check still needs attention before resume.'
+    )
+  }
+
   if (action === 'backlog-done') {
     const id = String(form.get('id') ?? '')
     const result = runTool(['backlog', 'done', '--id', id])
@@ -280,6 +344,11 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Development session logged' : 'Development cost log failed')
   }
 
+  if (action === 'cost-dev-sync-claude') {
+    const result = runTool(['cost', 'dev', 'sync-claude'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Claude Code cost synced' : 'Claude Code cost sync failed')
+  }
+
   if (action === 'stack-refresh') {
     const source = String(form.get('source') ?? 'all')
     const args = source === 'grok'
@@ -289,6 +358,14 @@ export async function POST(request: Request) {
         : ['stack', 'all']
     const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stack Intelligence refreshed' : 'Stack Intelligence refresh failed')
+  }
+
+  if (action === 'stack-update-all') {
+    if (String(form.get('confirm') ?? '') !== 'UPDATE_ALL_TECHNOLOGIES') {
+      return redirect(request, 'error', 'Technology update was not confirmed')
+    }
+    const result = runTool(['stack', 'update-all'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Technology updates applied' : 'Technology update failed')
   }
 
   if (action === 'discord-test') {
@@ -306,8 +383,6 @@ export async function POST(request: Request) {
       'deploy-status': ['deploy', 'status'],
       'deploy-redis': ['deploy', 'redis'],
       'deploy-local': ['deploy', 'local'],
-      'deploy-web': ['deploy', 'web', '--qr'],
-      'deploy-web-stop': ['deploy', 'web', '--stop'],
       'deploy-env': ['deploy', 'env'],
       'deploy-vps': ['deploy', 'vps'],
       'deploy-rollback': ['deploy', 'rollback']

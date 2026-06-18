@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { BuildProgressGauge } from '../build-progress-gauge'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
@@ -80,13 +81,16 @@ export default function PhasesPage({ searchParams }: PageProps) {
   const buildBlocked = [...readyBlocked, ...readyInvalid]
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <div className="sticky top-14 z-20 flex flex-wrap items-start justify-between gap-4 bg-slate-950 py-2 md:static md:bg-transparent md:py-0">
         <div>
           <h1 className="text-2xl font-semibold">Phase Progress</h1>
           <p className="mt-2 text-sm text-slate-400">{done}/19 phases complete</p>
         </div>
-        <div className="h-3 w-full rounded bg-slate-800 md:w-72"><div className="h-3 rounded bg-cyan-500" style={{ width: `${Math.round((done / 19) * 100)}%` }} /></div>
+        <div className="flex w-full items-center gap-4 md:w-auto">
+          <BuildProgressGauge size="md" />
+          <div className="h-3 min-w-40 flex-1 rounded bg-slate-800 md:w-72"><div className="h-3 rounded bg-cyan-500" style={{ width: `${Math.round((done / 19) * 100)}%` }} /></div>
+        </div>
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
@@ -123,6 +127,7 @@ export default function PhasesPage({ searchParams }: PageProps) {
           return (
             <div key={id} className="rounded-md border border-slate-800 bg-slate-900 p-4">
               <div className="flex flex-wrap items-center gap-3">
+                <BuildProgressGauge phaseId={id} size="sm" showLabel={false} />
                 <strong className="w-14">{id}</strong>
                 <div className="min-w-0 flex-1 md:min-w-64">
                   <div className="font-medium">{name}</div>

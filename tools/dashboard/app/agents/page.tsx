@@ -56,7 +56,7 @@ export default function AgentsPage({ searchParams }: PageProps) {
   const pipeline = agents.filter((agent) => agent.enabled)
 
   return (
-    <section className="max-w-6xl">
+    <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">AI Agents</h1>
@@ -81,18 +81,18 @@ export default function AgentsPage({ searchParams }: PageProps) {
       )}
 
       <h2 className="mt-6 text-sm font-semibold">Core Agents</h2>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {core.map((agent) => <AgentCard key={agent.id} agent={agent} />)}
       </div>
 
       <h2 className="mt-6 text-sm font-semibold">Additional Agents</h2>
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
+      <div className="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         {additional.map((agent) => <AgentCard key={agent.id} agent={agent} />)}
       </div>
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <h2 className="text-sm font-semibold">Service Credentials</h2>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {services.map(([id, label, mode, key]) => (
             <div key={id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2">
               <div><span className="text-sm">{label}</span><span className="ml-2 text-xs text-slate-500">{mode}</span></div>

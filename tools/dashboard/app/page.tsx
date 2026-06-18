@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import Link from 'next/link'
 import path from 'node:path'
+import { BuildProgressGauge } from './build-progress-gauge'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const readyFile = path.join(toolsRoot, 'logs', 'ready.json')
@@ -51,8 +52,8 @@ export default function Page() {
   const stackItems = (stack.packages?.length ?? 0) + (stack.advisories?.length ?? 0) + (stack.news?.length ?? 0)
 
   return (
-    <section className="max-w-7xl">
-      <div className="grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
+    <section className="w-full">
+      <div className="grid gap-4 xl:grid-cols-[1.45fr_0.55fr]">
         <div className="ui-panel rounded-md border p-5 md:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -68,7 +69,7 @@ export default function Page() {
             </Link>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="ui-soft rounded-md border p-4">
               <div className="text-xs text-slate-500">Ready checks</div>
               <div className="mt-2 text-2xl font-semibold">{ready.summary?.pass ?? 0}</div>
@@ -80,9 +81,14 @@ export default function Page() {
               <div className="mt-1 text-xs text-slate-400">critical issues</div>
             </div>
             <div className="ui-soft rounded-md border p-4">
-              <div className="text-xs text-slate-500">Phases complete</div>
-              <div className="mt-2 text-2xl font-semibold">{done}/19</div>
-              <div className="mt-1 text-xs text-slate-400">build progress</div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs text-slate-500">Phases complete</div>
+                  <div className="mt-2 text-2xl font-semibold">{done}/19</div>
+                  <div className="mt-1 text-xs text-slate-400">build progress</div>
+                </div>
+                <BuildProgressGauge size="sm" showLabel={false} />
+              </div>
             </div>
             <div className="ui-soft rounded-md border p-4">
               <div className="text-xs text-slate-500">Stack intelligence</div>
@@ -108,7 +114,7 @@ export default function Page() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {workCards.map(([title, href, body, label]) => (
           <Link key={href} href={href} className="ui-panel ui-card-hover rounded-md border p-5">
             <div className="flex items-start justify-between gap-3">
@@ -120,9 +126,9 @@ export default function Page() {
         ))}
       </div>
 
-      <div className="mt-6 ui-panel rounded-md border p-5">
+      <div className="mt-4 ui-panel rounded-md border p-5">
         <h2 className="text-sm font-semibold">Supporting Tools</h2>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {secondaryCards.map(([title, href, body]) => (
             <Link key={href} href={href} className="flex min-h-14 items-center justify-between gap-3 rounded-md border border-slate-800 px-3 py-2 text-sm hover:bg-slate-800">
               <span>{title}</span>
