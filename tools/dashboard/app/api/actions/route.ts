@@ -1,10 +1,11 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
+const buildRunFile = path.join(toolsRoot, 'logs', 'build-run.json')
 
 function pnpmCommand() {
   if (process.platform !== 'win32') return 'pnpm'
@@ -56,6 +57,40 @@ function runToolDetached(args: string[]) {
   })
   child.unref()
   return child.pid
+}
+
+function isProcessAlive(pid?: number) {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function activeBuildRun() {
+  if (!existsSync(buildRunFile)) return null
+  try {
+    const data = JSON.parse(readFileSync(buildRunFile, 'utf8')) as { pid?: number; status?: string; phase?: string }
+    return isProcessAlive(data.pid) && ['starting', 'running'].includes(data.status ?? '') ? data : null
+  } catch {
+    return null
+  }
+}
+
+function stopProcessTree(pid?: number) {
+  if (!pid || !isProcessAlive(pid)) return false
+  if (process.platform === 'win32') {
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8', stdio: 'pipe' })
+    return !isProcessAlive(pid)
+  }
+  try {
+    process.kill(pid, 'SIGTERM')
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function POST(request: Request) {
@@ -165,8 +200,35 @@ export async function POST(request: Request) {
 
   if (action === 'phase-build-watch') {
     const from = String(form.get('from') ?? 'P01')
+    const active = activeBuildRun()
+    if (active) return redirect(request, 'error', `Build is already running from ${active.phase ?? 'current phase'}. Stop it before starting another one.`)
     const pid = runToolDetached(['phase', 'watch', '--from', from])
+    writeFileSync(buildRunFile, JSON.stringify({
+      pid,
+      phase: from,
+      status: 'starting',
+      startedAt: new Date().toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      message: `Automated build watcher started from ${from}`
+    }, null, 2))
     return redirect(request, 'message', `Automated build watcher started from ${from}${pid ? ` (${pid})` : ''}`)
+  }
+
+  if (action === 'phase-build-stop') {
+    const current = existsSync(buildRunFile)
+      ? JSON.parse(readFileSync(buildRunFile, 'utf8')) as { pid?: number; phase?: string }
+      : {}
+    const stopped = stopProcessTree(current.pid)
+    writeFileSync(buildRunFile, JSON.stringify({
+      ...current,
+      status: 'stopped',
+      heartbeatAt: new Date().toISOString(),
+      message: stopped ? 'Build stopped from dashboard' : 'No live build process was found'
+    }, null, 2))
+    if (current.phase) {
+      runTool(['phase', 'status', '--phase', current.phase, '--status', 'pending', '--notes', 'Build stopped from dashboard'])
+    }
+    return redirect(request, stopped ? 'message' : 'error', stopped ? 'Build stopped' : 'No live build process was found')
   }
 
   if (action === 'phase-build-control-init') {

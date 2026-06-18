@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { Client } from '@notionhq/client'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { checkGates } from './gates.js'
@@ -10,6 +10,7 @@ import { log } from '../lib/logger.js'
 import { envFile, promptsDir } from '../lib/paths.js'
 import { defaultPhaseState, phaseDefinitions, phaseFileName, type PhaseState } from '../lib/phases.js'
 import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
+import { touchBuildRun } from '../lib/build-run.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
 
@@ -406,6 +407,7 @@ function shouldSync(opts: { sync?: boolean; noSync?: boolean }) {
 }
 
 async function runAutomatedClaudePhase(phaseId: string, name: string, file: string) {
+  touchBuildRun({ phase: phaseId, status: 'running', message: `${phaseId} Claude Code build starting` })
   await setBuildStatus(phaseId, 'in-progress', 'Claude Code build started')
   const state = phases()
   const phase = state.find((item) => item.id === phaseId)
@@ -416,28 +418,23 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
   }
   await sendNotification(`${phaseId} Claude Code build started.`, 'development')
   const prompt = fs.readFileSync(file, 'utf8')
-  const claude = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
-    cwd: repoRoot(),
-    encoding: 'utf8',
-    env: claudeCodeEnvironment(),
-    input: prompt,
-    shell: false,
-    stdio: 'pipe'
-  })
-  const output = `${claude.stdout ?? ''}${claude.stderr ?? ''}`.trim()
+  const { status, output } = await runClaudeWithHeartbeat(phaseId, prompt)
   if (output) {
     for (const line of output.split(/\r?\n/).filter(Boolean)) log('phase', `${phaseId} Claude Code: ${line}`)
   }
-  if (claude.status !== 0) {
+  if (status !== 0) {
     const failure = shortFailure(output)
+    touchBuildRun({ phase: phaseId, status: 'failed', message: `${phaseId} Claude Code failed: ${failure}` })
     await setBuildStatus(phaseId, 'failed', `Claude Code failed: ${failure}`)
     await sendNotification(`${phaseId} Claude Code failed: ${failure}. Fix Claude Code, then resume from ${phaseId}.`, 'critical')
     process.exitCode = 1
     return false
   }
+  touchBuildRun({ phase: phaseId, status: 'running', message: `${phaseId} Claude Code finished; running gates` })
   await setBuildStatus(phaseId, 'gates-running', 'Running quality gates')
   const gates = checkGates()
   if (gates.some((gate) => !gate.ok)) {
+    touchBuildRun({ phase: phaseId, status: 'failed', message: `${phaseId} gates failed` })
     await setBuildStatus(phaseId, 'failed', 'One or more gates failed')
     await sendNotification(`${phaseId} gates failed after Claude Code build.`, 'critical')
     process.exitCode = 1
@@ -446,6 +443,7 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
   await setBuildStatus(phaseId, 'pushing', 'Committing and pushing phase changes')
   const published = await commitAndPushPhase(phaseId, name)
   if (!published.ok) {
+    touchBuildRun({ phase: phaseId, status: 'failed', message: `${phaseId} GitHub push failed` })
     await setBuildStatus(phaseId, 'failed', `GitHub push failed: ${published.message}`)
     log('phase', `Cannot complete ${phaseId}; GitHub push failed: ${published.message}`, 'error')
     process.exitCode = 1
@@ -464,7 +462,37 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
   saveBuildControl(buildControl().map((record) => record.phaseId === phaseId ? control : record))
   await notifyPhaseComplete(phaseId, name)
   if (phaseId === 'P11') await sendNotification('Submit to Meta for WhatsApp approval now. Do not wait for P19.', 'critical')
+  touchBuildRun({ phase: phaseId, status: phaseId === 'P19' ? 'complete' : 'running', message: `${phaseId} complete${phaseId === 'P19' ? '' : '; advancing to next phase'}` })
   return true
+}
+
+function runClaudeWithHeartbeat(phaseId: string, prompt: string) {
+  return new Promise<{ status: number | null; output: string }>((resolve) => {
+    const child = spawn(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
+      cwd: repoRoot(),
+      env: claudeCodeEnvironment(),
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    const chunks: string[] = []
+    const heartbeat = setInterval(() => {
+      touchBuildRun({ phase: phaseId, status: 'running', message: `${phaseId} Claude Code is working` })
+    }, 15_000)
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => chunks.push(String(chunk)))
+    child.stderr.on('data', (chunk) => chunks.push(String(chunk)))
+    child.on('error', (error) => {
+      clearInterval(heartbeat)
+      resolve({ status: 1, output: error.message })
+    })
+    child.on('close', (code) => {
+      clearInterval(heartbeat)
+      touchBuildRun({ phase: phaseId, status: 'running', message: `${phaseId} Claude Code process finished` })
+      resolve({ status: code, output: chunks.join('').trim() })
+    })
+    child.stdin.end(prompt)
+  })
 }
 
 async function runBuild(opts: { from?: string; dryRun?: boolean; noSync?: boolean; sync?: boolean }) {
@@ -523,6 +551,7 @@ async function completePhaseAfterOutput(phaseId: string) {
 }
 
 async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?: string; noSync?: boolean; sync?: boolean; dryRun?: boolean }) {
+  if (!opts.dryRun) touchBuildRun({ phase: opts.from ?? 'P01', status: 'starting', startedAt: new Date().toISOString(), message: 'Automated build watcher starting' })
   if (shouldSync(opts)) await syncPrompts({ force: false, dryRun: opts.dryRun })
   const plan = buildPlan(opts.from)
   for (const phase of plan) {
@@ -540,6 +569,7 @@ async function watchBuild(opts: { from?: string; interval?: string; maxMinutes?:
     const completed = await runAutomatedClaudePhase(phase.id, phase.name, file)
     if (!completed) return
   }
+  if (!opts.dryRun) touchBuildRun({ phase: 'P19', status: 'complete', message: 'Automated build complete' })
   await closeDiscordClient()
 }
 

@@ -6,6 +6,7 @@ const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
 const buildControlFile = path.join(toolsRoot, 'logs', 'build-control.json')
 const readyFile = path.join(toolsRoot, 'logs', 'ready.json')
 const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
+const buildRunFile = path.join(toolsRoot, 'logs', 'build-run.json')
 const promptsDir = path.join(toolsRoot, 'prompts')
 const buildControlUrl = 'https://app.notion.com/p/38241c470daf8146a1f6d9b28cc498f3'
 
@@ -37,6 +38,7 @@ type Control = { phaseId: string; status: string; updatedAt: string; notes?: str
 type ReadyCheck = { name: string; status: 'pass' | 'warning' | 'critical'; message: string; fix?: string }
 type ReadyResult = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string; categories?: Array<{ id: string; label: string; checks: ReadyCheck[] }> }
 type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
+type BuildRun = { pid?: number; phase?: string; status?: string; startedAt?: string; heartbeatAt?: string; message?: string }
 
 function readJson<T>(file: string, fallback: T) {
   if (!fs.existsSync(file)) return fallback
@@ -67,6 +69,21 @@ function readyState() {
 
 function startReadinessState() {
   return readJson<StartReadiness>(startReadinessFile, { ready: false, steps: [] })
+}
+
+function isProcessAlive(pid?: number) {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function buildRunState() {
+  const run = readJson<BuildRun>(buildRunFile, { status: 'idle' })
+  return { ...run, live: isProcessAlive(run.pid) && ['starting', 'running'].includes(run.status ?? '') }
 }
 
 function promptInfo(id: string) {
@@ -108,7 +125,8 @@ export default function BuildControlPage({ searchParams }: PageProps) {
   const startReadiness = startReadinessState()
   const startCheckCurrent = startReadiness.phase === currentId
   const startCheckPassed = Boolean(startReadiness.ready && startCheckCurrent)
-  const startLocked = readyCritical > 0 || !startCheckPassed
+  const buildRun = buildRunState()
+  const startLocked = readyCritical > 0 || !startCheckPassed || buildRun.live
   const claudeCheck = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Claude Code build smoke test')
   const claudeAccount = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Claude Code account')
   const claudeInstalled = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Claude Code installed')
@@ -171,6 +189,26 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             <div className={startCheckPassed ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-amber-300'}>{startCheckPassed ? 'Passed' : 'Not checked'}</div>
             <div className="mt-1 text-xs text-slate-500">{startReadiness.createdAt && startCheckCurrent ? new Date(startReadiness.createdAt).toLocaleString() : `Waiting for ${currentId}`}</div>
           </div>
+        </div>
+
+        <div className="mt-4 rounded border border-slate-800 bg-slate-950/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs text-slate-500">Live build process</div>
+              <div className={buildRun.live ? 'mt-1 text-sm font-medium text-emerald-300' : 'mt-1 text-sm font-medium text-slate-300'}>{buildRun.live ? 'Running' : 'Not running'}</div>
+              <div className="mt-1 text-xs text-slate-500">{buildRun.message ?? 'No active build watcher'}</div>
+            </div>
+            <div className="text-right text-xs text-slate-500">
+              <div>{buildRun.pid ? `PID ${buildRun.pid}` : 'No PID'}</div>
+              <div>{buildRun.heartbeatAt ? `Heartbeat ${new Date(buildRun.heartbeatAt).toLocaleTimeString()}` : 'No heartbeat yet'}</div>
+            </div>
+          </div>
+          {buildRun.live && (
+            <form action="/api/actions" method="post" className="mt-3">
+              <input type="hidden" name="action" value="phase-build-stop" />
+              <button className="min-h-11 rounded-md border border-red-800 px-3 py-2 text-sm text-red-200 hover:bg-red-950/50">Stop Build</button>
+            </form>
+          )}
         </div>
 
         {(startReadiness.steps ?? []).length > 0 && startCheckCurrent && (
