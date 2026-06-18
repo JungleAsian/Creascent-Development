@@ -23,7 +23,7 @@ export function touchBuildRun(partial: Partial<BuildRunState>) {
   writeBuildRun({
     ...current,
     ...partial,
-    pid: partial.pid ?? current.pid ?? process.pid,
+    pid: partial.pid ?? process.pid,
     heartbeatAt: new Date().toISOString()
   })
 }
