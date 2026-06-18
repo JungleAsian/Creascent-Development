@@ -93,11 +93,14 @@ deployCmd.command('vps').action(async () => {
   await closeDiscordClient()
 })
 
-deployCmd.command('local').action(() => {
-  const compose = path.resolve(toolsRoot, '..', 'docker-compose.yml')
-  if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true })
-  log('deploy', 'Local deploy requested. Product app processes start after Docmee app phases create /apps.')
-})
+deployCmd
+  .command('local')
+  .option('--no-browser', 'Do not open a browser (used by the Playwright webServer)')
+  .action(() => {
+    const compose = path.resolve(toolsRoot, '..', 'docker-compose.yml')
+    if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true })
+    log('deploy', 'Local deploy requested. Product app processes start after Docmee app phases create /apps.')
+  })
 
 deployCmd.command('health').option('--target <target>', 'local or vps', 'local').action(async (opts: { target: string }) => {
   loadConfig()

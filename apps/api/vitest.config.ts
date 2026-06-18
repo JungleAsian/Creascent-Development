@@ -5,6 +5,21 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // P17 coverage gate. Thresholds are enforced only when running with
+    // `--coverage` (see the `test:coverage` script); plain `vitest run` is
+    // unaffected so the headless DevTools gate stays fast and Docker-free.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      exclude: ['src/**/*.test.ts', 'src/tests/**', 'src/server.ts'],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 75,
+        statements: 80,
+      },
+    },
   },
   resolve: {
     alias: {
