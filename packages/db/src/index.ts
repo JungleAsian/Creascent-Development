@@ -65,6 +65,7 @@ export {
   createMessagesRepository,
   createAppointmentsRepository,
   createKnowledgeRepository,
+  createErrorReviewsRepository,
   createAuditRepository,
 } from './repositories/index.js'
 
@@ -96,6 +97,9 @@ export type {
   CreateIaProfileInput,
   UpdateIaProfileInput,
   CreateIaRuleInput,
+  EmbeddedChunkRow,
+  ErrorReviewsRepository,
+  CreateErrorReviewInput,
   AuditRepository,
   CreateAuditEventInput,
   AuditEventFilter,

@@ -27,6 +27,13 @@ export interface CreateChunkInput {
   metadata?: Record<string, unknown>
 }
 
+/** A KB chunk paired with its stored embedding, for in-process similarity search. */
+export interface EmbeddedChunkRow {
+  title: string
+  content: string
+  embedding: number[]
+}
+
 export interface CreateIaProfileInput {
   clinicId: string
   name: string
@@ -64,6 +71,8 @@ export interface KnowledgeRepository {
   deleteDocument(clinicId: string, id: string): Promise<void>
 
   listChunks(clinicId: string, documentId: string): Promise<KnowledgeChunk[]>
+  /** Chunks of active documents that carry an embedding, for KB retrieval. */
+  listEmbeddedChunks(clinicId: string): Promise<EmbeddedChunkRow[]>
   createChunk(data: CreateChunkInput): Promise<KnowledgeChunk>
   replaceChunks(clinicId: string, documentId: string, chunks: Omit<CreateChunkInput, 'documentId' | 'clinicId'>[]): Promise<KnowledgeChunk[]>
 
@@ -127,6 +136,20 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
         SELECT * FROM knowledge_chunks
         WHERE clinic_id = ${clinicId} AND document_id = ${documentId}
         ORDER BY chunk_index
+      `
+    },
+
+    async listEmbeddedChunks(clinicId) {
+      return sql<EmbeddedChunkRow[]>`
+        SELECT d.title AS title,
+               c.content AS content,
+               c.metadata -> 'embedding' -> 'v' AS embedding
+        FROM knowledge_chunks c
+        JOIN knowledge_documents d
+          ON d.id = c.document_id AND d.clinic_id = c.clinic_id
+        WHERE c.clinic_id = ${clinicId}
+          AND d.status = 'active'
+          AND (c.metadata -> 'embedding') ? 'v'
       `
     },
 

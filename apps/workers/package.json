@@ -16,6 +16,7 @@
     "@docmee/queue": "workspace:*",
     "@docmee/llm": "workspace:*",
     "@docmee/agents": "workspace:*",
+    "@docmee/channels": "workspace:*",
     "@docmee/db": "workspace:*",
     "zod": "^3.23.0",
     "dotenv": "^16.4.5"

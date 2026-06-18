@@ -119,6 +119,9 @@ importers:
       '@docmee/agents':
         specifier: workspace:*
         version: link:../../packages/agents
+      '@docmee/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@docmee/config':
         specifier: workspace:*
         version: link:../../packages/config
