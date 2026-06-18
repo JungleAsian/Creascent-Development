@@ -1,6 +1,6 @@
 import 'dotenv/config'
 
-import { createWorker } from '@docmee/queue'
+import { createWorker, licenseHeartbeatQueue } from '@docmee/queue'
 import { RATE_LIMITS } from '@docmee/config'
 import { processConversationJob } from './conversation-processor.worker.js'
 import { processTranscriptionJob } from './transcription-processor.worker.js'
@@ -50,5 +50,16 @@ export const timeoutMonitor = setInterval(() => {
 }, TIMEOUT_CHECK_INTERVAL_MS)
 // Don't keep the process alive solely for the monitor.
 if (typeof timeoutMonitor.unref === 'function') timeoutMonitor.unref()
+
+// License heartbeat: enqueue a full-audit tick every 30 min. The worker checks
+// each active clinic's license and fires LICENSE_EXPIRING / LICENSE_EXPIRED
+// alerts — it never deactivates a clinic (licensing must not interrupt a live clinic).
+const LICENSE_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000
+export const licenseHeartbeatScheduler = setInterval(() => {
+  void licenseHeartbeatQueue
+    .add('audit', {})
+    .catch((err) => console.error('[license-heartbeat] failed to enqueue tick:', err))
+}, LICENSE_HEARTBEAT_INTERVAL_MS)
+if (typeof licenseHeartbeatScheduler.unref === 'function') licenseHeartbeatScheduler.unref()
 
 console.log('[workers] all 7 workers registered and listening')
