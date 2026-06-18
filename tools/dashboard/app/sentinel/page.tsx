@@ -48,12 +48,17 @@ export default function SentinelPage({ searchParams }: PageProps) {
             Read-only orchestration layer that observes DevTools signals, creates issue tickets, and routes fixes to the right agent.
           </p>
         </div>
-        <form action="/api/actions" method="post">
-          <input type="hidden" name="action" value="sentinel-scan" />
-          <button className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
-            Scan Now
-          </button>
-        </form>
+        <div className="flex flex-wrap gap-2">
+          <a href="/sentinel-pwa/index.html" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
+            Open Mobile PWA
+          </a>
+          <form action="/api/actions" method="post">
+            <input type="hidden" name="action" value="sentinel-scan" />
+            <button className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+              Scan Now
+            </button>
+          </form>
+        </div>
       </div>
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}

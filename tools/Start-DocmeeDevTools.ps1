@@ -12,9 +12,23 @@ function Test-Dashboard {
   }
 }
 
+function Get-DashboardHost {
+  if ($env:DOCMEE_DEVTOOLS_HOST) {
+    return $env:DOCMEE_DEVTOOLS_HOST
+  }
+  $tailscale = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.InterfaceAlias -match 'Tailscale' -or $_.IPAddress -like '100.*' } |
+    Select-Object -First 1
+  if ($tailscale) {
+    return "0.0.0.0"
+  }
+  return "127.0.0.1"
+}
+
 if (-not (Test-Dashboard)) {
   $node = (Get-Command node -ErrorAction Stop).Source
-  $nextArgs = "`"$nextBin`" dev -p 4000 -H 127.0.0.1"
+  $dashboardHost = Get-DashboardHost
+  $nextArgs = "`"$nextBin`" dev -p 4000 -H $dashboardHost"
   Start-Process `
     -FilePath $node `
     -ArgumentList $nextArgs `
