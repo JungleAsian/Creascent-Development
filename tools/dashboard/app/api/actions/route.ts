@@ -3,6 +3,7 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import net from 'node:net'
 import { NextResponse } from 'next/server'
+import { scanSentinel } from '../../lib/sentinel'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const repoRoot = path.resolve(toolsRoot, '..')
@@ -590,6 +591,17 @@ export async function POST(request: Request) {
       failed
         ? `Post-deployment check found ${run.summary.fail} issue${run.summary.fail === 1 ? '' : 's'}.`
         : 'Post-deployment check passed.'
+    )
+  }
+
+  if (action === 'sentinel-scan') {
+    const result = scanSentinel()
+    return redirect(
+      request,
+      result.activeIssueCount > 0 ? 'error' : 'message',
+      result.activeIssueCount > 0
+        ? `Sentinel found ${result.activeIssueCount} active issue${result.activeIssueCount === 1 ? '' : 's'}.`
+        : 'Sentinel scan completed with no active issues.'
     )
   }
 

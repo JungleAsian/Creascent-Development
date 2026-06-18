@@ -12,6 +12,7 @@ const nav = [
   ['Phase Progress', '/phases'],
   ['Development Cost', '/cost'],
   ['Stack Intelligence', '/stack'],
+  ['Sentinel', '/sentinel'],
   ['Diagnostics', '/diagnostics'],
   ['Agents', '/agents'],
   ['Logs', '/logs'],
