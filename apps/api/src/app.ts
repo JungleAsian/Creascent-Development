@@ -4,6 +4,7 @@ import { errorHandler, notFoundHandler } from './plugins/errors.js'
 import healthRoute from './routes/health.js'
 import webhookRoute from './routes/webhook.js'
 import notificationsRoute from './routes/notifications.js'
+import calendarRoute from './routes/calendar.js'
 
 export async function buildApp() {
   const env = parseEnv()
@@ -18,6 +19,7 @@ export async function buildApp() {
   await app.register(healthRoute)
   await app.register(webhookRoute, { prefix: '/webhook' })
   await app.register(notificationsRoute, { prefix: '/notifications' })
+  await app.register(calendarRoute)
 
   return app
 }

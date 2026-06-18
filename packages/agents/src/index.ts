@@ -34,7 +34,7 @@ export interface CalendarClient {
   rescheduleAppointment(appointmentId: string, newData: AppointmentData): Promise<string>
 }
 
-export { createGoogleCalendarClient } from './calbot/google-calendar-client.js'
+export * from './calbot/index.js'
 
 export async function routeMessage(_context: MessageContext): Promise<AgentResult> {
   throw new Error('routeMessage: not implemented — wire LLM router in P05+')

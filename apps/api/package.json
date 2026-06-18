@@ -13,6 +13,9 @@
   },
   "dependencies": {
     "@docmee/queue": "workspace:*",
+    "@docmee/db": "workspace:*",
+    "@docmee/agents": "workspace:*",
+    "@docmee/shared": "workspace:*",
     "fastify": "^4.28.0",
     "@fastify/sensible": "^5.5.0",
     "dotenv": "^16.4.5",
