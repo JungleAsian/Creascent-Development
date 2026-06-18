@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+
+// buildApp registers the webhook route, which imports @docmee/queue. Stub it so the
+// real queue (and its Redis connections) never load during these HTTP tests.
+vi.mock('@docmee/queue', () => ({ whatsappInboundQueue: { add: vi.fn() } }))
+
 import { buildApp } from '../app.js'
 
 describe('health routes', () => {

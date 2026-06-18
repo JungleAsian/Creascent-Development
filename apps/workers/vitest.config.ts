@@ -8,9 +8,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Resolve the workspace package to source so vi.mock can register against it
+      // Resolve workspace packages to source so vi.mock can register against them
       // without requiring a prior build.
       '@docmee/queue': fileURLToPath(new URL('../../packages/queue/src/index.ts', import.meta.url)),
+      '@docmee/db': fileURLToPath(new URL('../../packages/db/src/index.ts', import.meta.url)),
     },
   },
 })

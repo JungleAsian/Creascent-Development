@@ -10,6 +10,8 @@ const AgentJobSchema = z.object({
   patientWaId: z.string(),
   message: z.string(),
   waMessageId: z.string(),
+  patientId: z.string().uuid().optional(),
+  isNewPatient: z.boolean().optional(),
   conversationId: z.string().uuid().optional(),
 })
 

@@ -25,8 +25,28 @@ export interface TranscriptionProvider {
   transcribe(audioUrl: string): Promise<string>
 }
 
+export { sendWhatsAppText } from './whatsapp-sender.js'
+export { downloadMedia, type DownloadedMedia } from './media-downloader.js'
 export { createDeepgramProvider } from './transcription/deepgram-provider.js'
 
-export function createWhatsAppAdapter(_config: { accessToken: string }): ChannelAdapter {
-  throw new Error('WhatsAppAdapter: not implemented — wire Meta webhook in P04+')
+import { sendWhatsAppText } from './whatsapp-sender.js'
+
+export interface WhatsAppAdapterConfig {
+  phoneNumberId: string
+  accessToken: string
+}
+
+/**
+ * Outbound WhatsApp adapter. Inbound parsing lives in the webhook route
+ * (apps/api), which validates the raw Meta payload before enqueueing.
+ */
+export function createWhatsAppAdapter(config: WhatsAppAdapterConfig): ChannelAdapter {
+  return {
+    async send(message: OutboundMessage): Promise<void> {
+      await sendWhatsAppText(config.phoneNumberId, config.accessToken, message.to, message.content)
+    },
+    parseInbound(): InboundMessage {
+      throw new Error('parseInbound: inbound WhatsApp payloads are parsed in the webhook route')
+    },
+  }
 }

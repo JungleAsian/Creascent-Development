@@ -26,6 +26,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@docmee/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
       '@fastify/sensible':
         specifier: ^5.5.0
         version: 5.6.0

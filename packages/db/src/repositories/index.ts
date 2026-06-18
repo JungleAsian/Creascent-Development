@@ -1,4 +1,5 @@
 export { createClinicsRepository }       from './clinics.repository.js'
+export { createChannelAccountsRepository } from './channel-accounts.repository.js'
 export { createPatientsRepository }      from './patients.repository.js'
 export { createConversationsRepository } from './conversations.repository.js'
 export { createMessagesRepository }      from './messages.repository.js'
@@ -7,6 +8,7 @@ export { createKnowledgeRepository }     from './knowledge.repository.js'
 export { createAuditRepository }         from './audit.repository.js'
 
 export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput }                          from './clinics.repository.js'
+export type { ChannelAccountsRepository, CreateChannelAccountInput }                             from './channel-accounts.repository.js'
 export type { PatientsRepository, CreatePatientInput, UpdatePatientInput,
               CreatePatientContactInput }                                                          from './patients.repository.js'
 export type { ConversationsRepository, CreateConversationInput, UpdateConversationInput,

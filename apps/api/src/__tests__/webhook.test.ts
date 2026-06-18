@@ -1,0 +1,116 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { createHmac } from 'node:crypto'
+
+const { add } = vi.hoisted(() => ({ add: vi.fn() }))
+vi.mock('@docmee/queue', () => ({ whatsappInboundQueue: { add } }))
+
+import { buildApp } from '../app.js'
+
+const SECRET = 'webhook-secret'
+const VERIFY = 'verify-token'
+
+const validPayload = JSON.stringify({
+  object: 'whatsapp_business_account',
+  entry: [
+    {
+      id: 'WABA',
+      changes: [
+        {
+          field: 'messages',
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: { display_phone_number: '15550001111', phone_number_id: 'PHONE_ID' },
+            contacts: [{ profile: { name: 'Ana' }, wa_id: '5215555555555' }],
+            messages: [
+              { from: '5215555555555', id: 'wamid.1', timestamp: '1700000000', type: 'text', text: { body: 'hola' } },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+})
+
+const sign = (b: string) => `sha256=${createHmac('sha256', SECRET).update(Buffer.from(b)).digest('hex')}`
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+describe('webhook routes', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>
+
+  beforeAll(async () => {
+    process.env['NODE_ENV'] = 'test'
+    process.env['META_APP_SECRET'] = SECRET
+    process.env['META_VERIFY_TOKEN'] = VERIFY
+    app = await buildApp()
+    await app.ready()
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  beforeEach(() => {
+    add.mockClear()
+  })
+
+  it('GET verification with the correct token returns 200 + challenge', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=${VERIFY}&hub.challenge=42`,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe('42')
+  })
+
+  it('GET verification with a wrong token returns 403', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=nope&hub.challenge=42',
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('POST always returns 200, even for an invalid payload', async () => {
+    const body = '{"not":"whatsapp"}'
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(body) },
+      payload: body,
+    })
+    await flush()
+    expect(res.statusCode).toBe(200)
+    expect(add).not.toHaveBeenCalled()
+  })
+
+  it('POST with an invalid HMAC returns 200 but does not enqueue', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=bad' },
+      payload: validPayload,
+    })
+    await flush()
+    expect(res.statusCode).toBe(200)
+    expect(add).not.toHaveBeenCalled()
+  })
+
+  it('POST with a valid payload + HMAC returns 200 and enqueues the message', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(validPayload) },
+      payload: validPayload,
+    })
+    await flush()
+    expect(res.statusCode).toBe(200)
+    expect(add).toHaveBeenCalledTimes(1)
+    const [name, job] = add.mock.calls[0] as [string, Record<string, unknown>]
+    expect(name).toBe('inbound')
+    expect(job['phoneNumberId']).toBe('PHONE_ID')
+    expect(job['patientWaId']).toBe('5215555555555')
+    expect(job['patientName']).toBe('Ana')
+    expect(job['messageType']).toBe('text')
+    expect(job['content']).toBe('hola')
+  })
+})

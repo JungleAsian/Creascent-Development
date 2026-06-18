@@ -59,6 +59,7 @@ export type {
 // ── Repository factories ───────────────────────────────────────────────────────
 export {
   createClinicsRepository,
+  createChannelAccountsRepository,
   createPatientsRepository,
   createConversationsRepository,
   createMessagesRepository,
@@ -71,6 +72,8 @@ export type {
   ClinicsRepository,
   CreateClinicInput,
   UpdateClinicInput,
+  ChannelAccountsRepository,
+  CreateChannelAccountInput,
   PatientsRepository,
   CreatePatientInput,
   UpdatePatientInput,
