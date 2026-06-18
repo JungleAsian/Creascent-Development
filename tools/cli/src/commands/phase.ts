@@ -9,7 +9,7 @@ import { loadConfig } from '../lib/config.js'
 import { log } from '../lib/logger.js'
 import { envFile, promptsDir } from '../lib/paths.js'
 import { defaultPhaseState, phaseDefinitions, phaseFileName, type PhaseState } from '../lib/phases.js'
-import { claudeCodeCommand } from '../lib/claude-code.js'
+import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 import { notifyPhaseComplete } from '../../../discord/src/notifications/phase-complete.js'
 
@@ -419,6 +419,7 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
   const claude = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot(), prompt], {
     cwd: repoRoot(),
     encoding: 'utf8',
+    env: claudeCodeEnvironment(),
     shell: false,
     stdio: 'pipe'
   })

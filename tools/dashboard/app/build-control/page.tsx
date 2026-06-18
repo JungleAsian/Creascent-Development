@@ -5,6 +5,7 @@ const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
 const buildControlFile = path.join(toolsRoot, 'logs', 'build-control.json')
 const readyFile = path.join(toolsRoot, 'logs', 'ready.json')
+const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
 const promptsDir = path.join(toolsRoot, 'prompts')
 const buildControlUrl = 'https://app.notion.com/p/38241c470daf8146a1f6d9b28cc498f3'
 
@@ -33,7 +34,9 @@ const definitions = [
 type PageProps = { searchParams?: { message?: string; error?: string } }
 type Phase = { id: string; status: 'not-started' | 'in-progress' | 'done'; completedAt?: string; commitHash?: string }
 type Control = { phaseId: string; status: string; updatedAt: string; notes?: string; commitHash?: string }
-type ReadyResult = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string }
+type ReadyCheck = { name: string; status: 'pass' | 'warning' | 'critical'; message: string; fix?: string }
+type ReadyResult = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string; categories?: Array<{ id: string; label: string; checks: ReadyCheck[] }> }
+type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
 
 function readJson<T>(file: string, fallback: T) {
   if (!fs.existsSync(file)) return fallback
@@ -60,6 +63,10 @@ function controlState() {
 
 function readyState() {
   return readJson<ReadyResult>(readyFile, { ready: false, summary: { critical: 1, warning: 0, pass: 0 } })
+}
+
+function startReadinessState() {
+  return readJson<StartReadiness>(startReadinessFile, { ready: false, steps: [] })
 }
 
 function promptInfo(id: string) {
@@ -98,6 +105,15 @@ export default function BuildControlPage({ searchParams }: PageProps) {
   const currentPrompt = promptInfo(currentId)
   const ready = readyState()
   const readyCritical = ready.summary?.critical ?? 1
+  const startReadiness = startReadinessState()
+  const startCheckCurrent = startReadiness.phase === currentId
+  const startCheckPassed = Boolean(startReadiness.ready && startCheckCurrent)
+  const startLocked = readyCritical > 0 || !startCheckPassed
+  const claudeCheck = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Claude Code build smoke test')
+  const claudeAccount = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Claude Code account')
+  const claudeInstalled = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Claude Code installed')
+  const notionCheck = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'Notion reachable')
+  const githubCheck = ready.categories?.flatMap((category) => category.checks).find((check) => check.name === 'GitHub push access')
 
   return (
     <section className="max-w-6xl">
@@ -111,17 +127,66 @@ export default function BuildControlPage({ searchParams }: PageProps) {
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
-      {readyCritical > 0 && (
-        <div className="mt-4 rounded-md border border-red-800 bg-red-950/40 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-red-200">Readiness gate has not passed</h2>
-              <p className="mt-1 text-sm text-red-100">{readyCritical} critical issue{readyCritical === 1 ? '' : 's'} must be fixed before starting the automated build.</p>
-            </div>
-            <a href="/ready" className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white">Open Ready Check</a>
+
+      <div className={startLocked ? 'mt-4 rounded-md border border-amber-800 bg-amber-950/30 p-4' : 'mt-4 rounded-md border border-emerald-800 bg-emerald-950/30 p-4'}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className={startLocked ? 'text-sm font-semibold text-amber-100' : 'text-sm font-semibold text-emerald-100'}>{startLocked ? 'Start Readiness needs a check' : 'Start Readiness passed'}</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              {readyCritical > 0
+                ? `${readyCritical} critical setup issue${readyCritical === 1 ? '' : 's'} must be fixed first.`
+                : startCheckPassed
+                  ? `Safe Start Check passed for ${currentId}.`
+                  : `Run Start Check for ${currentId} before starting automation.`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="start-readiness" />
+              <input type="hidden" name="phase" value={currentId} />
+              <button className="min-h-11 rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Run Start Check</button>
+            </form>
+            <a href="/ready" className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open Ready Details</a>
           </div>
         </div>
-      )}
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
+            <div className="text-xs text-slate-500">Claude Pro</div>
+            <div className={claudeCheck?.status === 'pass' && claudeAccount?.status === 'pass' ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-red-300'}>{claudeCheck?.status === 'pass' && claudeAccount?.status === 'pass' ? 'Connected' : 'Needs attention'}</div>
+            <div className="mt-1 text-xs text-slate-500">{claudeAccount?.message ?? claudeInstalled?.message ?? 'Run Ready Check'}</div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
+            <div className="text-xs text-slate-500">Notion</div>
+            <div className={notionCheck?.status === 'pass' ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-red-300'}>{notionCheck?.status === 'pass' ? 'Connected' : 'Needs attention'}</div>
+            <div className="mt-1 text-xs text-slate-500">{notionCheck?.message ?? 'Run Ready Check'}</div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
+            <div className="text-xs text-slate-500">GitHub</div>
+            <div className={githubCheck?.status === 'pass' ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-red-300'}>{githubCheck?.status === 'pass' ? 'Reachable' : 'Needs attention'}</div>
+            <div className="mt-1 text-xs text-slate-500">{githubCheck?.message ?? 'Run Ready Check'}</div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
+            <div className="text-xs text-slate-500">Safe Build Test</div>
+            <div className={startCheckPassed ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-amber-300'}>{startCheckPassed ? 'Passed' : 'Not checked'}</div>
+            <div className="mt-1 text-xs text-slate-500">{startReadiness.createdAt && startCheckCurrent ? new Date(startReadiness.createdAt).toLocaleString() : `Waiting for ${currentId}`}</div>
+          </div>
+        </div>
+
+        {(startReadiness.steps ?? []).length > 0 && startCheckCurrent && (
+          <div className="mt-4 grid gap-2">
+            {startReadiness.steps?.map((step) => (
+              <div key={step.name} className="flex flex-wrap items-start gap-2 rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm">
+                <span className={step.status === 'pass' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-red-900 px-2 py-1 text-xs text-red-100'}>{step.status === 'pass' ? 'pass' : 'needs attention'}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-slate-200">{step.name}</div>
+                  <div className="mt-1 text-slate-400">{step.message}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -158,7 +223,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-build-watch" />
               <input type="hidden" name="from" value={currentId} />
-              <button disabled={readyCritical > 0} className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
+              <button disabled={startLocked} className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
             </form>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-context" />

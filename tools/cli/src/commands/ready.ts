@@ -7,7 +7,7 @@ import { log } from '../lib/logger.js'
 import { envFile, promptsDir, toolsRoot } from '../lib/paths.js'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { phaseDefinitions, phaseFileName } from '../lib/phases.js'
-import { claudeCodeCommand } from '../lib/claude-code.js'
+import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 
 type ReadySeverity = 'pass' | 'warning' | 'critical'
@@ -83,10 +83,45 @@ function claudeCodeInstalledCheck(): ReadyCheck {
     : { name: 'Claude Code installed', status: 'critical', message: 'Claude Code command is not available.', fix: 'Install Claude Code and sign in with Claude Max before starting the automated build.' }
 }
 
+function claudeCodeAccountCheck(): ReadyCheck {
+  const result = spawnSync(claudeCodeCommand(), ['auth', 'status'], {
+    cwd: toolsRoot,
+    encoding: 'utf8',
+    env: claudeCodeEnvironment(),
+    shell: false,
+    stdio: 'pipe'
+  })
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+  if (result.status !== 0) {
+    return {
+      name: 'Claude Code account',
+      status: 'critical',
+      message: output || 'Claude Code is not logged in.',
+      fix: 'Sign in to Claude Code with the Claude Pro account, then rerun Setup Check.'
+    }
+  }
+  try {
+    const status = JSON.parse(output) as { loggedIn?: boolean; authMethod?: string; email?: string; subscriptionType?: string }
+    if (status.loggedIn && status.authMethod === 'claude.ai') {
+      const plan = status.subscriptionType ? ` (${status.subscriptionType})` : ''
+      return { name: 'Claude Code account', status: 'pass', message: `${status.email ?? 'Claude account'}${plan}` }
+    }
+    return {
+      name: 'Claude Code account',
+      status: 'critical',
+      message: 'Claude Code is not using a Claude subscription login.',
+      fix: 'Log out of Claude Code, then log in with the Claude Pro account.'
+    }
+  } catch {
+    return { name: 'Claude Code account', status: 'critical', message: output || 'Claude Code account could not be verified.', fix: 'Sign in to Claude Code again.' }
+  }
+}
+
 function claudeCodeBuildSmokeCheck(): ReadyCheck {
   const result = spawnSync(claudeCodeCommand(), ['--print', 'Reply READY only'], {
     cwd: toolsRoot,
     encoding: 'utf8',
+    env: claudeCodeEnvironment(),
     shell: false,
     stdio: 'pipe'
   })
@@ -174,8 +209,9 @@ async function buildReadyResult(): Promise<ReadyResult> {
       id: 'agents',
       label: 'AI Agents',
       checks: [
-        { name: 'Anthropic API key', status: 'warning', message: 'ANTHROPIC_API_KEY is not required for the automated development build; Claude Code uses Claude Max locally.', fix: 'Add ANTHROPIC_API_KEY later only for live runtime API bot testing.' },
+        { name: 'Anthropic API key', status: 'warning', message: 'ANTHROPIC_API_KEY is ignored for the automated development build; Claude Code uses the local Claude subscription login.', fix: 'Add ANTHROPIC_API_KEY later only for live runtime API bot testing.' },
         claudeCodeInstalledCheck(),
+        claudeCodeAccountCheck(),
         claudeCodeBuildSmokeCheck(),
         backendBuilderCheck()
       ]

@@ -1,9 +1,10 @@
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
+const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
 
 function pnpmCommand() {
   if (process.platform !== 'win32') return 'pnpm'
@@ -28,6 +29,21 @@ function runTool(args: string[]) {
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   return { ok: result.status === 0, output }
+}
+
+function shortOutput(output: string) {
+  return output.replace(/\s+/g, ' ').trim().slice(0, 220)
+}
+
+function saveStartReadiness(phase: string, steps: Array<{ name: string; status: 'pass' | 'fail'; message: string }>) {
+  const failed = steps.find((step) => step.status === 'fail')
+  writeFileSync(startReadinessFile, JSON.stringify({
+    createdAt: new Date().toISOString(),
+    phase,
+    ready: !failed,
+    steps
+  }, null, 2))
+  return !failed
 }
 
 function runToolDetached(args: string[]) {
@@ -55,6 +71,39 @@ export async function POST(request: Request) {
     const args = action === 'ready-fix' ? ['ready', '--fix'] : ['ready']
     const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'DevTools is ready' : 'Readiness check found critical issues')
+  }
+
+  if (action === 'start-readiness') {
+    const phase = String(form.get('phase') ?? 'P01')
+    const steps: Array<{ name: string; status: 'pass' | 'fail'; message: string }> = []
+
+    const ready = runTool(['ready', '--json'])
+    steps.push({
+      name: 'Setup Check',
+      status: ready.ok ? 'pass' : 'fail',
+      message: ready.ok ? 'Ready Check passed. Claude Pro, Notion, GitHub, prompts, and Discord are usable.' : shortOutput(ready.output) || 'Ready Check found a blocker.'
+    })
+
+    if (ready.ok) {
+      const context = runTool(['phase', 'context', '--phase', phase])
+      steps.push({
+        name: `${phase} Context`,
+        status: context.ok ? 'pass' : 'fail',
+        message: context.ok ? `${phase} build context prepared.` : shortOutput(context.output) || `${phase} context could not be prepared.`
+      })
+    }
+
+    if (steps.every((step) => step.status === 'pass')) {
+      const dryRun = runTool(['phase', 'build', '--from', phase, '--dry-run', '--no-sync'])
+      steps.push({
+        name: 'Safe Build Test',
+        status: dryRun.ok ? 'pass' : 'fail',
+        message: dryRun.ok ? 'Dry run passed. Start can launch without hidden setup work.' : shortOutput(dryRun.output) || 'Dry run found a build blocker.'
+      })
+    }
+
+    const ok = saveStartReadiness(phase, steps)
+    return redirect(request, ok ? 'message' : 'error', ok ? 'Start Check passed. You can start the automated build.' : 'Start Check found something that needs attention.')
   }
 
   if (action === 'seed') {

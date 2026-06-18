@@ -29,3 +29,9 @@ export function claudeCodeCommand() {
 
   return 'claude'
 }
+
+export function claudeCodeEnvironment() {
+  const env = { ...process.env }
+  delete env.ANTHROPIC_API_KEY
+  return env
+}
