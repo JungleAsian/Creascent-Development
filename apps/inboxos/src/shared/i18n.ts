@@ -266,6 +266,9 @@ const es: Dict = {
   'compliance.item.tpl3Approved': 'Plantilla 3: human_handoff_notification — aprobada',
   'compliance.item.firstClinic': 'Primera clínica incorporada y probada',
   'compliance.item.acceptance': 'Prueba de aceptación de 8 pasos superada',
+  'compliance.item.discord': 'Notificaciones de Discord funcionando (gates, fases, costes)',
+  'compliance.item.vpsMonitoring': 'Monitoreo del VPS confirmado (PM2, Redis, health check)',
+  'compliance.viewPolicy': 'Ver política de privacidad publicada →',
 
   // ── P16 ──
   'nav.metrics': 'Métricas',
@@ -666,6 +669,9 @@ const en: Dict = {
   'compliance.item.tpl3Approved': 'Template 3: human_handoff_notification — approved',
   'compliance.item.firstClinic': 'First clinic onboarded and tested',
   'compliance.item.acceptance': '8-step acceptance test passed',
+  'compliance.item.discord': 'Discord notifications working (gates, phases, costs)',
+  'compliance.item.vpsMonitoring': 'VPS monitoring confirmed (PM2, Redis, health check)',
+  'compliance.viewPolicy': 'View published privacy policy →',
 
   // ── P16 ──
   'nav.metrics': 'Metrics',

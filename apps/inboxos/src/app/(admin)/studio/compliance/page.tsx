@@ -21,6 +21,8 @@ const ITEMS: { id: string; label: TranslationKey }[] = [
   { id: 'tpl3Approved', label: 'compliance.item.tpl3Approved' },
   { id: 'firstClinic', label: 'compliance.item.firstClinic' },
   { id: 'acceptance', label: 'compliance.item.acceptance' },
+  { id: 'discord', label: 'compliance.item.discord' },
+  { id: 'vpsMonitoring', label: 'compliance.item.vpsMonitoring' },
 ]
 
 export default function CompliancePage() {
@@ -102,7 +104,16 @@ export default function CompliancePage() {
         })}
       </ul>
 
-      <p className="mt-4 text-xs text-gray-400">{t('compliance.savedLocally')}</p>
+      <a
+        href="/privacy-policy.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-4 inline-block text-sm text-blue-600 hover:underline dark:text-blue-400"
+      >
+        {t('compliance.viewPolicy')}
+      </a>
+
+      <p className="mt-3 text-xs text-gray-400">{t('compliance.savedLocally')}</p>
     </div>
   )
 }
