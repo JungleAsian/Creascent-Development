@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { SpanishTranslator } from './spanish-translator'
@@ -14,6 +14,12 @@ type HeartbeatState = {
   live?: boolean
   run?: { phase?: string; heartbeatAt?: string; heartbeatAgeMs?: number; message?: string }
   heartbeat?: { status?: string }
+}
+type ProjectMetrics = {
+  generatedAt?: string
+  totalCost?: number
+  totalTokens?: number
+  phase?: { current?: string; done?: number; total?: number; status?: string; message?: string }
 }
 
 const spanishLabels: Record<string, string> = {
@@ -58,19 +64,26 @@ const primaryMobile = ['Ready', 'Build Control', 'Phase Progress', 'Six Gates', 
 
 export function DashboardShell({ children, nav }: DashboardShellProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [language, setLanguage] = useState<'en' | 'es'>('en')
   const [moreOpen, setMoreOpen] = useState(false)
   const [readyCritical, setReadyCritical] = useState(0)
   const [heartbeat, setHeartbeat] = useState<HeartbeatState | null>(null)
+  const [metrics, setMetrics] = useState<ProjectMetrics | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null)
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem('docmee-sidebar-collapsed') === 'true')
     const savedTheme = window.localStorage.getItem('docmee-theme')
     const savedLanguage = window.localStorage.getItem('docmee-language')
+    const savedAutoRefresh = window.localStorage.getItem('docmee-auto-refresh')
     if (savedTheme === 'light' || savedTheme === 'dark') setTheme(savedTheme)
     if (savedLanguage === 'en' || savedLanguage === 'es') setLanguage(savedLanguage)
+    if (savedAutoRefresh === 'false') setAutoRefresh(false)
   }, [])
 
   useEffect(() => {
@@ -78,16 +91,45 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
     document.documentElement.lang = language
   }, [theme, language])
 
-  useEffect(() => {
-    fetch('/api/ready/status')
+  function refreshReady() {
+    return fetch('/api/ready/status', { cache: 'no-store' })
       .then((response) => response.json())
       .then((data: { critical?: number }) => setReadyCritical(data.critical ?? 0))
       .catch(() => setReadyCritical(0))
+  }
+
+  function refreshHeartbeat() {
+    return fetch('/api/install-monitor/status', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((data: HeartbeatState) => setHeartbeat(data))
+      .catch(() => setHeartbeat({ live: false, heartbeat: { status: 'unknown' } }))
+  }
+
+  function refreshMetrics() {
+    return fetch('/api/project-metrics', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((data: ProjectMetrics) => setMetrics(data))
+      .catch(() => setMetrics(null))
+  }
+
+  function refreshNow(refreshPage = false) {
+    setRefreshing(true)
+    Promise.allSettled([refreshReady(), refreshHeartbeat(), refreshMetrics()])
+      .then(() => {
+        setLastRefreshAt(new Date().toISOString())
+        if (refreshPage) router.refresh()
+      })
+      .finally(() => setRefreshing(false))
+  }
+
+  useEffect(() => {
+    refreshReady()
+    refreshMetrics()
   }, [])
 
   useEffect(() => {
     let mounted = true
-    function refreshHeartbeat() {
+    function pollHeartbeat() {
       fetch('/api/install-monitor/status', { cache: 'no-store' })
         .then((response) => response.json())
         .then((data: HeartbeatState) => {
@@ -97,13 +139,19 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
           if (mounted) setHeartbeat({ live: false, heartbeat: { status: 'unknown' } })
         })
     }
-    refreshHeartbeat()
-    const timer = window.setInterval(refreshHeartbeat, 5000)
+    pollHeartbeat()
+    const timer = window.setInterval(pollHeartbeat, 5000)
     return () => {
       mounted = false
       window.clearInterval(timer)
     }
   }, [])
+
+  useEffect(() => {
+    if (!autoRefresh) return
+    const timer = window.setInterval(() => refreshNow(true), 30000)
+    return () => window.clearInterval(timer)
+  }, [autoRefresh, router])
 
   function toggleSidebar() {
     const next = !collapsed
@@ -121,6 +169,12 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
     const next = language === 'en' ? 'es' : 'en'
     setLanguage(next)
     window.localStorage.setItem('docmee-language', next)
+  }
+
+  function toggleAutoRefresh() {
+    const next = !autoRefresh
+    setAutoRefresh(next)
+    window.localStorage.setItem('docmee-auto-refresh', String(next))
   }
 
   function labelFor(label: string) {
@@ -174,6 +228,31 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
     if (status === 'dead') return language === 'es' ? 'Muerto' : 'Dead'
     if (status === 'stopped') return language === 'es' ? 'Detenido' : 'Stopped'
     return language === 'es' ? 'Desconocido' : 'Unknown'
+  }
+
+  function shortMoney(value?: number) {
+    if (typeof value !== 'number') return '$0.00'
+    return `$${value.toFixed(value >= 10 ? 2 : 4)}`
+  }
+
+  function shortNumber(value?: number) {
+    if (typeof value !== 'number') return '0'
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
+    return String(value)
+  }
+
+  function maskIcon(src: string, className = 'h-4 w-4') {
+    return (
+      <span
+        aria-hidden="true"
+        className={`${className} bg-current`}
+        style={{
+          WebkitMask: `url(${src}) center / contain no-repeat`,
+          mask: `url(${src}) center / contain no-repeat`
+        }}
+      />
+    )
   }
 
   const primaryLinks = nav.filter(([label]) => primaryMobile.includes(label))
@@ -239,6 +318,41 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
             </span>
             <span className="hidden sm:inline">{heartbeatLabel(heartbeat?.heartbeat?.status)}</span>
             {heartbeat?.run?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs md:inline">{heartbeat.run.phase}</span>}
+          </Link>
+          <button
+            type="button"
+            onClick={() => refreshNow(true)}
+            className="ui-action grid min-h-11 min-w-11 place-items-center rounded-md border px-3 py-2 text-sm text-slate-300 hover:text-white"
+            aria-label="Refresh DevTools view"
+            title={lastRefreshAt ? `Refresh DevTools view. Last refresh ${new Date(lastRefreshAt).toLocaleTimeString()}` : 'Refresh DevTools view'}
+          >
+            <svg aria-hidden="true" className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 12a8 8 0 1 1-2.35-5.65" />
+              <path d="M20 4v5h-5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={toggleAutoRefresh}
+            className={`ui-action flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${autoRefresh ? 'text-emerald-300' : 'text-slate-300'} hover:text-white`}
+            aria-label={autoRefresh ? 'Turn off auto refresh' : 'Turn on auto refresh'}
+            title={autoRefresh ? 'Auto refresh is on: updates the desktop UI every 30 seconds' : 'Auto refresh is off'}
+          >
+            <span className={`h-2.5 w-2.5 rounded-full ${autoRefresh ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+            <span className="hidden lg:inline">{autoRefresh ? 'Auto' : 'Manual'}</span>
+          </button>
+          <Link
+            href="/cost"
+            className="heartbeat-pill flex min-h-11 max-w-full items-center gap-2 rounded-md border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 hover:text-white"
+            title={`Current phase ${metrics?.phase?.current ?? heartbeat?.run?.phase ?? 'unknown'} · ${shortMoney(metrics?.totalCost)} project cost · ${shortNumber(metrics?.totalTokens)} tokens tracked`}
+          >
+            <span className="text-cyan-100">{maskIcon('/lineicons/dollar-circle.svg')}</span>
+            <span className="font-semibold text-slate-100">{shortMoney(metrics?.totalCost)}</span>
+            <span className="hidden text-slate-500 xl:inline">|</span>
+            <span className="hidden items-center gap-1 xl:flex">{maskIcon('/lineicons/bar-chart-4.svg', 'h-3.5 w-3.5')} {metrics?.phase?.done ?? 0}/{metrics?.phase?.total ?? 19}</span>
+            <span className="hidden text-slate-500 2xl:inline">|</span>
+            <span className="hidden 2xl:inline">{shortNumber(metrics?.totalTokens)} tokens</span>
+            <span className="rounded bg-slate-950/40 px-1.5 py-0.5 font-mono text-xs text-cyan-100">{metrics?.phase?.current ?? heartbeat?.run?.phase ?? 'P--'}</span>
           </Link>
           <Link href="/ready" className={readyCritical > 0 ? 'min-h-11 rounded-md border border-red-700/70 px-3 py-2 text-sm text-red-200 hover:bg-red-950/50' : 'min-h-11 rounded-md border border-emerald-700/70 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-950/40'}>
             {readyText}
