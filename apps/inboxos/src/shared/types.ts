@@ -84,6 +84,11 @@ export interface Clinic {
   messengerPageId?: string | null
   messengerWebhookVerifyToken?: string | null
   messengerEnabled?: boolean
+  // P15 — Instagram Direct connection. The access token is write-only and is
+  // never sent back to the panel, so it is not exposed here.
+  instagramAccountId?: string | null
+  instagramWebhookVerifyToken?: string | null
+  instagramEnabled?: boolean
   createdAt: string
   updatedAt: string
 }

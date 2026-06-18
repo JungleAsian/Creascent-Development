@@ -15,7 +15,7 @@ import {
   type ClinicBotConfig,
   type Language,
 } from '@docmee/agents'
-import { sendWhatsAppText, sendMessengerText } from '@docmee/channels'
+import { sendWhatsAppText, sendMessengerText, sendInstagramText } from '@docmee/channels'
 import { schedulingQueue, notificationQueue, type Job } from '@docmee/queue'
 import {
   createServiceDbClient,
@@ -31,7 +31,7 @@ import {
 
 const AgentJobSchema = z.object({
   clinicId: z.string().uuid(),
-  channel: z.enum(['whatsapp', 'messenger']).optional().default('whatsapp'),
+  channel: z.enum(['whatsapp', 'messenger', 'instagram']).optional().default('whatsapp'),
   patientWaId: z.string(),
   message: z.string(),
   waMessageId: z.string(),
@@ -75,10 +75,10 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
 /**
  * Resolve the outbound reply transport for the message's channel. Returns null
  * when the clinic has no usable credentials (WhatsApp account inactive, or
- * Messenger not connected) — the caller then stays silent.
+ * Messenger/Instagram not connected) — the caller then stays silent.
  */
 function resolveSendReply(
-  channel: 'whatsapp' | 'messenger',
+  channel: 'whatsapp' | 'messenger' | 'instagram',
   clinic: Clinic,
   account: ChannelAccount | undefined,
   recipient: string,
@@ -87,6 +87,11 @@ function resolveSendReply(
     const token = clinic.messengerEnabled ? clinic.messengerPageAccessTokenEncrypted : null
     if (!token) return null
     return (text) => sendMessengerText(token, recipient, text)
+  }
+  if (channel === 'instagram') {
+    const token = clinic.instagramEnabled ? clinic.instagramPageAccessTokenEncrypted : null
+    if (!token) return null
+    return (text) => sendInstagramText(token, recipient, text)
   }
   if (!account) return null
   const phoneNumberId = account.accountId

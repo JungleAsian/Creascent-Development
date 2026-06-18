@@ -23,6 +23,12 @@ export interface UpdateClinicInput {
   messengerPageAccessToken?: string
   messengerWebhookVerifyToken?: string
   messengerEnabled?: boolean
+  // P15 — Instagram connection. `instagramPageAccessToken` maps to the
+  // *_encrypted column; pass it only when (re)setting the token.
+  instagramAccountId?: string
+  instagramPageAccessToken?: string
+  instagramWebhookVerifyToken?: string
+  instagramEnabled?: boolean
 }
 
 export interface ClinicsRepository {
@@ -30,6 +36,8 @@ export interface ClinicsRepository {
   findBySlug(slug: string): Promise<Clinic | null>
   /** Resolve the clinic that owns an inbound Messenger event by its Page id (enabled only). */
   findByMessengerPageId(pageId: string): Promise<Clinic | null>
+  /** Resolve the clinic that owns an inbound Instagram event by its account id (enabled only). */
+  findByInstagramAccountId(accountId: string): Promise<Clinic | null>
   list(): Promise<Clinic[]>
   /** Count of clinics in the 'active' status — powers the IA Studio overview (Gap #8). */
   countActive(): Promise<number>
@@ -53,6 +61,15 @@ export function createClinicsRepository(sql: Sql): ClinicsRepository {
       const rows = await sql<Clinic[]>`
         SELECT * FROM clinics
         WHERE messenger_page_id = ${pageId} AND messenger_enabled = TRUE
+        LIMIT 1
+      `
+      return rows[0] ?? null
+    },
+
+    async findByInstagramAccountId(accountId) {
+      const rows = await sql<Clinic[]>`
+        SELECT * FROM clinics
+        WHERE instagram_account_id = ${accountId} AND instagram_enabled = TRUE
         LIMIT 1
       `
       return rows[0] ?? null
@@ -96,6 +113,10 @@ export function createClinicsRepository(sql: Sql): ClinicsRepository {
           messenger_page_access_token_encrypted = COALESCE(${data.messengerPageAccessToken ?? null}, messenger_page_access_token_encrypted),
           messenger_webhook_verify_token        = COALESCE(${data.messengerWebhookVerifyToken ?? null}, messenger_webhook_verify_token),
           messenger_enabled                     = COALESCE(${data.messengerEnabled         ?? null}, messenger_enabled),
+          instagram_account_id                   = COALESCE(${data.instagramAccountId        ?? null}, instagram_account_id),
+          instagram_page_access_token_encrypted  = COALESCE(${data.instagramPageAccessToken  ?? null}, instagram_page_access_token_encrypted),
+          instagram_webhook_verify_token         = COALESCE(${data.instagramWebhookVerifyToken ?? null}, instagram_webhook_verify_token),
+          instagram_enabled                      = COALESCE(${data.instagramEnabled          ?? null}, instagram_enabled),
           settings = CASE WHEN ${data.settings !== undefined} THEN ${sql.json(toJson(data.settings ?? {}))} ELSE settings END
         WHERE id = ${id}
         RETURNING *

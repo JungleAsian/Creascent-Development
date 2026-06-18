@@ -15,9 +15,10 @@ import {
 
 export const InboundMessageSchema = z.object({
   // Channel the message arrived on. `phoneNumberId` is the provider account id:
-  // a WhatsApp phone_number_id, or a Messenger Page id. `patientWaId` is the
-  // sender handle: a WhatsApp wa_id, or a Messenger PSID.
-  channel: z.enum(['whatsapp', 'messenger']).optional().default('whatsapp'),
+  // a WhatsApp phone_number_id, a Messenger Page id, or an Instagram account id.
+  // `patientWaId` is the sender handle: a WhatsApp wa_id, a Messenger PSID, or
+  // an Instagram IGSID.
+  channel: z.enum(['whatsapp', 'messenger', 'instagram']).optional().default('whatsapp'),
   phoneNumberId: z.string(),
   patientWaId: z.string(),
   patientName: z.string().optional().default(''),
@@ -49,7 +50,7 @@ export async function processConversationJob(job: Job): Promise<void> {
     const channel: Channel = msg.channel
     // Resolve which clinic owns the receiving account. WhatsApp resolves via the
     // channel_accounts table (per phone_number_id); Messenger resolves via the
-    // clinic's connected Page id (P14).
+    // clinic's connected Page id (P14); Instagram via its account id (P15).
     let clinicId: string
     let waAccessToken = ''
 
@@ -59,6 +60,16 @@ export async function processConversationJob(job: Job): Promise<void> {
       if (!clinic) {
         console.warn(
           `[conversation] no Messenger-enabled clinic for page_id=${msg.phoneNumberId}; dropping ${msg.waMessageId}`,
+        )
+        return
+      }
+      clinicId = clinic.id
+    } else if (channel === 'instagram') {
+      const clinics = createClinicsRepository(sql)
+      const clinic = await clinics.findByInstagramAccountId(msg.phoneNumberId)
+      if (!clinic) {
+        console.warn(
+          `[conversation] no Instagram-enabled clinic for account_id=${msg.phoneNumberId}; dropping ${msg.waMessageId}`,
         )
         return
       }

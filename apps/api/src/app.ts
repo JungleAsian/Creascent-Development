@@ -4,6 +4,7 @@ import { errorHandler, notFoundHandler } from './plugins/errors.js'
 import healthRoute from './routes/health.js'
 import webhookRoute from './routes/webhook.js'
 import messengerRoute from './routes/messenger.js'
+import instagramRoute from './routes/instagram.js'
 import authRoute from './routes/auth.js'
 import clinicsRoute from './routes/clinics.js'
 import conversationsRoute from './routes/conversations.js'
@@ -30,6 +31,7 @@ export async function buildApp() {
   await app.register(authRoute, { prefix: '/auth' })
   await app.register(webhookRoute, { prefix: '/webhook' })
   await app.register(messengerRoute, { prefix: '/webhook' })
+  await app.register(instagramRoute, { prefix: '/webhook' })
   await app.register(clinicsRoute, { prefix: '/clinics' })
   await app.register(conversationsRoute, { prefix: '/conversations' })
   // patients + kb declare their own /clinics/:id/… and /patients/… paths.

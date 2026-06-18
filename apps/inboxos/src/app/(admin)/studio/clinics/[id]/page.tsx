@@ -56,6 +56,7 @@ export default function ClinicDetailPage({ params }: { params: Promise<{ id: str
           <BusinessHoursSection clinic={clinic} />
           <CalendarSection clinic={clinic} />
           <MessengerSection clinic={clinic} />
+          <InstagramSection clinic={clinic} />
           <LicenseSection clinicId={clinic.id} />
         </>
       )}
@@ -381,6 +382,101 @@ function MessengerSection({ clinic }: { clinic: Clinic }) {
         </button>
         {tested === true && <span className="text-xs text-emerald-600">{t('messenger.testOk')}</span>}
         {tested === false && <span className="text-xs text-red-600">{t('messenger.testFail')}</span>}
+        {save.isSuccess && !dirty && <span className="text-xs text-emerald-600">{t('common.saved')}</span>}
+      </div>
+    </Section>
+  )
+}
+
+function InstagramSection({ clinic }: { clinic: Clinic }) {
+  const { t } = useI18n()
+  const [enabled, setEnabled] = useState(Boolean(clinic.instagramEnabled))
+  const [accountId, setAccountId] = useState(clinic.instagramAccountId ?? '')
+  const [verifyToken, setVerifyToken] = useState(clinic.instagramWebhookVerifyToken ?? '')
+  const [token, setToken] = useState('') // write-only; empty keeps the stored token
+  const [tested, setTested] = useState<boolean | null>(null)
+  const save = useSaveClinic(clinic.id)
+
+  const dirty =
+    enabled !== Boolean(clinic.instagramEnabled) ||
+    accountId !== (clinic.instagramAccountId ?? '') ||
+    verifyToken !== (clinic.instagramWebhookVerifyToken ?? '') ||
+    token.trim() !== ''
+
+  const webhookUrl = `${API_BASE}/webhook/instagram`
+
+  function onSave() {
+    const body: Record<string, unknown> = {
+      instagramEnabled: enabled,
+      instagramAccountId: accountId.trim(),
+      instagramWebhookVerifyToken: verifyToken.trim(),
+    }
+    // Only send the token when the admin typed a new one — empty preserves it.
+    if (token.trim()) body.instagramPageAccessToken = token.trim()
+    save.mutate(body, { onSuccess: () => setToken('') })
+  }
+
+  // Local readiness check — confirms the connection is fully configured.
+  function onTest() {
+    setTested(
+      enabled &&
+        accountId.trim() !== '' &&
+        verifyToken.trim() !== '' &&
+        (token.trim() !== '' || Boolean(clinic.instagramAccountId)),
+    )
+  }
+
+  return (
+    <Section title={t('clinic.section.instagram')}>
+      <label className="mb-3 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <span className="font-medium">{t('instagram.enable')}</span>
+      </label>
+      <p className="mb-3 text-xs text-gray-500">{t('instagram.enableHint')}</p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label={t('instagram.accountId')}>
+          <input value={accountId} onChange={(e) => setAccountId(e.target.value)} className={`w-full ${inputCls}`} />
+        </Field>
+        <Field label={t('instagram.verifyToken')}>
+          <input
+            value={verifyToken}
+            onChange={(e) => setVerifyToken(e.target.value)}
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
+        <Field label={t('instagram.pageToken')}>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={clinic.instagramAccountId ? '••••••••' : ''}
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
+      </div>
+      <p className="mt-1 text-xs text-gray-400">{t('instagram.pageTokenHint')}</p>
+      <p className="mt-1 text-xs text-gray-400">{t('instagram.hint', { url: webhookUrl })}</p>
+      <p className="mt-1 text-xs text-gray-400">{t('instagram.note')}</p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!dirty || save.isPending}
+          className="rounded-md bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-40 dark:bg-gray-700"
+        >
+          {save.isPending ? t('common.saving') : t('common.save')}
+        </button>
+        <button
+          type="button"
+          onClick={onTest}
+          className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold hover:border-gray-400 dark:border-gray-700"
+        >
+          {t('instagram.test')}
+        </button>
+        {tested === true && <span className="text-xs text-emerald-600">{t('instagram.testOk')}</span>}
+        {tested === false && <span className="text-xs text-red-600">{t('instagram.testFail')}</span>}
         {save.isSuccess && !dirty && <span className="text-xs text-emerald-600">{t('common.saved')}</span>}
       </div>
     </Section>

@@ -19,10 +19,16 @@ import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import type { Clinic } from '@docmee/db'
 
-// The Messenger Page token is write-only — never echo it back to the panel.
-function redactClinic(clinic: Clinic): Omit<Clinic, 'messengerPageAccessTokenEncrypted'> {
-  const { messengerPageAccessTokenEncrypted: _omit, ...rest } = clinic
-  return rest
+// The Messenger/Instagram Page tokens are write-only — never echo them to the panel.
+type RedactedClinic = Omit<
+  Clinic,
+  'messengerPageAccessTokenEncrypted' | 'instagramPageAccessTokenEncrypted'
+>
+function redactClinic(clinic: Clinic): RedactedClinic {
+  const rest = { ...clinic } as Partial<Clinic>
+  delete rest.messengerPageAccessTokenEncrypted
+  delete rest.instagramPageAccessTokenEncrypted
+  return rest as RedactedClinic
 }
 
 const createSchema = z.object({
@@ -48,6 +54,11 @@ const patchSchema = z
     messengerPageAccessToken: z.string().min(1).optional(),
     messengerWebhookVerifyToken: z.string().optional(),
     messengerEnabled: z.boolean().optional(),
+    // P15 — Instagram Direct connection. Token is write-only; omit to keep it.
+    instagramAccountId: z.string().optional(),
+    instagramPageAccessToken: z.string().min(1).optional(),
+    instagramWebhookVerifyToken: z.string().optional(),
+    instagramEnabled: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' })
 

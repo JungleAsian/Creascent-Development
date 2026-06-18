@@ -27,6 +27,7 @@ export interface TranscriptionProvider {
 
 export { sendWhatsAppText } from './whatsapp-sender.js'
 export { sendMessengerText } from './messenger-sender.js'
+export { sendInstagramText } from './instagram-sender.js'
 export { downloadMedia, type DownloadedMedia } from './media-downloader.js'
 export {
   createDeepgramProvider,
@@ -37,6 +38,7 @@ export {
 
 import { sendWhatsAppText } from './whatsapp-sender.js'
 import { sendMessengerText } from './messenger-sender.js'
+import { sendInstagramText } from './instagram-sender.js'
 
 export interface WhatsAppAdapterConfig {
   phoneNumberId: string
@@ -73,6 +75,26 @@ export function createMessengerAdapter(config: MessengerAdapterConfig): ChannelA
     },
     parseInbound(): InboundMessage {
       throw new Error('parseInbound: inbound Messenger payloads are parsed in the webhook route')
+    },
+  }
+}
+
+export interface InstagramAdapterConfig {
+  pageAccessToken: string
+}
+
+/**
+ * Outbound Instagram adapter. Instagram DM rides the same Send API as Messenger
+ * (Page-scoped token). Inbound parsing lives in the webhook route (apps/api),
+ * which validates the raw Meta payload before enqueueing.
+ */
+export function createInstagramAdapter(config: InstagramAdapterConfig): ChannelAdapter {
+  return {
+    async send(message: OutboundMessage): Promise<void> {
+      await sendInstagramText(config.pageAccessToken, message.to, message.content)
+    },
+    parseInbound(): InboundMessage {
+      throw new Error('parseInbound: inbound Instagram payloads are parsed in the webhook route')
     },
   }
 }

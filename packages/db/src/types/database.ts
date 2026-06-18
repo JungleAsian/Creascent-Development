@@ -23,6 +23,11 @@ export interface Clinic {
   messengerPageAccessTokenEncrypted: string | null
   messengerWebhookVerifyToken: string | null
   messengerEnabled: boolean
+  // P15 — Instagram Direct connection (one Instagram account per clinic).
+  instagramAccountId: string | null
+  instagramPageAccessTokenEncrypted: string | null
+  instagramWebhookVerifyToken: string | null
+  instagramEnabled: boolean
   createdAt: string
   updatedAt: string
 }
