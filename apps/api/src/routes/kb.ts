@@ -20,6 +20,10 @@ const createSchema = z.object({
   status: z.enum(['active', 'draft', 'archived']).optional(),
 })
 
+const patchSchema = z.object({
+  status: z.enum(['active', 'draft', 'archived']),
+})
+
 const kbRoute: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth)
 
@@ -52,6 +56,24 @@ const kbRoute: FastifyPluginAsync = async (app) => {
       // New content needs embedding before it can be retrieved.
       await kbEmbedQueue.add('embed-document', { clinicId, documentId: document.id })
       return reply.code(201).send({ document })
+    },
+  )
+
+  app.patch<{ Params: { id: string; entryId: string } }>(
+    '/clinics/:id/kb/:entryId',
+    { preHandler: requireRole('clinic_admin', 'ia_studio_admin') },
+    async (request, reply) => {
+      const parsed = validate(patchSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request, request.params.id)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+      const document = await withDb(async (sql) => {
+        const repo = createKnowledgeRepository(sql)
+        if (!(await repo.findDocument(clinicId, request.params.entryId))) return null
+        return repo.updateDocumentStatus(clinicId, request.params.entryId, parsed.data.status)
+      })
+      if (!document) return reply.code(404).send({ error: 'Document not found' })
+      return { document }
     },
   )
 

@@ -115,3 +115,55 @@ export interface ClinicStats {
   totalPatients: number
   activeClinics?: number
 }
+
+// ── Bot configuration (stored in clinic.settings) ──────────────────────────────
+export type BotTone = 'professional' | 'friendly' | 'brief'
+
+export interface DayHours {
+  open: string // 'HH:mm'
+  close: string // 'HH:mm'
+  closed?: boolean
+}
+
+/** Map of lowercase weekday ('monday' … 'sunday') → hours. Mirrors @docmee/agents. */
+export type BusinessHours = Record<string, DayHours>
+
+/** The subset of clinic.settings the IA Studio reads/writes. All keys optional. */
+export interface ClinicSettings {
+  botTone?: BotTone
+  clinicRules?: string
+  businessHours?: BusinessHours
+  googleCalendar?: { calendarId?: string } & Record<string, unknown>
+  license_key?: string
+  [key: string]: unknown
+}
+
+// ── License (decoded by the API, display-only) ─────────────────────────────────
+export type LicenseState = 'none' | 'active' | 'expired' | 'invalid'
+
+export interface ClinicLicense {
+  state: LicenseState
+  clinicName?: string
+  seats?: number
+  issuedAt?: string
+  expiresAt?: string
+}
+
+// ── AI usage (from ai_usage_events) ────────────────────────────────────────────
+export interface ClinicUsage {
+  clinicId: string
+  totalCostUsd: number
+  totalTokens: number
+  promptTokens: number
+  completionTokens: number
+  eventCount: number
+  byModel: Array<{ model: string; costUsd: number; totalTokens: number; eventCount: number }>
+}
+
+export interface ClinicUsageRow {
+  clinicId: string
+  clinicName: string
+  totalCostUsd: number
+  totalTokens: number
+  eventCount: number
+}

@@ -3,6 +3,7 @@
 // IA Studio — Clinic Management. List every clinic, create new ones, and edit a
 // clinic's name / plan / status / timezone inline.
 import { useState, type FormEvent } from 'react'
+import Link from 'next/link'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/shared/api/client'
 import { useClinics } from '@/shared/components/ClinicSelect'
@@ -175,14 +176,22 @@ function ClinicRow({ clinic }: { clinic: Clinic }) {
         </select>
       </td>
       <td className="px-3 py-2 text-right">
-        <button
-          type="button"
-          onClick={() => mutation.mutate()}
-          disabled={!dirty || mutation.isPending}
-          className="rounded-md bg-gray-800 px-3 py-1 text-xs font-medium text-white hover:bg-gray-900 disabled:opacity-40 dark:bg-gray-700"
-        >
-          {t('common.save')}
-        </button>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={!dirty || mutation.isPending}
+            className="rounded-md bg-gray-800 px-3 py-1 text-xs font-medium text-white hover:bg-gray-900 disabled:opacity-40 dark:bg-gray-700"
+          >
+            {t('common.save')}
+          </button>
+          <Link
+            href={`/studio/clinics/${clinic.id}`}
+            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            {t('studio.clinics.manage')}
+          </Link>
+        </div>
       </td>
     </tr>
   )

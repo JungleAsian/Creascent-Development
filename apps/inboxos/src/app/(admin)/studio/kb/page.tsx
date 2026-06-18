@@ -7,9 +7,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { useI18n } from '@/shared/hooks/useI18n'
-import type { DocumentType, KnowledgeDocument } from '@/shared/types'
+import type { DocumentStatus, DocumentType, KnowledgeDocument } from '@/shared/types'
 
 const DOC_TYPES: DocumentType[] = ['faq', 'policy', 'service_info', 'custom']
+const DOC_STATUSES: DocumentStatus[] = ['active', 'draft', 'archived']
 
 export default function KbPage() {
   const { t } = useI18n()
@@ -34,6 +35,12 @@ export default function KbPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (entryId: string) => api.del(`/clinics/${clinicId}/kb/${entryId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: ({ entryId, status }: { entryId: string; status: DocumentStatus }) =>
+      api.patch(`/clinics/${clinicId}/kb/${entryId}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   })
 
@@ -81,9 +88,20 @@ export default function KbPage() {
                       <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500 dark:bg-gray-800">
                         {d.documentType}
                       </span>
-                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500 dark:bg-gray-800">
-                        {d.status}
-                      </span>
+                      <select
+                        value={d.status}
+                        onChange={(e) =>
+                          statusMutation.mutate({ entryId: d.id, status: e.target.value as DocumentStatus })
+                        }
+                        disabled={statusMutation.isPending}
+                        className="rounded border border-gray-300 bg-transparent px-1 py-0.5 text-[10px] uppercase text-gray-500 dark:border-gray-700"
+                      >
+                        {DOC_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs text-gray-500">{d.content}</p>
                   </div>

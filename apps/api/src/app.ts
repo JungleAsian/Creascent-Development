@@ -12,6 +12,8 @@ import notificationsRoute from './routes/notifications.js'
 import calendarRoute from './routes/calendar.js'
 import userRoute from './routes/user.js'
 import errorsRoute from './routes/errors.js'
+import usageRoute from './routes/usage.js'
+import licenseRoute from './routes/license.js'
 
 export async function buildApp() {
   const env = parseEnv()
@@ -33,6 +35,9 @@ export async function buildApp() {
   await app.register(kbRoute)
   // errors declares its own /clinics/:id/errors… paths
   await app.register(errorsRoute)
+  // usage + license declare their own /clinics/:id/… and /usage/… paths
+  await app.register(usageRoute)
+  await app.register(licenseRoute)
   await app.register(notificationsRoute, { prefix: '/notifications' })
   await app.register(calendarRoute)
   await app.register(userRoute, { prefix: '/user' })
