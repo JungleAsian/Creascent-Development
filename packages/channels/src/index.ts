@@ -27,7 +27,12 @@ export interface TranscriptionProvider {
 
 export { sendWhatsAppText } from './whatsapp-sender.js'
 export { downloadMedia, type DownloadedMedia } from './media-downloader.js'
-export { createDeepgramProvider } from './transcription/deepgram-provider.js'
+export {
+  createDeepgramProvider,
+  deepgramProvider,
+  type TranscriptionResult,
+  type TranscribeOptions,
+} from './transcription/deepgram-provider.js'
 
 import { sendWhatsAppText } from './whatsapp-sender.js'
 
