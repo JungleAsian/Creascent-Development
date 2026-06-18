@@ -20,6 +20,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     () => [
       { href: '/studio/clinics', label: t('nav.clinics') },
       { href: '/studio/kb', label: t('nav.kb') },
+      { href: '/studio/quick-replies', label: t('nav.quickReplies') },
+      { href: '/studio/templates', label: t('nav.templates') },
       { href: '/studio/errors', label: t('nav.errors') },
       { href: '/studio/usage', label: t('nav.usage') },
       { href: '/studio/license', label: t('nav.license') },

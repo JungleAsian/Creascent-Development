@@ -9,6 +9,7 @@ import { processSchedulingJob } from './scheduling-processor.worker.js'
 import { processNotificationJob } from './notification-processor.worker.js'
 import { processLicenseHeartbeatJob } from './license-heartbeat.worker.js'
 import { processKbEmbedJob } from './kb-embed.worker.js'
+import { processFollowUpJob } from './follow-up.worker.js'
 import { runTimeoutChecks } from './timeout-monitor.js'
 
 export const conversationWorker = createWorker(
@@ -42,6 +43,7 @@ export const licenseHeartbeatWorker = createWorker(
   1,
 )
 export const kbEmbedWorker = createWorker('kb-embed', processKbEmbedJob, 3)
+export const followUpWorker = createWorker('follow-up', processFollowUpJob, 5)
 
 // Timeout monitor: detects secretary inactivity + stale conversations every 5 min.
 const TIMEOUT_CHECK_INTERVAL_MS = 5 * 60 * 1000
@@ -62,4 +64,4 @@ export const licenseHeartbeatScheduler = setInterval(() => {
 }, LICENSE_HEARTBEAT_INTERVAL_MS)
 if (typeof licenseHeartbeatScheduler.unref === 'function') licenseHeartbeatScheduler.unref()
 
-console.log('[workers] all 7 workers registered and listening')
+console.log('[workers] all 8 workers registered and listening')

@@ -29,6 +29,10 @@ export type {
   ConversationTag,
   ConversationTagLink,
   InternalNote,
+  QuickReplyTemplate,
+  MessageTemplate,
+  MessageTemplateStatus,
+  MessageTemplateCategory,
   ChannelAccount,
   ChannelAccountStatus,
   WebhookEvent,
@@ -73,6 +77,9 @@ export {
   createNotificationsRepository,
   createUsersRepository,
   createAuditRepository,
+  createQuickReplyTemplatesRepository,
+  createMessageTemplatesRepository,
+  createMetricsRepository,
 } from './repositories/index.js'
 
 export type {
@@ -115,4 +122,10 @@ export type {
   AuditRepository,
   CreateAuditEventInput,
   AuditEventFilter,
+  QuickReplyTemplatesRepository,
+  CreateQuickReplyTemplateInput,
+  MessageTemplatesRepository,
+  CreateMessageTemplateInput,
+  MetricsRepository,
+  MetricsDashboard,
 } from './repositories/index.js'

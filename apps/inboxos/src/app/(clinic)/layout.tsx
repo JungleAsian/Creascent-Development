@@ -16,6 +16,9 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
 
   const links = useMemo<NavLink[]>(() => {
     const base: NavLink[] = [{ href: '/inbox', label: t('nav.inbox') }]
+    if (user?.role === 'clinic_admin' || user?.role === 'ia_studio_admin') {
+      base.push({ href: '/metrics', label: t('nav.metrics') })
+    }
     if (user?.role === 'ia_studio_admin') base.push({ href: '/studio', label: t('nav.studio') })
     return base
   }, [t, user?.role])

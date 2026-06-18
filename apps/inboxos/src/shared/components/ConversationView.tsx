@@ -5,10 +5,13 @@
 // resolve/reopen actions. Reopen creates a NEW conversation (Decision 4) and the
 // view follows the caller to it via onConversationChange.
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useI18n } from '../hooks/useI18n'
 import { formatDateTime } from '../format'
+import { AssignControl } from './AssignControl'
+import { QuickReplyPicker } from './QuickReplyPicker'
 import type { Conversation, Message, MessageRole } from '../types'
 
 const ROLE_LABEL: Record<MessageRole, 'view.role.user' | 'view.role.agent' | 'view.role.assistant' | 'view.role.system'> = {
@@ -92,7 +95,17 @@ export function ConversationView({
             <p className="truncate text-sm font-semibold">{conversation?.channelContactHandle ?? '…'}</p>
             <p className="text-xs capitalize text-gray-400">{conversation?.channel}</p>
           </div>
-          {conversation &&
+          <div className="flex items-center gap-3">
+            <AssignControl conversationId={conversationId} />
+            {conversation?.patientId && (
+              <Link
+                href={`/inbox/${conversationId}/patient`}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                {t('patient.title')}
+              </Link>
+            )}
+            {conversation &&
             (resolved ? (
               <button
                 type="button"
@@ -112,6 +125,7 @@ export function ConversationView({
                 {t('view.close')}
               </button>
             ))}
+          </div>
         </div>
         <div className="flex items-center gap-2 px-4 pb-2 text-xs">
           <span className="font-medium text-gray-500">{t('view.mode.title')}:</span>
@@ -146,6 +160,9 @@ export function ConversationView({
         </p>
       ) : (
         <form onSubmit={onSend} className="flex items-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
+          <QuickReplyPicker
+            onPick={(content) => setDraft((d) => (d.trim() ? `${d}\n${content}` : content))}
+          />
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

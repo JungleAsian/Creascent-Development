@@ -27,6 +27,10 @@ export type {
   ConversationTag,
   ConversationTagLink,
   InternalNote,
+  QuickReplyTemplate,
+  MessageTemplate,
+  MessageTemplateStatus,
+  MessageTemplateCategory,
   // Channels
   ChannelAccount,
   ChannelAccountStatus,

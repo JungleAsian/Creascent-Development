@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { useI18n } from '../hooks/useI18n'
+import { useTeam } from '../hooks/useTeam'
 import { relativeTime } from '../format'
 import type { Conversation, ConversationStatus } from '../types'
 
@@ -29,6 +30,7 @@ export function ConversationList({
 }) {
   const { t } = useI18n()
   const userId = useAuthStore((s) => s.user?.id)
+  const members = useTeam()
   const [status, setStatus] = useState<ConversationStatus | 'all'>('all')
   const [mine, setMine] = useState(false)
 
@@ -89,12 +91,20 @@ export function ConversationList({
                     <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[c.status]}`}>
                       {t(`conv.status.${c.status}` as const)}
                     </span>
-                    {c.assignedTo === userId && (
+                    {c.assignedTo === userId ? (
                       <span className="text-[10px] text-indigo-600 dark:text-indigo-400">
                         {t('conv.assignedToMe')}
                       </span>
-                    )}
-                    {!c.assignedTo && (
+                    ) : c.assignedTo ? (
+                      <span className="truncate text-[10px] text-gray-500">
+                        {t('conv.assignedTo', {
+                          name:
+                            members.find((m) => m.id === c.assignedTo)?.fullName ??
+                            members.find((m) => m.id === c.assignedTo)?.email ??
+                            c.assignedTo,
+                        })}
+                      </span>
+                    ) : (
                       <span className="text-[10px] text-gray-400">{t('conv.unassigned')}</span>
                     )}
                   </div>

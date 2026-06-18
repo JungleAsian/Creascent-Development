@@ -194,6 +194,38 @@ export interface InternalNote {
   updatedAt: string
 }
 
+// ── Templates (P16) ─────────────────────────────────────────────────────────────
+
+/** A canned secretary reply (Gap #25) inserted into the composer. */
+export interface QuickReplyTemplate {
+  id: string
+  clinicId: string
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type MessageTemplateStatus   = 'pending' | 'approved' | 'rejected'
+export type MessageTemplateCategory =
+  | 'appointment_confirmation'
+  | 'appointment_reminder'
+  | 'human_handoff_notification'
+
+/** A WhatsApp/Meta message template (Gap #29). Submission to Meta is manual; the
+ *  row only tracks the approval status the panel displays. */
+export interface MessageTemplate {
+  id: string
+  clinicId: string
+  name: string
+  category: MessageTemplateCategory
+  language: string
+  body: string
+  status: MessageTemplateStatus
+  createdAt: string
+  updatedAt: string
+}
+
 // ── Channels ──────────────────────────────────────────────────────────────────
 
 export type ChannelAccountStatus = 'active' | 'inactive' | 'error'

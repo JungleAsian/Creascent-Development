@@ -24,6 +24,7 @@ import {
   createPatientsRepository,
   createKnowledgeRepository,
   createErrorReviewsRepository,
+  createConversationsRepository,
   type Clinic,
   type Patient,
   type ChannelAccount,
@@ -99,6 +100,20 @@ function resolveSendReply(
   return (text) => sendWhatsAppText(phoneNumberId, accessToken, recipient, text)
 }
 
+// ── Sentiment detection (Gap #30) ───────────────────────────────────────────────
+// Cheap keyword match — no extra LLM call. An upset patient is tagged and a human
+// handoff alert is fired so a secretary can step in.
+const UPSET_KEYWORDS = [
+  'molesto', 'enojado', 'terrible', 'horrible', 'pésimo',
+  'angry', 'upset', 'awful',
+  'no funciona', 'mentira', 'estafa',
+]
+
+export function detectUpsetTone(message: string): boolean {
+  const lower = message.toLowerCase()
+  return UPSET_KEYWORDS.some((k) => lower.includes(k))
+}
+
 function outsideHoursMessage(language: Language): string {
   return language === 'es'
     ? 'Estamos fuera de horario. Déjame tu nombre y el motivo de tu consulta y te contactamos mañana.'
@@ -133,6 +148,31 @@ export async function processAgentJob(job: Job): Promise<void> {
 
     const intent = await classifyIntent(data.message)
     const route = routeIntent(intent, { isInsideBusinessHours: insideHours, patientOptedOut })
+
+    // Sentiment detection + intent persistence (Gap #30 / Gap #27 metrics). Both
+    // hang off the conversation row, so they only run when we know which one.
+    if (data.conversationId) {
+      const conversations = createConversationsRepository(sql)
+      const upset = detectUpsetTone(data.message)
+
+      const existing = await conversations.findById(data.clinicId, data.conversationId)
+      if (existing) {
+        await conversations.update(data.clinicId, data.conversationId, {
+          metadata: { ...existing.metadata, lastIntent: intent, lastUpset: upset },
+        })
+      }
+
+      if (upset) {
+        // Tag the conversation and alert a human (HUMAN_HANDOFF_REQUESTED).
+        const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'patient_upset' })
+        await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+        await notificationQueue.add('notify', {
+          clinicId: data.clinicId,
+          conversationId: data.conversationId,
+          reason: 'human_handoff',
+        })
+      }
+    }
 
     switch (route.agent) {
       case 'calbot':

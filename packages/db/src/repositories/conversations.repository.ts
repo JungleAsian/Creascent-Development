@@ -41,6 +41,8 @@ export interface CreateNoteInput {
 export interface ConversationsRepository {
   findById(clinicId: string, id: string): Promise<Conversation | null>
   listByClinic(clinicId: string, status?: ConversationStatus): Promise<Conversation[]>
+  /** Every conversation for one patient, newest first (patient history view). */
+  listByPatient(clinicId: string, patientId: string): Promise<Conversation[]>
   countActive(clinicId: string): Promise<number>
   /**
    * Conversations (across all clinics) in any of the given statuses whose last
@@ -84,6 +86,14 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
       return sql<Conversation[]>`
         SELECT * FROM conversations
         WHERE clinic_id = ${clinicId}
+        ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+      `
+    },
+
+    async listByPatient(clinicId, patientId) {
+      return sql<Conversation[]>`
+        SELECT * FROM conversations
+        WHERE clinic_id = ${clinicId} AND patient_id = ${patientId}
         ORDER BY last_message_at DESC NULLS LAST, created_at DESC
       `
     },
