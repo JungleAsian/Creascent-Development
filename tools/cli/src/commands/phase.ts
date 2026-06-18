@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { Client } from '@notionhq/client'
@@ -108,6 +109,17 @@ function currentBranch() {
   return result.ok && result.output ? result.output : 'main'
 }
 
+function gitCommitWithMessage(message: string) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docmee-git-'))
+  const file = path.join(dir, 'commit-message.txt')
+  try {
+    fs.writeFileSync(file, `${message}\n`, 'utf8')
+    return gitOutput(['commit', '--file', file])
+  } finally {
+    fs.rmSync(dir, { force: true, recursive: true })
+  }
+}
+
 async function commitAndPushPhase(id: string, name: string) {
   loadConfig()
   const status = gitOutput(['status', '--porcelain'])
@@ -126,7 +138,7 @@ async function commitAndPushPhase(id: string, name: string) {
     await sendNotification(`${id} git add failed. Build stopped before marking phase done.`, 'critical')
     return { ok: false, commitHash: '', message: add.output }
   }
-  const commit = gitOutput(['commit', '-m', `build(${id}): ${name} - gates passed`])
+  const commit = gitCommitWithMessage(`build(${id}): ${name} - gates passed`)
   if (!commit.ok) {
     await sendNotification(`${id} git commit failed. Build stopped before marking phase done.`, 'critical')
     return { ok: false, commitHash: '', message: commit.output }
