@@ -621,6 +621,9 @@ phaseCmd.command('done').argument('<phase>').action(async (id: string) => {
   phase.commitHash = published.commitHash
   phase.committedAt = new Date().toISOString()
   save(state)
+  const control = await setBuildStatus(id, 'complete', 'Phase committed and pushed')
+  control.commitHash = published.commitHash
+  saveBuildControl(buildControl().map((record) => record.phaseId === id ? control : record))
   log('phase', `Completed ${id}`)
   try {
     await notifyPhaseComplete(id, definition.name)
