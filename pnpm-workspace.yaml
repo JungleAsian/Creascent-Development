@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'tools'
+  - 'tools/app'
+  - 'tools/dashboard'
+  - 'tools/eslint'
+  - 'tools/discord'

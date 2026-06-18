@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+
+# Build output
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Environment (never commit real secrets)
+.env
+.env.local
+.env.*.local
+
+# Logs (keep tools/logs tracked by tools/.gitignore rules)
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+coverage/
+
+# Rust (tools Tauri app)
+tools/app/src-tauri/target/
