@@ -8,4 +8,6 @@ export interface Env {
   REDIS_URL: string
   LLM_STUB: boolean
   WEBHOOK_TARGET: string
+  JWT_SECRET: string
+  JWT_REFRESH_SECRET: string
 }

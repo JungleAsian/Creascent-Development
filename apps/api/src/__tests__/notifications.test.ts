@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 
-// buildApp also wires the webhook (queue) and calendar (agents/shared) routes;
-// stub their workspace deps so no real Redis/Google/crypto loads here.
-vi.mock('@docmee/queue', () => ({ whatsappInboundQueue: { add: vi.fn() } }))
+// buildApp also wires the webhook/calendar/kb routes; stub their workspace deps so
+// no real Redis/Google/crypto loads here. P08 added auth, so requests carry a token.
+vi.mock('@docmee/queue', () => ({ whatsappInboundQueue: { add: vi.fn() }, kbEmbedQueue: { add: vi.fn() } }))
 vi.mock('@docmee/agents', () => ({ getOAuth2Client: () => ({}) }))
-vi.mock('@docmee/shared', () => ({ encryptValue: (v: string) => `enc:${v}` }))
+vi.mock('@docmee/shared', () => ({ encryptValue: (v: string) => `enc:${v}`, verifyPassword: () => true }))
 
 interface Notif { id: string; clinicId: string; status: string; acknowledgedAt: string | null }
 
@@ -17,6 +17,9 @@ const store = vi.hoisted(() => ({
 vi.mock('@docmee/db', () => ({
   createServiceDbClient: () => ({ end: async () => {} }),
   createClinicsRepository: () => ({}),
+  createConversationsRepository: () => ({}),
+  createPatientsRepository: () => ({}),
+  createKnowledgeRepository: () => ({}),
   createNotificationsRepository: () => ({
     listByClinic: async (clinicId: string, limit = 50) =>
       [...store.notifs.values()].filter((n) => n.clinicId === clinicId).slice(0, limit),
@@ -34,12 +37,20 @@ vi.mock('@docmee/db', () => ({
       store.lastSeen.set(id, 'now')
       return true
     },
+    setPanelLanguage: async (id: string) => store.users.has(id),
   }),
 }))
 
 import { buildApp } from '../app.js'
+import { signAccessToken } from '../auth/jwt.js'
 
-describe('notification + heartbeat routes', () => {
+// Secretary in clinic c1; userId is the clinic_users id used by heartbeat.
+function authFor(userId: string, clinicId = 'c1') {
+  const token = signAccessToken({ userId, clinicId, role: 'secretary', email: `${userId}@demo.test` })
+  return { authorization: `Bearer ${token}` }
+}
+
+describe('notification + heartbeat routes (P08 auth)', () => {
   let app: Awaited<ReturnType<typeof buildApp>>
 
   beforeAll(async () => {
@@ -58,49 +69,66 @@ describe('notification + heartbeat routes', () => {
 
   const seed = (n: Notif) => store.notifs.set(n.id, n)
 
-  it('GET /notifications without clinic_id → 400', async () => {
-    const res = await app.inject({ method: 'GET', url: '/notifications' })
-    expect(res.statusCode).toBe(400)
+  it('GET /notifications without a token → 401', async () => {
+    const res = await app.inject({ method: 'GET', url: '/notifications?clinic_id=c1' })
+    expect(res.statusCode).toBe(401)
   })
 
-  it('GET /notifications?clinic_id=X → only that clinic, newest first', async () => {
+  it('GET /notifications scopes to the caller clinic, newest first', async () => {
     seed({ id: 'a', clinicId: 'c1', status: 'pending', acknowledgedAt: null })
     seed({ id: 'b', clinicId: 'c2', status: 'pending', acknowledgedAt: null })
-    const res = await app.inject({ method: 'GET', url: '/notifications?clinic_id=c1' })
+    const res = await app.inject({ method: 'GET', url: '/notifications?clinic_id=c1', headers: authFor('u1') })
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.body)
     expect(body.notifications).toHaveLength(1)
     expect(body.notifications[0].id).toBe('a')
   })
 
+  it('GET /notifications for another clinic → 403', async () => {
+    const res = await app.inject({ method: 'GET', url: '/notifications?clinic_id=c2', headers: authFor('u1') })
+    expect(res.statusCode).toBe(403)
+  })
+
   it('POST /notifications/:id/acknowledge → marks acknowledged', async () => {
     seed({ id: 'a', clinicId: 'c1', status: 'pending', acknowledgedAt: null })
-    const res = await app.inject({ method: 'POST', url: '/notifications/a/acknowledge' })
+    const res = await app.inject({ method: 'POST', url: '/notifications/a/acknowledge', headers: authFor('u1') })
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(res.body).notification.status).toBe('acknowledged')
     expect(store.notifs.get('a')!.status).toBe('acknowledged')
   })
 
   it('POST /notifications/:id/acknowledge for unknown id → 404', async () => {
-    const res = await app.inject({ method: 'POST', url: '/notifications/missing/acknowledge' })
+    const res = await app.inject({ method: 'POST', url: '/notifications/missing/acknowledge', headers: authFor('u1') })
     expect(res.statusCode).toBe(404)
   })
 
-  it('POST /user/heartbeat updates last_seen', async () => {
+  it('POST /user/heartbeat updates last_seen for the authenticated user', async () => {
     store.users.add('u1')
-    const res = await app.inject({ method: 'POST', url: '/user/heartbeat', payload: { clinicUserId: 'u1' } })
+    const res = await app.inject({ method: 'POST', url: '/user/heartbeat', headers: authFor('u1') })
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ ok: true })
     expect(store.lastSeen.get('u1')).toBe('now')
   })
 
-  it('POST /user/heartbeat without clinicUserId → 400', async () => {
-    const res = await app.inject({ method: 'POST', url: '/user/heartbeat', payload: {} })
-    expect(res.statusCode).toBe(400)
+  it('POST /user/heartbeat without a token → 401', async () => {
+    const res = await app.inject({ method: 'POST', url: '/user/heartbeat' })
+    expect(res.statusCode).toBe(401)
   })
 
-  it('POST /user/heartbeat for unknown user → 404', async () => {
-    const res = await app.inject({ method: 'POST', url: '/user/heartbeat', payload: { clinicUserId: 'ghost' } })
+  it('POST /user/heartbeat for an unknown user → 404', async () => {
+    const res = await app.inject({ method: 'POST', url: '/user/heartbeat', headers: authFor('ghost') })
     expect(res.statusCode).toBe(404)
+  })
+
+  it('POST /user/preferences sets the panel language', async () => {
+    store.users.add('u1')
+    const res = await app.inject({
+      method: 'POST',
+      url: '/user/preferences',
+      headers: authFor('u1'),
+      payload: { panel_language: 'en' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true, panel_language: 'en' })
   })
 })

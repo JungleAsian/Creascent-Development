@@ -23,6 +23,8 @@ export interface ClinicsRepository {
   findById(id: string): Promise<Clinic | null>
   findBySlug(slug: string): Promise<Clinic | null>
   list(): Promise<Clinic[]>
+  /** Count of clinics in the 'active' status — powers the IA Studio overview (Gap #8). */
+  countActive(): Promise<number>
   create(data: CreateClinicInput): Promise<Clinic>
   update(id: string, data: UpdateClinicInput): Promise<Clinic>
 }
@@ -41,6 +43,13 @@ export function createClinicsRepository(sql: Sql): ClinicsRepository {
 
     async list() {
       return sql<Clinic[]>`SELECT * FROM clinics ORDER BY created_at DESC`
+    },
+
+    async countActive() {
+      const rows = await sql<[{ count: string }]>`
+        SELECT COUNT(*) FROM clinics WHERE status = 'active'
+      `
+      return parseInt(rows[0]?.count ?? '0', 10)
     },
 
     async create(data) {

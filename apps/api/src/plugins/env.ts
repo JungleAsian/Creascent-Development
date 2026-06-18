@@ -10,6 +10,9 @@ const schema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   LLM_STUB: z.coerce.boolean().default(true),
   WEBHOOK_TARGET: z.string().default('http://localhost:3001/webhook/whatsapp'),
+  // Auth (P08). Dev defaults keep local boot working; production must override.
+  JWT_SECRET: z.string().default('dev-access-secret-change-me'),
+  JWT_REFRESH_SECRET: z.string().default('dev-refresh-secret-change-me'),
 })
 
 export type Env = z.infer<typeof schema>

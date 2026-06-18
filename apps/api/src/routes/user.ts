@@ -1,24 +1,35 @@
-// Secretary presence (P07 — replaces the P01 heartbeat stub).
-//   POST /user/heartbeat { clinicUserId } → bumps clinic_users.last_seen
+// Authenticated user routes (P08 — adds auth + preferences to the P07 heartbeat).
+//   POST /user/heartbeat     → bumps the logged-in user's last_seen
+//   POST /user/preferences   { panel_language: 'es' | 'en' }
 // The timeout monitor reads last_seen to know whether a secretary is present.
 import type { FastifyPluginAsync } from 'fastify'
-import { createServiceDbClient, createUsersRepository } from '@docmee/db'
+import { z } from 'zod'
+import { createUsersRepository } from '@docmee/db'
+import { withDb } from '../lib/db.js'
+import { validate } from '../lib/validate.js'
+import { requireAuth } from '../middleware/auth.js'
+
+const preferencesSchema = z.object({ panel_language: z.enum(['es', 'en']) })
 
 const userRoute: FastifyPluginAsync = async (app) => {
-  app.post<{ Body: { clinicUserId?: string } }>('/heartbeat', async (request, reply) => {
-    const clinicUserId = request.body?.clinicUserId
-    if (!clinicUserId) {
-      return reply.code(400).send({ error: 'clinicUserId is required' })
-    }
-    const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
-    try {
-      const users = createUsersRepository(sql)
-      const ok = await users.touchLastSeen(clinicUserId)
-      if (!ok) return reply.code(404).send({ error: 'User not found' })
-      return { ok: true }
-    } finally {
-      await sql.end()
-    }
+  app.addHook('preHandler', requireAuth)
+
+  app.post('/heartbeat', async (request, reply) => {
+    const userId = request.user!.userId
+    const ok = await withDb(async (sql) => createUsersRepository(sql).touchLastSeen(userId))
+    if (!ok) return reply.code(404).send({ error: 'User not found' })
+    return { ok: true }
+  })
+
+  app.post('/preferences', async (request, reply) => {
+    const parsed = validate(preferencesSchema, request.body, reply)
+    if (!parsed.ok) return
+    const userId = request.user!.userId
+    const ok = await withDb(async (sql) =>
+      createUsersRepository(sql).setPanelLanguage(userId, parsed.data.panel_language),
+    )
+    if (!ok) return reply.code(404).send({ error: 'User not found' })
+    return { ok: true, panel_language: parsed.data.panel_language }
   })
 }
 

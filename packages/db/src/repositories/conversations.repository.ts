@@ -52,6 +52,10 @@ export interface ConversationsRepository {
   update(clinicId: string, id: string, data: UpdateConversationInput): Promise<Conversation>
 
   listTags(clinicId: string): Promise<ConversationTag[]>
+  /** Tags currently linked to one conversation. */
+  listTagsForConversation(clinicId: string, conversationId: string): Promise<ConversationTag[]>
+  /** Resolve a clinic tag by its name (case-sensitive), or null. */
+  findTagByName(clinicId: string, name: string): Promise<ConversationTag | null>
   createTag(data: CreateTagInput): Promise<ConversationTag>
   addTag(clinicId: string, conversationId: string, tagId: string): Promise<void>
   removeTag(clinicId: string, conversationId: string, tagId: string): Promise<void>
@@ -136,6 +140,22 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
       return sql<ConversationTag[]>`
         SELECT * FROM conversation_tags WHERE clinic_id = ${clinicId} ORDER BY name
       `
+    },
+
+    async listTagsForConversation(clinicId, conversationId) {
+      return sql<ConversationTag[]>`
+        SELECT t.* FROM conversation_tags t
+        JOIN conversation_tag_links l ON l.tag_id = t.id
+        WHERE t.clinic_id = ${clinicId} AND l.conversation_id = ${conversationId}
+        ORDER BY t.name
+      `
+    },
+
+    async findTagByName(clinicId, name) {
+      const rows = await sql<ConversationTag[]>`
+        SELECT * FROM conversation_tags WHERE clinic_id = ${clinicId} AND name = ${name} LIMIT 1
+      `
+      return rows[0] ?? null
     },
 
     async createTag(data) {

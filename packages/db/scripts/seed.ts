@@ -13,9 +13,19 @@
  */
 
 import postgres from 'postgres'
+import { randomBytes, scryptSync } from 'node:crypto'
 
 const url = process.env['DATABASE_URL'] ?? 'postgres://postgres:postgres@localhost:5432/docmee'
 const sql = postgres(url, { prepare: false, transform: postgres.camel })
+
+// Mirrors @docmee/shared hashPassword (`scrypt$salt$key`); inlined so the seed
+// script keeps its single `postgres` dependency.
+function hashPassword(plaintext: string): string {
+  const salt = randomBytes(16)
+  return `scrypt$${salt.toString('hex')}$${scryptSync(plaintext, salt, 64).toString('hex')}`
+}
+
+const DEMO_PASSWORD = 'demo1234'
 
 // ── Fake data helpers ──────────────────────────────────────────────────────────
 
@@ -84,6 +94,41 @@ async function seed() {
       `
     }
     console.log(`✓ Users: ${users.length}`)
+
+    // ── Roles, passwords, role assignments (P08 auth — enables panel login) ──
+    const demoPasswordHash = hashPassword(DEMO_PASSWORD)
+    const roleSpecs = [
+      { clinicId: clinicAId, name: 'clinic_admin' },
+      { clinicId: clinicAId, name: 'secretary' },
+      { clinicId: clinicBId, name: 'clinic_admin' },
+    ]
+    const roleIds = new Map<string, string>()
+    for (const r of roleSpecs) {
+      const [role] = await tx<{ id: string }[]>`
+        INSERT INTO roles (clinic_id, name, description)
+        VALUES (${r.clinicId}, ${r.name}, ${`${r.name} (seed)`})
+        RETURNING id
+      `
+      roleIds.set(`${r.clinicId}:${r.name}`, role!.id)
+    }
+    const assignments = [
+      { email: 'admin@demo-a.test', clinicId: clinicAId, role: 'clinic_admin' },
+      { email: 'secretary@demo-a.test', clinicId: clinicAId, role: 'secretary' },
+      { email: 'admin@demo-b.test', clinicId: clinicBId, role: 'clinic_admin' },
+    ]
+    for (const a of assignments) {
+      const [u] = await tx<{ id: string }[]>`
+        UPDATE clinic_users SET password_hash = ${demoPasswordHash}
+        WHERE clinic_id = ${a.clinicId} AND email = ${a.email}
+        RETURNING id
+      `
+      await tx`
+        INSERT INTO user_roles (clinic_user_id, role_id)
+        VALUES (${u!.id}, ${roleIds.get(`${a.clinicId}:${a.role}`)!})
+        ON CONFLICT DO NOTHING
+      `
+    }
+    console.log(`✓ Roles + passwords: demo login ready (password: ${DEMO_PASSWORD})`)
 
     // ── Patients ──
     for (const [clinicId, suffix] of [[clinicAId, '0'] as const, [clinicBId, '1'] as const]) {

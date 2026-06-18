@@ -32,8 +32,27 @@ export interface ClinicUser {
   fullName: string | null
   status: ClinicUserStatus
   lastSeen: string | null
+  passwordHash: string | null
+  panelLanguage: PanelLanguage
   createdAt: string
   updatedAt: string
+}
+
+export type PanelLanguage = 'es' | 'en'
+
+/** The four panel roles, derived from the user's highest-privilege role name. */
+export type PanelRole = 'secretary' | 'doctor' | 'clinic_admin' | 'ia_studio_admin'
+
+/** Credentials + resolved role for a clinic user, returned by login lookup. */
+export interface ClinicUserAuth {
+  id: string
+  clinicId: string
+  email: string
+  fullName: string | null
+  status: ClinicUserStatus
+  passwordHash: string | null
+  panelLanguage: PanelLanguage
+  role: PanelRole
 }
 
 export interface Role {

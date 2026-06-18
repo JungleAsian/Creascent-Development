@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 
 export type ID = string
 
@@ -82,4 +82,30 @@ export function decryptValue(token: string): string {
   const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(ivB64, 'base64'))
   decipher.setAuthTag(Buffer.from(tagB64, 'base64'))
   return Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]).toString('utf8')
+}
+
+// ── Password hashing ──────────────────────────────────────────────────────────
+// scrypt (built into Node — no native bcrypt dependency). Each hash is a
+// self-describing `scrypt$<saltHex>$<keyHex>` string so verification needs no
+// out-of-band parameters. Used for clinic_users.password_hash.
+
+const SCRYPT_KEYLEN = 64
+
+/** Hash a plaintext password with a fresh random salt. */
+export function hashPassword(plaintext: string): string {
+  const salt = randomBytes(16)
+  const derived = scryptSync(plaintext, salt, SCRYPT_KEYLEN)
+  return `scrypt$${salt.toString('hex')}$${derived.toString('hex')}`
+}
+
+/** Constant-time check of a plaintext password against a {@link hashPassword} string. */
+export function verifyPassword(plaintext: string, stored: string): boolean {
+  const parts = stored.split('$')
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false
+  const [, saltHex, keyHex] = parts as [string, string, string]
+  const salt = Buffer.from(saltHex, 'hex')
+  const expected = Buffer.from(keyHex, 'hex')
+  const derived = scryptSync(plaintext, salt, expected.length || SCRYPT_KEYLEN)
+  if (derived.length !== expected.length) return false
+  return timingSafeEqual(derived, expected)
 }
