@@ -18,6 +18,7 @@
     "@docmee/agents": "workspace:*",
     "@docmee/channels": "workspace:*",
     "@docmee/db": "workspace:*",
+    "@docmee/notifications": "workspace:*",
     "@docmee/shared": "workspace:*",
     "zod": "^3.23.0",
     "dotenv": "^16.4.5"

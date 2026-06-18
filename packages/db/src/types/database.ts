@@ -31,6 +31,7 @@ export interface ClinicUser {
   email: string
   fullName: string | null
   status: ClinicUserStatus
+  lastSeen: string | null
   createdAt: string
   updatedAt: string
 }
@@ -350,7 +351,7 @@ export interface AiUsageEvent {
 // ── Operations ────────────────────────────────────────────────────────────────
 
 export type NotificationType   = 'email' | 'sms' | 'push' | 'in_app'
-export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped'
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped' | 'acknowledged'
 export type ErrorReviewStatus  = 'open' | 'reviewed' | 'resolved' | 'ignored'
 export type SeedRunStatus      = 'success' | 'failed' | 'partial'
 
@@ -364,6 +365,10 @@ export interface NotificationEvent {
   status: NotificationStatus
   sentAt: string | null
   error: string | null
+  conversationId: string | null
+  alertType: string | null
+  priority: string | null
+  acknowledgedAt: string | null
   metadata: Record<string, unknown>
   createdAt: string
 }

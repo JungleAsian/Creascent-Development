@@ -42,6 +42,12 @@ export interface ConversationsRepository {
   findById(clinicId: string, id: string): Promise<Conversation | null>
   listByClinic(clinicId: string, status?: ConversationStatus): Promise<Conversation[]>
   countActive(clinicId: string): Promise<number>
+  /**
+   * Conversations (across all clinics) in any of the given statuses whose last
+   * inbound/outbound message is older than `olderThanMinutes`. Powers the
+   * timeout monitor — service-client only (no clinic scoping).
+   */
+  listStale(statuses: ConversationStatus[], olderThanMinutes: number): Promise<Conversation[]>
   create(data: CreateConversationInput): Promise<Conversation>
   update(clinicId: string, id: string, data: UpdateConversationInput): Promise<Conversation>
 
@@ -83,6 +89,16 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         SELECT COUNT(*) FROM conversations WHERE clinic_id = ${clinicId} AND status IN ('open', 'assigned')
       `
       return parseInt(rows[0]?.count ?? '0', 10)
+    },
+
+    async listStale(statuses, olderThanMinutes) {
+      if (statuses.length === 0) return []
+      return sql<Conversation[]>`
+        SELECT * FROM conversations
+        WHERE status = ANY(${statuses})
+          AND COALESCE(last_message_at, created_at) < NOW() - ${`${olderThanMinutes} minutes`}::interval
+        ORDER BY clinic_id, last_message_at NULLS LAST
+      `
     },
 
     async create(data) {

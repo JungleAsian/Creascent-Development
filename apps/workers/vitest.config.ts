@@ -12,6 +12,7 @@ export default defineConfig({
       // without requiring a prior build.
       '@docmee/queue': fileURLToPath(new URL('../../packages/queue/src/index.ts', import.meta.url)),
       '@docmee/db': fileURLToPath(new URL('../../packages/db/src/index.ts', import.meta.url)),
+      '@docmee/notifications': fileURLToPath(new URL('../../packages/notifications/src/index.ts', import.meta.url)),
     },
   },
 })

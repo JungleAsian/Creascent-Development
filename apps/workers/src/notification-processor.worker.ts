@@ -1,6 +1,95 @@
-// Consumes: notification queue. Full impl in P07.
+// Consumes: notification queue.
+// Producers enqueue either { ...agentData, reason } (agent/scheduling alertflow
+// routes) or { clinicId, type, ... } (conversation processor token-expiry). This
+// worker normalizes that into a canonical NotificationType, looks up the clinic's
+// alert recipient, persists the notification and delivers it by email.
+import {
+  dispatchNotification,
+  isNotificationType,
+  NOTIFICATION_TYPES,
+  type NotificationType,
+} from '@docmee/notifications'
+import {
+  createServiceDbClient,
+  createNotificationsRepository,
+  createUsersRepository,
+} from '@docmee/db'
 import type { Job } from '@docmee/queue'
+import { buildNotificationStore } from './notification-store.js'
 
-export async function processNotificationJob(_job: Job): Promise<void> {
-  // WhatsApp/email notification + human-handoff dispatch. Wired in P07.
+interface NotificationJobData {
+  clinicId?: string
+  conversationId?: string
+  type?: string
+  reason?: string
+  recipientEmail?: string
+  [key: string]: unknown
+}
+
+/** Map a raw job into one of the 17 canonical alert types (null if unmappable). */
+export function resolveNotificationType(data: NotificationJobData): NotificationType | null {
+  if (typeof data.type === 'string' && isNotificationType(data.type.toLowerCase())) {
+    return data.type.toLowerCase() as NotificationType
+  }
+  switch (data.reason) {
+    case 'emergency':
+      return NOTIFICATION_TYPES.EMERGENCY
+    case 'human_handoff':
+      return NOTIFICATION_TYPES.HUMAN_HANDOFF_REQUESTED
+    default:
+      return null
+  }
+}
+
+export async function processNotificationJob(job: Job): Promise<void> {
+  const data = job.data as NotificationJobData
+
+  if (!data.clinicId) {
+    console.warn('[notification] job has no clinicId; dropping')
+    return
+  }
+
+  const type = resolveNotificationType(data)
+  if (!type) {
+    console.warn(`[notification] could not resolve type from job (reason=${data.reason}, type=${data.type}); dropping`)
+    return
+  }
+
+  const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
+  try {
+    const notifications = createNotificationsRepository(sql)
+    const users = createUsersRepository(sql)
+
+    const recipientEmail =
+      data.recipientEmail ??
+      (await users.findPrimaryEmail(data.clinicId)) ??
+      process.env['ALERT_FALLBACK_EMAIL'] ??
+      null
+
+    if (!recipientEmail) {
+      console.warn(`[notification] no recipient for clinic ${data.clinicId}; persisting skipped notification`)
+      await notifications.create({
+        clinicId: data.clinicId,
+        conversationId: data.conversationId ?? null,
+        alertType: type,
+        recipient: 'unknown',
+        content: '(no recipient configured)',
+        status: 'skipped',
+      })
+      return
+    }
+
+    await dispatchNotification(
+      {
+        clinicId: data.clinicId,
+        conversationId: data.conversationId ?? null,
+        type,
+        data: { reason: data.reason, ...(typeof data['daysRemaining'] === 'number' ? { daysRemaining: data['daysRemaining'] } : {}) },
+        recipientEmail,
+      },
+      { store: buildNotificationStore(notifications) },
+    )
+  } finally {
+    await sql.end()
+  }
 }

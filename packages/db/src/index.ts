@@ -66,6 +66,8 @@ export {
   createAppointmentsRepository,
   createKnowledgeRepository,
   createErrorReviewsRepository,
+  createNotificationsRepository,
+  createUsersRepository,
   createAuditRepository,
 } from './repositories/index.js'
 
@@ -100,6 +102,9 @@ export type {
   EmbeddedChunkRow,
   ErrorReviewsRepository,
   CreateErrorReviewInput,
+  NotificationsRepository,
+  CreateNotificationInput,
+  UsersRepository,
   AuditRepository,
   CreateAuditEventInput,
   AuditEventFilter,

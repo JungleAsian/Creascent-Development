@@ -5,6 +5,7 @@ import healthRoute from './routes/health.js'
 import webhookRoute from './routes/webhook.js'
 import notificationsRoute from './routes/notifications.js'
 import calendarRoute from './routes/calendar.js'
+import userRoute from './routes/user.js'
 
 export async function buildApp() {
   const env = parseEnv()
@@ -20,6 +21,7 @@ export async function buildApp() {
   await app.register(webhookRoute, { prefix: '/webhook' })
   await app.register(notificationsRoute, { prefix: '/notifications' })
   await app.register(calendarRoute)
+  await app.register(userRoute, { prefix: '/user' })
 
   return app
 }

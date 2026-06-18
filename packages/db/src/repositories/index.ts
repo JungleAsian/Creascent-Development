@@ -6,6 +6,8 @@ export { createMessagesRepository }      from './messages.repository.js'
 export { createAppointmentsRepository }  from './appointments.repository.js'
 export { createKnowledgeRepository }     from './knowledge.repository.js'
 export { createErrorReviewsRepository }  from './error-reviews.repository.js'
+export { createNotificationsRepository } from './notifications.repository.js'
+export { createUsersRepository }         from './users.repository.js'
 export { createAuditRepository }         from './audit.repository.js'
 
 export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput }                          from './clinics.repository.js'
@@ -21,4 +23,6 @@ export type { KnowledgeRepository, CreateDocumentInput, CreateChunkInput,
               CreateIaProfileInput, UpdateIaProfileInput, CreateIaRuleInput,
               EmbeddedChunkRow }                                                                  from './knowledge.repository.js'
 export type { ErrorReviewsRepository, CreateErrorReviewInput }                                   from './error-reviews.repository.js'
+export type { NotificationsRepository, CreateNotificationInput }                                 from './notifications.repository.js'
+export type { UsersRepository }                                                                  from './users.repository.js'
 export type { AuditRepository, CreateAuditEventInput, AuditEventFilter }                         from './audit.repository.js'

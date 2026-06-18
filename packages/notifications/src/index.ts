@@ -1,28 +1,23 @@
-export type NotificationType = 'secretary_alert' | 'appointment_reminder' | 'system_alert'
+// @docmee/notifications — secretary-alert notification domain.
+// Email delivery (resend), the 17-type alert taxonomy, email templates, and the
+// dispatcher. DB persistence is injected by the worker (keeps this package free
+// of @docmee/db, mirroring the agents-package DI pattern).
 
-export interface Notification {
-  type: NotificationType
-  to: string
-  subject: string
-  body: string
-  clinicId?: string
-}
+export {
+  NOTIFICATION_TYPES,
+  NOTIFICATION_PRIORITY,
+  isNotificationType,
+  type NotificationType,
+  type NotificationPriority,
+} from './notification-types.js'
 
-export interface NotificationChannel {
-  send(notification: Notification): Promise<void>
-}
+export { sendEmail, type SendEmailParams, type SendEmailFn } from './channels/email.channel.js'
 
-export interface NotificationRepo {
-  findByClinic(clinicId: string): Promise<Notification[]>
-  create(notification: Notification): Promise<void>
-}
+export { buildNotificationEmail, type NotificationEmail } from './templates.js'
 
-export { createEmailChannel } from './channels/email.channel.js'
-
-export function createDiscordChannel(_config: { webhookUrl: string }): NotificationChannel {
-  throw new Error('DiscordChannel: not implemented — wire Discord webhook in P06+')
-}
-
-export function createNotificationRepo(_client: unknown): NotificationRepo {
-  throw new Error('NotificationRepo: not implemented — requires DbClient (P02+)')
-}
+export {
+  dispatchNotification,
+  type DispatchNotificationParams,
+  type DispatchNotificationDeps,
+  type NotificationStore,
+} from './dispatcher.js'
