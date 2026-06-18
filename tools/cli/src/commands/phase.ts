@@ -416,10 +416,11 @@ async function runAutomatedClaudePhase(phaseId: string, name: string, file: stri
   }
   await sendNotification(`${phaseId} Claude Code build started.`, 'development')
   const prompt = fs.readFileSync(file, 'utf8')
-  const claude = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot(), prompt], {
+  const claude = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
     cwd: repoRoot(),
     encoding: 'utf8',
     env: claudeCodeEnvironment(),
+    input: prompt,
     shell: false,
     stdio: 'pipe'
   })

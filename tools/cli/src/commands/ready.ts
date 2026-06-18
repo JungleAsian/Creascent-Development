@@ -118,10 +118,11 @@ function claudeCodeAccountCheck(): ReadyCheck {
 }
 
 function claudeCodeBuildSmokeCheck(): ReadyCheck {
-  const result = spawnSync(claudeCodeCommand(), ['--print', 'Reply READY only'], {
+  const result = spawnSync(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', toolsRoot], {
     cwd: toolsRoot,
     encoding: 'utf8',
     env: claudeCodeEnvironment(),
+    input: 'Reply READY only',
     shell: false,
     stdio: 'pipe'
   })
