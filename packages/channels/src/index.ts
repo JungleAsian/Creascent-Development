@@ -26,6 +26,7 @@ export interface TranscriptionProvider {
 }
 
 export { sendWhatsAppText } from './whatsapp-sender.js'
+export { sendMessengerText } from './messenger-sender.js'
 export { downloadMedia, type DownloadedMedia } from './media-downloader.js'
 export {
   createDeepgramProvider,
@@ -35,6 +36,7 @@ export {
 } from './transcription/deepgram-provider.js'
 
 import { sendWhatsAppText } from './whatsapp-sender.js'
+import { sendMessengerText } from './messenger-sender.js'
 
 export interface WhatsAppAdapterConfig {
   phoneNumberId: string
@@ -52,6 +54,25 @@ export function createWhatsAppAdapter(config: WhatsAppAdapterConfig): ChannelAda
     },
     parseInbound(): InboundMessage {
       throw new Error('parseInbound: inbound WhatsApp payloads are parsed in the webhook route')
+    },
+  }
+}
+
+export interface MessengerAdapterConfig {
+  pageAccessToken: string
+}
+
+/**
+ * Outbound Messenger adapter. Inbound parsing lives in the webhook route
+ * (apps/api), which validates the raw Meta payload before enqueueing.
+ */
+export function createMessengerAdapter(config: MessengerAdapterConfig): ChannelAdapter {
+  return {
+    async send(message: OutboundMessage): Promise<void> {
+      await sendMessengerText(config.pageAccessToken, message.to, message.content)
+    },
+    parseInbound(): InboundMessage {
+      throw new Error('parseInbound: inbound Messenger payloads are parsed in the webhook route')
     },
   }
 }

@@ -7,11 +7,17 @@ import { transcriptionQueue, agentQueue, notificationQueue, type Job } from '@do
 import {
   createServiceDbClient,
   createChannelAccountsRepository,
+  createClinicsRepository,
   createPatientsRepository,
+  type Channel,
   type ChannelAccount,
 } from '@docmee/db'
 
 export const InboundMessageSchema = z.object({
+  // Channel the message arrived on. `phoneNumberId` is the provider account id:
+  // a WhatsApp phone_number_id, or a Messenger Page id. `patientWaId` is the
+  // sender handle: a WhatsApp wa_id, or a Messenger PSID.
+  channel: z.enum(['whatsapp', 'messenger']).optional().default('whatsapp'),
   phoneNumberId: z.string(),
   patientWaId: z.string(),
   patientName: z.string().optional().default(''),
@@ -40,34 +46,52 @@ export async function processConversationJob(job: Job): Promise<void> {
   const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
 
   try {
-    // Resolve which clinic owns the receiving WhatsApp number.
-    const channelAccounts = createChannelAccountsRepository(sql)
-    const account = await channelAccounts.findByAccount('whatsapp', msg.phoneNumberId)
-    if (!account) {
-      console.warn(
-        `[conversation] no active WhatsApp channel account for phone_number_id=${msg.phoneNumberId}; dropping ${msg.waMessageId}`,
-      )
-      return
-    }
-    const clinicId = account.clinicId
-    const waAccessToken = account.accessTokenEnc ?? ''
+    const channel: Channel = msg.channel
+    // Resolve which clinic owns the receiving account. WhatsApp resolves via the
+    // channel_accounts table (per phone_number_id); Messenger resolves via the
+    // clinic's connected Page id (P14).
+    let clinicId: string
+    let waAccessToken = ''
 
-    // Gap #19: warn when the Meta access token is close to expiry.
-    const expiresAt = tokenExpiresAt(account)
-    if (expiresAt) {
-      const daysRemaining = (expiresAt.getTime() - Date.now()) / MS_PER_DAY
-      if (daysRemaining < TOKEN_EXPIRY_WARNING_DAYS) {
-        await notificationQueue.add('notify', {
-          clinicId,
-          type: 'META_TOKEN_EXPIRING',
-          daysRemaining: Math.max(0, Math.ceil(daysRemaining)),
-        })
+    if (channel === 'messenger') {
+      const clinics = createClinicsRepository(sql)
+      const clinic = await clinics.findByMessengerPageId(msg.phoneNumberId)
+      if (!clinic) {
+        console.warn(
+          `[conversation] no Messenger-enabled clinic for page_id=${msg.phoneNumberId}; dropping ${msg.waMessageId}`,
+        )
+        return
+      }
+      clinicId = clinic.id
+    } else {
+      const channelAccounts = createChannelAccountsRepository(sql)
+      const account = await channelAccounts.findByAccount('whatsapp', msg.phoneNumberId)
+      if (!account) {
+        console.warn(
+          `[conversation] no active WhatsApp channel account for phone_number_id=${msg.phoneNumberId}; dropping ${msg.waMessageId}`,
+        )
+        return
+      }
+      clinicId = account.clinicId
+      waAccessToken = account.accessTokenEnc ?? ''
+
+      // Gap #19: warn when the Meta access token is close to expiry.
+      const expiresAt = tokenExpiresAt(account)
+      if (expiresAt) {
+        const daysRemaining = (expiresAt.getTime() - Date.now()) / MS_PER_DAY
+        if (daysRemaining < TOKEN_EXPIRY_WARNING_DAYS) {
+          await notificationQueue.add('notify', {
+            clinicId,
+            type: 'META_TOKEN_EXPIRING',
+            daysRemaining: Math.max(0, Math.ceil(daysRemaining)),
+          })
+        }
       }
     }
 
     // Gap #16: new vs returning patient detection.
     const patients = createPatientsRepository(sql)
-    const existing = await patients.findByContact(clinicId, 'whatsapp', msg.patientWaId)
+    const existing = await patients.findByContact(clinicId, channel, msg.patientWaId)
     const isNewPatient = !existing
     let patientId: string
 
@@ -86,7 +110,7 @@ export async function processConversationJob(job: Job): Promise<void> {
       await patients.addContact({
         patientId: created.id,
         clinicId,
-        channel: 'whatsapp',
+        channel,
         contactHandle: msg.patientWaId,
         isPrimary: true,
       })
@@ -94,6 +118,7 @@ export async function processConversationJob(job: Job): Promise<void> {
 
     if (msg.messageType === 'audio') {
       // Transcribe first; the transcription worker re-enqueues to the agent.
+      // Audio only reaches here on WhatsApp; Messenger inbound is text-only (P14).
       await transcriptionQueue.add('transcribe', {
         clinicId,
         patientId,
@@ -105,8 +130,10 @@ export async function processConversationJob(job: Job): Promise<void> {
       })
     } else {
       // Text/image/document → straight to the agent for intent classification.
+      // `channel` tells the agent worker which sender to reply through.
       await agentQueue.add('process', {
         clinicId,
+        channel,
         patientId,
         patientWaId: msg.patientWaId,
         message: msg.content ?? '',

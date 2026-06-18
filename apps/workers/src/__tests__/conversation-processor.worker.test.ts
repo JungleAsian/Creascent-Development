@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   agentAdd: vi.fn(),
   notificationAdd: vi.fn(),
   findByAccount: vi.fn(),
+  findByMessengerPageId: vi.fn(),
   findByContact: vi.fn(),
   createPatient: vi.fn(),
   addContact: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('@docmee/queue', () => ({
 vi.mock('@docmee/db', () => ({
   createServiceDbClient: () => ({ end: h.end }),
   createChannelAccountsRepository: () => ({ findByAccount: h.findByAccount }),
+  createClinicsRepository: () => ({ findByMessengerPageId: h.findByMessengerPageId }),
   createPatientsRepository: () => ({
     findByContact: h.findByContact,
     create: h.createPatient,
@@ -49,6 +51,7 @@ const activeAccount = { clinicId: CLINIC, accessTokenEnc: 'token', settings: {} 
 beforeEach(() => {
   vi.clearAllMocks()
   h.findByAccount.mockResolvedValue(activeAccount)
+  h.findByMessengerPageId.mockResolvedValue({ id: CLINIC })
   h.findByContact.mockResolvedValue({ id: PATIENT, status: 'returning' })
   h.createPatient.mockResolvedValue({ id: PATIENT, status: 'new' })
 })
@@ -102,5 +105,43 @@ describe('processConversationJob', () => {
 
   it('invalid payload → throws ZodError', async () => {
     await expect(processConversationJob(makeJob({ foo: 'bar' }))).rejects.toThrow()
+  })
+
+  it('messenger text → resolves clinic by page id, enqueues with channel', async () => {
+    await processConversationJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        patientWaId: 'PSID_123',
+        waMessageId: 'mid.ABC',
+        timestamp: 1700000000000,
+        messageType: 'text',
+        content: 'hola',
+      }),
+    )
+    expect(h.findByMessengerPageId).toHaveBeenCalledWith('PAGE_ID')
+    expect(h.findByAccount).not.toHaveBeenCalled()
+    expect(h.agentAdd).toHaveBeenCalledTimes(1)
+    const [, job] = h.agentAdd.mock.calls[0]
+    expect(job.clinicId).toBe(CLINIC)
+    expect(job.channel).toBe('messenger')
+    expect(job.message).toBe('hola')
+  })
+
+  it('messenger with no enabled clinic → drops the message', async () => {
+    h.findByMessengerPageId.mockResolvedValue(null)
+    await processConversationJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        patientWaId: 'PSID_123',
+        waMessageId: 'mid.ABC',
+        timestamp: 1700000000000,
+        messageType: 'text',
+        content: 'hola',
+      }),
+    )
+    expect(h.agentAdd).not.toHaveBeenCalled()
+    expect(h.end).toHaveBeenCalled()
   })
 })

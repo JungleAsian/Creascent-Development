@@ -17,11 +17,19 @@ export interface UpdateClinicInput {
   status?: ClinicStatus
   settings?: Record<string, unknown>
   timezone?: string
+  // P14 — Messenger connection. `messengerPageAccessToken` maps to the
+  // *_encrypted column; pass it only when (re)setting the token.
+  messengerPageId?: string
+  messengerPageAccessToken?: string
+  messengerWebhookVerifyToken?: string
+  messengerEnabled?: boolean
 }
 
 export interface ClinicsRepository {
   findById(id: string): Promise<Clinic | null>
   findBySlug(slug: string): Promise<Clinic | null>
+  /** Resolve the clinic that owns an inbound Messenger event by its Page id (enabled only). */
+  findByMessengerPageId(pageId: string): Promise<Clinic | null>
   list(): Promise<Clinic[]>
   /** Count of clinics in the 'active' status — powers the IA Studio overview (Gap #8). */
   countActive(): Promise<number>
@@ -38,6 +46,15 @@ export function createClinicsRepository(sql: Sql): ClinicsRepository {
 
     async findBySlug(slug) {
       const rows = await sql<Clinic[]>`SELECT * FROM clinics WHERE slug = ${slug} LIMIT 1`
+      return rows[0] ?? null
+    },
+
+    async findByMessengerPageId(pageId) {
+      const rows = await sql<Clinic[]>`
+        SELECT * FROM clinics
+        WHERE messenger_page_id = ${pageId} AND messenger_enabled = TRUE
+        LIMIT 1
+      `
       return rows[0] ?? null
     },
 
@@ -75,6 +92,10 @@ export function createClinicsRepository(sql: Sql): ClinicsRepository {
           plan     = COALESCE(${data.plan     ?? null}, plan),
           status   = COALESCE(${data.status   ?? null}, status),
           timezone = COALESCE(${data.timezone ?? null}, timezone),
+          messenger_page_id                     = COALESCE(${data.messengerPageId          ?? null}, messenger_page_id),
+          messenger_page_access_token_encrypted = COALESCE(${data.messengerPageAccessToken ?? null}, messenger_page_access_token_encrypted),
+          messenger_webhook_verify_token        = COALESCE(${data.messengerWebhookVerifyToken ?? null}, messenger_webhook_verify_token),
+          messenger_enabled                     = COALESCE(${data.messengerEnabled         ?? null}, messenger_enabled),
           settings = CASE WHEN ${data.settings !== undefined} THEN ${sql.json(toJson(data.settings ?? {}))} ELSE settings END
         WHERE id = ${id}
         RETURNING *

@@ -18,6 +18,11 @@ export interface Clinic {
   status: ClinicStatus
   settings: Record<string, unknown>
   timezone: string
+  // P14 — Facebook Messenger connection (one Page per clinic).
+  messengerPageId: string | null
+  messengerPageAccessTokenEncrypted: string | null
+  messengerWebhookVerifyToken: string | null
+  messengerEnabled: boolean
   createdAt: string
   updatedAt: string
 }

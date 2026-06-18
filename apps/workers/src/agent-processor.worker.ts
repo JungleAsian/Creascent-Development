@@ -15,7 +15,7 @@ import {
   type ClinicBotConfig,
   type Language,
 } from '@docmee/agents'
-import { sendWhatsAppText } from '@docmee/channels'
+import { sendWhatsAppText, sendMessengerText } from '@docmee/channels'
 import { schedulingQueue, notificationQueue, type Job } from '@docmee/queue'
 import {
   createServiceDbClient,
@@ -31,6 +31,7 @@ import {
 
 const AgentJobSchema = z.object({
   clinicId: z.string().uuid(),
+  channel: z.enum(['whatsapp', 'messenger']).optional().default('whatsapp'),
   patientWaId: z.string(),
   message: z.string(),
   waMessageId: z.string(),
@@ -71,6 +72,28 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
   return accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
 }
 
+/**
+ * Resolve the outbound reply transport for the message's channel. Returns null
+ * when the clinic has no usable credentials (WhatsApp account inactive, or
+ * Messenger not connected) — the caller then stays silent.
+ */
+function resolveSendReply(
+  channel: 'whatsapp' | 'messenger',
+  clinic: Clinic,
+  account: ChannelAccount | undefined,
+  recipient: string,
+): ((text: string) => Promise<void>) | null {
+  if (channel === 'messenger') {
+    const token = clinic.messengerEnabled ? clinic.messengerPageAccessTokenEncrypted : null
+    if (!token) return null
+    return (text) => sendMessengerText(token, recipient, text)
+  }
+  if (!account) return null
+  const phoneNumberId = account.accountId
+  const accessToken = account.accessTokenEnc ?? ''
+  return (text) => sendWhatsAppText(phoneNumberId, accessToken, recipient, text)
+}
+
 function outsideHoursMessage(language: Language): string {
   return language === 'es'
     ? 'Estamos fuera de horario. Déjame tu nombre y el motivo de tu consulta y te contactamos mañana.'
@@ -97,6 +120,9 @@ export async function processAgentJob(job: Job): Promise<void> {
     const account = activeWhatsAppAccount(await channelAccounts.listByClinic(data.clinicId))
     const patient = data.patientId ? await patients.findById(data.clinicId, data.patientId) : null
 
+    // Channel-aware reply transport (WhatsApp account or Messenger Page token).
+    const sendReply = resolveSendReply(data.channel, clinic, account, data.patientWaId)
+
     const patientOptedOut = isPatientOptedOut(patient)
     const insideHours = isInsideBusinessHours(getBusinessHours(clinic), clinic.timezone)
 
@@ -115,28 +141,21 @@ export async function processAgentJob(job: Job): Promise<void> {
       case 'silence':
         // Outside-hours: collect name + reason so a human can follow up (Decision 1).
         // Opt-out silence stays fully silent.
-        if (route.reason === 'outside_hours' && account) {
+        if (route.reason === 'outside_hours' && sendReply) {
           const language = data.isNewPatient
             ? detectLanguage(data.message)
             : getPatientLanguage(patient)
-          await sendWhatsAppText(
-            account.accountId,
-            account.accessTokenEnc ?? '',
-            data.patientWaId,
-            outsideHoursMessage(language),
-          )
+          await sendReply(outsideHoursMessage(language))
         } else {
           console.log('[agent] silence route:', route.reason, data.clinicId)
         }
         break
 
       case 'botbase': {
-        if (!account) {
-          console.warn(`[agent] no active WhatsApp account for clinic ${data.clinicId}; cannot reply`)
+        if (!sendReply) {
+          console.warn(`[agent] no reply transport for clinic ${data.clinicId} on ${data.channel}; cannot reply`)
           break
         }
-        const phoneNumberId = account.accountId
-        const accessToken = account.accessTokenEnc ?? ''
         const chunks = await knowledge.listEmbeddedChunks(data.clinicId)
 
         await runClinicBot(
@@ -152,7 +171,7 @@ export async function processAgentJob(job: Job): Promise<void> {
           {
             searchKb: (query) => searchKb(query, chunks, embedText),
             complete: claudeComplete,
-            sendText: (text) => sendWhatsAppText(phoneNumberId, accessToken, data.patientWaId, text),
+            sendText: (text) => sendReply(text),
             logError: (info) =>
               errorReviews
                 .create({

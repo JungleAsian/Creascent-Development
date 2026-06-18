@@ -55,6 +55,7 @@ export default function ClinicDetailPage({ params }: { params: Promise<{ id: str
           <BotConfigSection clinic={clinic} />
           <BusinessHoursSection clinic={clinic} />
           <CalendarSection clinic={clinic} />
+          <MessengerSection clinic={clinic} />
           <LicenseSection clinicId={clinic.id} />
         </>
       )}
@@ -288,6 +289,100 @@ function CalendarSection({ clinic }: { clinic: Clinic }) {
         </a>
       </div>
       <p className="mt-2 text-xs text-gray-400">{t('calendar.hint')}</p>
+    </Section>
+  )
+}
+
+function MessengerSection({ clinic }: { clinic: Clinic }) {
+  const { t } = useI18n()
+  const [enabled, setEnabled] = useState(Boolean(clinic.messengerEnabled))
+  const [pageId, setPageId] = useState(clinic.messengerPageId ?? '')
+  const [verifyToken, setVerifyToken] = useState(clinic.messengerWebhookVerifyToken ?? '')
+  const [token, setToken] = useState('') // write-only; empty keeps the stored token
+  const [tested, setTested] = useState<boolean | null>(null)
+  const save = useSaveClinic(clinic.id)
+
+  const dirty =
+    enabled !== Boolean(clinic.messengerEnabled) ||
+    pageId !== (clinic.messengerPageId ?? '') ||
+    verifyToken !== (clinic.messengerWebhookVerifyToken ?? '') ||
+    token.trim() !== ''
+
+  const webhookUrl = `${API_BASE}/webhook/messenger`
+
+  function onSave() {
+    const body: Record<string, unknown> = {
+      messengerEnabled: enabled,
+      messengerPageId: pageId.trim(),
+      messengerWebhookVerifyToken: verifyToken.trim(),
+    }
+    // Only send the token when the admin typed a new one — empty preserves it.
+    if (token.trim()) body.messengerPageAccessToken = token.trim()
+    save.mutate(body, { onSuccess: () => setToken('') })
+  }
+
+  // Local readiness check — confirms the connection is fully configured.
+  function onTest() {
+    setTested(
+      enabled &&
+        pageId.trim() !== '' &&
+        verifyToken.trim() !== '' &&
+        (token.trim() !== '' || Boolean(clinic.messengerPageId)),
+    )
+  }
+
+  return (
+    <Section title={t('clinic.section.messenger')}>
+      <label className="mb-3 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <span className="font-medium">{t('messenger.enable')}</span>
+      </label>
+      <p className="mb-3 text-xs text-gray-500">{t('messenger.enableHint')}</p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label={t('messenger.pageId')}>
+          <input value={pageId} onChange={(e) => setPageId(e.target.value)} className={`w-full ${inputCls}`} />
+        </Field>
+        <Field label={t('messenger.verifyToken')}>
+          <input
+            value={verifyToken}
+            onChange={(e) => setVerifyToken(e.target.value)}
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
+        <Field label={t('messenger.pageToken')}>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={clinic.messengerPageId ? '••••••••' : ''}
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
+      </div>
+      <p className="mt-1 text-xs text-gray-400">{t('messenger.pageTokenHint')}</p>
+      <p className="mt-1 text-xs text-gray-400">{t('messenger.hint', { url: webhookUrl })}</p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!dirty || save.isPending}
+          className="rounded-md bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-40 dark:bg-gray-700"
+        >
+          {save.isPending ? t('common.saving') : t('common.save')}
+        </button>
+        <button
+          type="button"
+          onClick={onTest}
+          className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold hover:border-gray-400 dark:border-gray-700"
+        >
+          {t('messenger.test')}
+        </button>
+        {tested === true && <span className="text-xs text-emerald-600">{t('messenger.testOk')}</span>}
+        {tested === false && <span className="text-xs text-red-600">{t('messenger.testFail')}</span>}
+        {save.isSuccess && !dirty && <span className="text-xs text-emerald-600">{t('common.saved')}</span>}
+      </div>
     </Section>
   )
 }

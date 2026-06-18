@@ -17,6 +17,13 @@ import { withDb } from '../lib/db.js'
 import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
+import type { Clinic } from '@docmee/db'
+
+// The Messenger Page token is write-only — never echo it back to the panel.
+function redactClinic(clinic: Clinic): Omit<Clinic, 'messengerPageAccessTokenEncrypted'> {
+  const { messengerPageAccessTokenEncrypted: _omit, ...rest } = clinic
+  return rest
+}
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -36,6 +43,11 @@ const patchSchema = z
     status: z.enum(['active', 'suspended', 'cancelled']).optional(),
     timezone: z.string().min(1).optional(),
     settings: z.record(z.unknown()).optional(),
+    // P14 — Facebook Messenger connection. Token is write-only; omit to keep it.
+    messengerPageId: z.string().optional(),
+    messengerPageAccessToken: z.string().min(1).optional(),
+    messengerWebhookVerifyToken: z.string().optional(),
+    messengerEnabled: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' })
 
@@ -45,7 +57,7 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
   // ── List all clinics (IA Studio) ──
   app.get('/', { preHandler: requireRole('ia_studio_admin') }, async () => {
     const clinics = await withDb(async (sql) => createClinicsRepository(sql).list())
-    return { clinics }
+    return { clinics: clinics.map(redactClinic) }
   })
 
   // ── Create a clinic (IA Studio) ──
@@ -58,7 +70,7 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
       return repo.create(parsed.data)
     })
     if (!clinic) return reply.code(409).send({ error: 'Slug already in use' })
-    return reply.code(201).send({ clinic })
+    return reply.code(201).send({ clinic: redactClinic(clinic) })
   })
 
   app.get<{ Params: { id: string } }>(
@@ -69,7 +81,7 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
       const clinic = await withDb(async (sql) => createClinicsRepository(sql).findById(clinicId))
       if (!clinic) return reply.code(404).send({ error: 'Clinic not found' })
-      return { clinic }
+      return { clinic: redactClinic(clinic) }
     },
   )
 
@@ -87,7 +99,7 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
         return repo.update(clinicId, parsed.data)
       })
       if (!clinic) return reply.code(404).send({ error: 'Clinic not found' })
-      return { clinic }
+      return { clinic: redactClinic(clinic) }
     },
   )
 

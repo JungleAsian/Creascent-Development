@@ -79,6 +79,11 @@ export interface Clinic {
   status: ClinicStatus
   timezone: string
   settings: Record<string, unknown>
+  // P14 — Facebook Messenger connection. The access token is write-only and is
+  // never sent back to the panel, so it is not exposed here.
+  messengerPageId?: string | null
+  messengerWebhookVerifyToken?: string | null
+  messengerEnabled?: boolean
   createdAt: string
   updatedAt: string
 }
