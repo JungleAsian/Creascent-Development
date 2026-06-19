@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   notificationAdd: vi.fn(),
   findByAccount: vi.fn(),
   findByMessengerPageId: vi.fn(),
+  findByInstagramAccountId: vi.fn(),
   findClinicById: vi.fn(),
   findByContact: vi.fn(),
   createPatient: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('@docmee/db', () => ({
   createChannelAccountsRepository: () => ({ findByAccount: h.findByAccount }),
   createClinicsRepository: () => ({
     findByMessengerPageId: h.findByMessengerPageId,
+    findByInstagramAccountId: h.findByInstagramAccountId,
     findById: h.findClinicById,
   }),
   createPatientsRepository: () => ({
@@ -64,7 +66,8 @@ const activeAccount = { clinicId: CLINIC, accessTokenEnc: 'token', settings: {} 
 beforeEach(() => {
   vi.clearAllMocks()
   h.findByAccount.mockResolvedValue(activeAccount)
-  h.findByMessengerPageId.mockResolvedValue({ id: CLINIC })
+  h.findByMessengerPageId.mockResolvedValue({ id: CLINIC, settings: {} })
+  h.findByInstagramAccountId.mockResolvedValue({ id: CLINIC, settings: {} })
   // No CRM (googleSheets) configured by default → contact export is skipped cleanly.
   h.findClinicById.mockResolvedValue({ id: CLINIC, name: 'Clinica', settings: {} })
   h.findByContact.mockResolvedValue({ id: PATIENT, status: 'returning' })
@@ -203,6 +206,76 @@ describe('processConversationJob', () => {
     expect(h.notificationAdd).toHaveBeenCalledTimes(1)
     const [, job] = h.notificationAdd.mock.calls[0]
     expect(job.type).toBe('META_TOKEN_EXPIRING')
+    expect(job.channel).toBe('whatsapp')
+  })
+
+  it('WhatsApp token not near expiry → no notification', async () => {
+    const far = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    h.findByAccount.mockResolvedValue({ ...activeAccount, settings: { tokenExpiresAt: far } })
+    await processConversationJob(makeJob({ ...base, messageType: 'text', content: 'hola' }))
+    expect(h.notificationAdd).not.toHaveBeenCalled()
+  })
+
+  it('Req 19: expiring Messenger token → enqueues a notification tagged messenger', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+    h.findByMessengerPageId.mockResolvedValue({
+      id: CLINIC,
+      settings: { messengerTokenExpiresAt: soon },
+    })
+    await processConversationJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        patientWaId: 'PSID_123',
+        waMessageId: 'mid.ABC',
+        timestamp: 1700000000000,
+        messageType: 'text',
+        content: 'hola',
+      }),
+    )
+    expect(h.notificationAdd).toHaveBeenCalledTimes(1)
+    const [, job] = h.notificationAdd.mock.calls[0]
+    expect(job.type).toBe('META_TOKEN_EXPIRING')
+    expect(job.channel).toBe('messenger')
+  })
+
+  it('Req 19: Messenger token with no expiry configured → no notification', async () => {
+    await processConversationJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        patientWaId: 'PSID_123',
+        waMessageId: 'mid.ABC',
+        timestamp: 1700000000000,
+        messageType: 'text',
+        content: 'hola',
+      }),
+    )
+    expect(h.notificationAdd).not.toHaveBeenCalled()
+  })
+
+  it('Req 19: expiring Instagram token → enqueues a notification tagged instagram', async () => {
+    const soon = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString()
+    h.findByInstagramAccountId.mockResolvedValue({
+      id: CLINIC,
+      settings: { instagramTokenExpiresAt: soon },
+    })
+    await processConversationJob(
+      makeJob({
+        channel: 'instagram',
+        phoneNumberId: 'IG_ACCOUNT',
+        patientWaId: 'IGSID_123',
+        waMessageId: 'mid.IG',
+        timestamp: 1700000000000,
+        messageType: 'text',
+        content: 'hola',
+      }),
+    )
+    expect(h.findByInstagramAccountId).toHaveBeenCalledWith('IG_ACCOUNT')
+    expect(h.notificationAdd).toHaveBeenCalledTimes(1)
+    const [, job] = h.notificationAdd.mock.calls[0]
+    expect(job.type).toBe('META_TOKEN_EXPIRING')
+    expect(job.channel).toBe('instagram')
   })
 
   it('invalid payload → throws ZodError', async () => {

@@ -12,7 +12,6 @@ import {
   createConversationsRepository,
   createMessagesRepository,
   type Channel,
-  type ChannelAccount,
   type ContentType,
 } from '@docmee/db'
 import { firstContactMetadata } from './intake.js'
@@ -40,11 +39,42 @@ export type InboundMessage = z.infer<typeof InboundMessageSchema>
 const TOKEN_EXPIRY_WARNING_DAYS = 7
 const MS_PER_DAY = 1000 * 60 * 60 * 24
 
-function tokenExpiresAt(account: ChannelAccount): Date | null {
-  const raw = (account.settings as { tokenExpiresAt?: unknown }).tokenExpiresAt
+// Where each channel's token-expiry timestamp is stored. WhatsApp tokens live on
+// the channel_accounts row (settings.tokenExpiresAt); Messenger/Instagram tokens
+// live on the clinic row (settings.{messenger,instagram}TokenExpiresAt) since
+// their connection config is per-clinic, not per channel_account (P14/P15).
+const CLINIC_EXPIRY_KEY = {
+  messenger: 'messengerTokenExpiresAt',
+  instagram: 'instagramTokenExpiresAt',
+} as const
+
+/** Parse a stored token-expiry value (ISO string or epoch ms) into a Date. */
+function parseExpiry(raw: unknown): Date | null {
   if (typeof raw !== 'string' && typeof raw !== 'number') return null
   const date = new Date(raw)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+/**
+ * Gap #19: warn when a Meta channel access token is within the warning window of
+ * expiry. All three channels raise the same META_TOKEN_EXPIRING alert, tagged with
+ * the channel so the renewal notice names the right surface. No-op when no expiry
+ * is configured. Best-effort dispatch (the alert never blocks message processing).
+ */
+async function warnIfTokenExpiring(
+  clinicId: string,
+  expiresAt: Date | null,
+  channel: Channel,
+): Promise<void> {
+  if (!expiresAt) return
+  const daysRemaining = (expiresAt.getTime() - Date.now()) / MS_PER_DAY
+  if (daysRemaining >= TOKEN_EXPIRY_WARNING_DAYS) return
+  await notificationQueue.add('notify', {
+    clinicId,
+    type: 'META_TOKEN_EXPIRING',
+    channel,
+    daysRemaining: Math.max(0, Math.ceil(daysRemaining)),
+  })
 }
 
 // Map a Meta message type to the conversation_messages content_type domain
@@ -127,6 +157,12 @@ export async function processConversationJob(job: Job): Promise<void> {
         return
       }
       clinicId = clinic.id
+      // Gap #19: warn when the Messenger Page access token is close to expiry.
+      await warnIfTokenExpiring(
+        clinicId,
+        parseExpiry(clinic.settings[CLINIC_EXPIRY_KEY.messenger]),
+        'messenger',
+      )
     } else if (channel === 'instagram') {
       const clinics = createClinicsRepository(sql)
       const clinic = await clinics.findByInstagramAccountId(msg.phoneNumberId)
@@ -137,6 +173,12 @@ export async function processConversationJob(job: Job): Promise<void> {
         return
       }
       clinicId = clinic.id
+      // Gap #19: warn when the Instagram Page access token is close to expiry.
+      await warnIfTokenExpiring(
+        clinicId,
+        parseExpiry(clinic.settings[CLINIC_EXPIRY_KEY.instagram]),
+        'instagram',
+      )
     } else {
       const channelAccounts = createChannelAccountsRepository(sql)
       const account = await channelAccounts.findByAccount('whatsapp', msg.phoneNumberId)
@@ -149,18 +191,12 @@ export async function processConversationJob(job: Job): Promise<void> {
       clinicId = account.clinicId
       waAccessToken = account.accessTokenEnc ?? ''
 
-      // Gap #19: warn when the Meta access token is close to expiry.
-      const expiresAt = tokenExpiresAt(account)
-      if (expiresAt) {
-        const daysRemaining = (expiresAt.getTime() - Date.now()) / MS_PER_DAY
-        if (daysRemaining < TOKEN_EXPIRY_WARNING_DAYS) {
-          await notificationQueue.add('notify', {
-            clinicId,
-            type: 'META_TOKEN_EXPIRING',
-            daysRemaining: Math.max(0, Math.ceil(daysRemaining)),
-          })
-        }
-      }
+      // Gap #19: warn when the WhatsApp access token is close to expiry.
+      await warnIfTokenExpiring(
+        clinicId,
+        parseExpiry((account.settings as { tokenExpiresAt?: unknown }).tokenExpiresAt),
+        'whatsapp',
+      )
     }
 
     // Gap #16: new vs returning patient detection.

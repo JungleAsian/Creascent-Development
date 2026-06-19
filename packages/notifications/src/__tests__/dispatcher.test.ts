@@ -170,4 +170,15 @@ describe('dispatchNotification', () => {
       expect(email.html.length).toBeGreaterThan(0)
     }
   })
+
+  it('meta_token_expiring email names the channel (Req 19)', () => {
+    expect(buildNotificationEmail('meta_token_expiring', { channel: 'messenger' }).subject).toContain(
+      'Messenger',
+    )
+    expect(buildNotificationEmail('meta_token_expiring', { channel: 'instagram' }).html).toContain(
+      'Instagram',
+    )
+    // No channel → defaults to WhatsApp (back-compat with the existing producer).
+    expect(buildNotificationEmail('meta_token_expiring', {}).subject).toContain('WhatsApp')
+  })
 })

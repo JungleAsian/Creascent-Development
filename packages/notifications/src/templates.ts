@@ -18,6 +18,13 @@ function details(data: Record<string, unknown>): string {
   return `<pre style="background:#f5f5f5;padding:8px;border-radius:4px">${esc(data)}</pre>`
 }
 
+/** Proper-noun label for a Meta channel, defaulting to WhatsApp (back-compat). */
+function channelLabel(channel: unknown): string {
+  if (channel === 'messenger') return 'Messenger'
+  if (channel === 'instagram') return 'Instagram'
+  return 'WhatsApp'
+}
+
 /**
  * Build the subject + HTML body for a notification. Keyed by every NotificationType
  * (the Record type enforces exhaustiveness — a new type won't compile until added).
@@ -88,8 +95,8 @@ export function buildNotificationEmail(
       html: `<h2>Secretary Timeout</h2><p>A conversation in human handoff has had no response for 10 minutes.</p>${details(data)}`,
     },
     meta_token_expiring: {
-      subject: '⚠️ WhatsApp token expiring soon',
-      html: `<h2>Token Expiry Warning</h2><p>Your WhatsApp access token expires in less than 7 days. Please renew it in the Meta Developer Portal.</p>${details(data)}`,
+      subject: `⚠️ ${channelLabel(data['channel'])} token expiring soon`,
+      html: `<h2>Token Expiry Warning</h2><p>Your ${channelLabel(data['channel'])} access token expires in less than 7 days. Please renew it in the Meta Developer Portal.</p>${details(data)}`,
     },
     daily_summary: {
       subject: '📊 Daily summary',

@@ -102,7 +102,12 @@ export async function processNotificationJob(job: Job): Promise<void> {
         clinicId: data.clinicId,
         conversationId: data.conversationId ?? null,
         type,
-        data: { reason: data.reason, ...(typeof data['daysRemaining'] === 'number' ? { daysRemaining: data['daysRemaining'] } : {}) },
+        data: {
+          reason: data.reason,
+          ...(typeof data['daysRemaining'] === 'number' ? { daysRemaining: data['daysRemaining'] } : {}),
+          // Channel tag (token-expiry alerts) so the email names the right surface.
+          ...(typeof data['channel'] === 'string' ? { channel: data['channel'] } : {}),
+        },
         recipientEmail,
         recipientOnline,
         emailAllowed,
