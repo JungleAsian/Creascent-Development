@@ -11,6 +11,13 @@ export interface ClinicInfo {
   timezone: string
 }
 
+/** A clinic service a doctor offers (Req 30). Its duration sets the slot length. */
+export interface ServiceRef {
+  id: string
+  name: string
+  durationMinutes: number
+}
+
 export interface ProviderRef {
   id: string
   fullName: string
@@ -18,6 +25,9 @@ export interface ProviderRef {
   specialty?: string | null
   /** Per-doctor working hours (Req 30); when set, restricts the bookable slots. */
   availability?: DoctorAvailability
+  /** Services this doctor offers (Req 30); when set, the patient picks one and its
+   *  duration determines the appointment length. */
+  services?: ServiceRef[]
 }
 
 /** A patient's existing upcoming appointment, as the flows need to see it. */
@@ -110,6 +120,26 @@ export function matchProvider(text: string, providers: ProviderRef[]): ProviderR
     if (lower.includes(name)) return p
     // Also match on any single name token (e.g. "García") of length 3+.
     if (name.split(/\s+/).some((part) => part.length >= 3 && lower.includes(part))) return p
+  }
+  return null
+}
+
+/**
+ * Match a service from a numbered/named menu (Req 30). The patient may reply with
+ * the list position ("2") or a (partial, case-insensitive) name ("limpieza").
+ * Returns null when nothing matches so the caller can re-prompt.
+ */
+export function matchService(text: string, services: ServiceRef[]): ServiceRef | null {
+  const lower = text.toLowerCase().trim()
+  const num = lower.match(/\b(\d{1,2})\b/)
+  if (num) {
+    const idx = Number(num[1]) - 1
+    if (idx >= 0 && idx < services.length) return services[idx]!
+  }
+  for (const s of services) {
+    const name = s.name.toLowerCase()
+    if (lower.includes(name)) return s
+    if (name.split(/\s+/).some((part) => part.length >= 3 && lower.includes(part))) return s
   }
   return null
 }

@@ -23,6 +23,7 @@ import quickRepliesRoute from './routes/quick-replies.js'
 import metricsRoute from './routes/metrics.js'
 import templatesRoute from './routes/templates.js'
 import doctorsRoute from './routes/doctors.js'
+import servicesRoute from './routes/services.js'
 import customFlowsRoute from './routes/custom-flows.js'
 import kbUploadRoute from './routes/kb-upload.js'
 import analyticsRoute from './routes/analytics.js'
@@ -81,6 +82,7 @@ export async function buildApp() {
   // P18 — Phase 3 routes. doctors/custom-flows/kb-upload/analytics declare their own
   // /clinics/:id/… paths; reviews exposes the public /r/:id review redirector.
   await app.register(doctorsRoute)
+  await app.register(servicesRoute)
   await app.register(customFlowsRoute)
   await app.register(kbUploadRoute)
   await app.register(analyticsRoute)

@@ -29,6 +29,8 @@ export interface BookingIntake {
   doctorName: string | null
   specialty: string | null
   source: string | null
+  /** Req 30: the service the patient booked, when the doctor offers services. */
+  serviceId?: string | null
 }
 
 /** Read the patient's first-contact source channel, if it was captured. */

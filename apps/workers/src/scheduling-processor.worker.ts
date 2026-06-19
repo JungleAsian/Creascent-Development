@@ -44,6 +44,7 @@ import {
   createAppointmentsRepository,
   createChannelAccountsRepository,
   createDoctorsRepository,
+  createDoctorServicesRepository,
   createErrorReviewsRepository,
   type Clinic,
   type Patient,
@@ -356,14 +357,27 @@ export async function processSchedulingJob(job: Job): Promise<void> {
           break
         }
 
+        // Req 30: each doctor carries their own working hours AND the services they
+        // offer; the chosen service's duration sets the appointment slot length. The
+        // doctor-services repo is only touched in doctor mode (legacy providers have
+        // no per-doctor services).
         const resourceList: ProviderRef[] = doctorMode
-          ? doctors.map((d) => ({
-              id: d.id,
-              fullName: d.name,
-              specialty: d.specialty,
-              // Req 30: the doctor's own working hours restrict the bookable slots.
-              availability: normalizeAvailability(d.availableDays),
-            }))
+          ? await (async () => {
+              const doctorServicesRepo = createDoctorServicesRepository(sql)
+              return Promise.all(
+                doctors.map(async (d) => ({
+                  id: d.id,
+                  fullName: d.name,
+                  specialty: d.specialty,
+                  availability: normalizeAvailability(d.availableDays),
+                  services: (await doctorServicesRepo.listServicesForDoctor(data.clinicId, d.id)).map((s) => ({
+                    id: s.id,
+                    name: s.name,
+                    durationMinutes: s.durationMinutes,
+                  })),
+                })),
+              )
+            })()
           : providers.map(toProviderRef)
 
         const result = await advanceBookingFlow(state, data.message, {
@@ -373,10 +387,10 @@ export async function processSchedulingJob(job: Job): Promise<void> {
           patientName: patient?.fullName ?? null,
         }, {
           calendar: bookingCalendar ?? unconfiguredCalendar,
-          saveAppointment: async ({ providerId, doctorName, specialty, startTime, endTime, reason, preferredDate, preferredTime, googleEventId }) => {
+          saveAppointment: async ({ providerId, doctorName, specialty, serviceId, startTime, endTime, reason, preferredDate, preferredTime, googleEventId }) => {
             // Req 10: the full intake captured during the flow (reason, the
-            // patient's preferred date/time, the chosen doctor + specialty and the
-            // originating source channel) is persisted onto the appointment...
+            // patient's preferred date/time, the chosen doctor + specialty + service
+            // and the originating source channel) is persisted onto the appointment...
             const intake: BookingIntake = {
               reason,
               preferredDate,
@@ -385,11 +399,13 @@ export async function processSchedulingJob(job: Job): Promise<void> {
               doctorName,
               specialty,
               source: patientSource(patient),
+              ...(serviceId ? { serviceId } : {}),
             }
             const created = await appointments.create({
               clinicId: data.clinicId,
               patientId,
               ...(doctorMode ? { doctorId: providerId } : { providerId }),
+              ...(serviceId ? { serviceId } : {}),
               conversationId: data.conversationId,
               startTime,
               endTime,

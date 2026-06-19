@@ -5,6 +5,7 @@ export { createConversationsRepository } from './conversations.repository.js'
 export { createMessagesRepository }      from './messages.repository.js'
 export { createAppointmentsRepository }  from './appointments.repository.js'
 export { createDoctorsRepository }       from './doctors.repository.js'
+export { createDoctorServicesRepository } from './doctor-services.repository.js'
 export { createCustomFlowsRepository }   from './custom-flows.repository.js'
 export { createFollowUpsRepository }     from './follow-ups.repository.js'
 export { createKnowledgeRepository }     from './knowledge.repository.js'
@@ -30,6 +31,7 @@ export type { MessagesRepository, CreateMessageInput }                          
 export type { AppointmentsRepository, CreateAppointmentInput, UpdateAppointmentInput,
               CreateProviderInput, CreateServiceInput }                                            from './appointments.repository.js'
 export type { DoctorsRepository, CreateDoctorInput, UpdateDoctorInput }                           from './doctors.repository.js'
+export type { DoctorServicesRepository }                                                          from './doctor-services.repository.js'
 export type { CustomFlowsRepository, CreateCustomFlowInput, UpdateCustomFlowInput }               from './custom-flows.repository.js'
 export type { FollowUpsRepository, CreateFollowUpInput }                                          from './follow-ups.repository.js'
 export type { KnowledgeRepository, CreateDocumentInput, CreateChunkInput,

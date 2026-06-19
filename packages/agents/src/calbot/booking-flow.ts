@@ -11,17 +11,20 @@ import {
   type Language,
   type ClinicInfo,
   type ProviderRef,
+  type ServiceRef,
   parseDate,
   parseTime,
   isAffirmative,
   isNegative,
   matchProvider,
+  matchService,
   pick,
 } from './shared.js'
 import { hasAvailability, worksOnDay, filterSlotsByAvailability } from './doctor-availability.js'
 
 export type BookingStep =
   | 'confirm_doctor'
+  | 'ask_service'
   | 'ask_reason'
   | 'ask_date'
   | 'ask_time'
@@ -35,6 +38,11 @@ export interface BookingState {
   providerId?: string
   doctorName?: string
   specialty?: string | null
+  // Req 30: the chosen service (when the doctor offers any). Its duration sets the
+  // appointment slot length.
+  serviceId?: string
+  serviceName?: string
+  serviceDurationMinutes?: number
   reason?: string
   preferredDate?: string // YYYY-MM-DD
   preferredTime?: string // HH:MM
@@ -60,6 +68,7 @@ export interface BookingDeps {
     providerId: string
     doctorName: string | null
     specialty: string | null
+    serviceId: string | null
     startTime: string
     endTime: string
     reason: string
@@ -90,6 +99,69 @@ function listProviderNames(providers: ProviderRef[]): string {
   return providers.map((p) => p.fullName).join(', ')
 }
 
+function listServiceNames(services: ServiceRef[]): string {
+  return services.map((s, i) => `${i + 1}. ${s.name}`).join('  ')
+}
+
+function reasonPrompt(L: Language): string {
+  return pick(L, '¿Cuál es el motivo de la consulta?', 'What is the reason for your visit?')
+}
+
+// Once the doctor is known, branch on their configured services (Req 30):
+//   >1 service  → ask the patient which one
+//    1 service  → auto-pick it and go straight to the reason
+//    0 services  → keep the original behaviour (clinic default duration)
+function afterDoctorSelected(provider: ProviderRef, state: BookingState, L: Language): FlowResult {
+  const services = provider.services ?? []
+  const base: BookingState = {
+    ...state,
+    providerId: provider.id,
+    doctorName: provider.fullName,
+    specialty: provider.specialty ?? null,
+  }
+
+  if (services.length > 1) {
+    return {
+      nextState: { ...base, step: 'ask_service' },
+      reply: pick(
+        L,
+        `Perfecto, ${provider.fullName}. ¿Qué servicio necesita?  ${listServiceNames(services)}`,
+        `Great, ${provider.fullName}. Which service do you need?  ${listServiceNames(services)}`,
+      ),
+      done: false,
+    }
+  }
+
+  if (services.length === 1) {
+    const s = services[0]!
+    return {
+      nextState: {
+        ...base,
+        step: 'ask_reason',
+        serviceId: s.id,
+        serviceName: s.name,
+        serviceDurationMinutes: s.durationMinutes,
+      },
+      reply: pick(
+        L,
+        `Perfecto, ${provider.fullName}. ¿Cuál es el motivo de la consulta?`,
+        `Great, ${provider.fullName}. What is the reason for your visit?`,
+      ),
+      done: false,
+    }
+  }
+
+  return {
+    nextState: { ...base, step: 'ask_reason' },
+    reply: pick(
+      L,
+      `Perfecto, ${provider.fullName}. ¿Cuál es el motivo de la consulta?`,
+      `Great, ${provider.fullName}. What is the reason for your visit?`,
+    ),
+    done: false,
+  }
+}
+
 export async function advanceBookingFlow(
   state: BookingState,
   message: string,
@@ -97,7 +169,8 @@ export async function advanceBookingFlow(
   deps: BookingDeps,
 ): Promise<FlowResult> {
   const L = ctx.language
-  const duration = ctx.serviceDurationMinutes ?? 30
+  // Req 30: the chosen service's duration wins over the clinic-wide default.
+  const duration = state.serviceDurationMinutes ?? ctx.serviceDurationMinutes ?? 30
 
   switch (state.step) {
     case 'confirm_doctor': {
@@ -124,19 +197,37 @@ export async function advanceBookingFlow(
           done: false,
         }
       }
+      return afterDoctorSelected(provider, state, L)
+    }
+
+    case 'ask_service': {
+      const provider = ctx.providers.find((p) => p.id === state.providerId)
+      const services = provider?.services ?? []
+      if (services.length === 0) {
+        // No services to choose (config changed mid-flow) — move on.
+        return { nextState: { ...state, step: 'ask_reason' }, reply: reasonPrompt(L), done: false }
+      }
+      const chosen = matchService(message, services)
+      if (!chosen) {
+        return {
+          nextState: { ...state, step: 'ask_service' },
+          reply: pick(
+            L,
+            `No identifiqué el servicio. ¿Qué servicio necesita?  ${listServiceNames(services)}`,
+            `I didn't catch the service. Which service do you need?  ${listServiceNames(services)}`,
+          ),
+          done: false,
+        }
+      }
       return {
         nextState: {
           ...state,
           step: 'ask_reason',
-          providerId: provider.id,
-          doctorName: provider.fullName,
-          specialty: provider.specialty ?? null,
+          serviceId: chosen.id,
+          serviceName: chosen.name,
+          serviceDurationMinutes: chosen.durationMinutes,
         },
-        reply: pick(
-          L,
-          `Perfecto, ${provider.fullName}. ¿Cuál es el motivo de la consulta?`,
-          `Great, ${provider.fullName}. What is the reason for your visit?`,
-        ),
+        reply: reasonPrompt(L),
         done: false,
       }
     }
@@ -284,6 +375,7 @@ export async function advanceBookingFlow(
         providerId: state.providerId,
         doctorName: state.doctorName ?? null,
         specialty: state.specialty ?? null,
+        serviceId: state.serviceId ?? null,
         startTime: slot.start,
         endTime: slot.end,
         reason: state.reason ?? '',

@@ -174,6 +174,106 @@ describe('per-doctor working hours (Req 30)', () => {
   })
 })
 
+describe('per-doctor services (Req 30)', () => {
+  const twoServices = [
+    { id: 's1', name: 'Consulta general', durationMinutes: 30 },
+    { id: 's2', name: 'Limpieza dental', durationMinutes: 45 },
+  ]
+
+  async function walkToBooking(servicesCtx: BookingContext, serviceReply: string | null) {
+    const calendar = makeCalendar()
+    const deps = makeDeps(calendar)
+    let state: BookingState = initialBookingState()
+
+    // confirm_doctor (single provider auto-picked)
+    let r = await advanceBookingFlow(state, 'quiero una cita', servicesCtx, deps)
+    state = r.nextState
+
+    if (serviceReply !== null) {
+      // The flow asked which service; answer it.
+      expect(state.step).toBe('ask_service')
+      r = await advanceBookingFlow(state, serviceReply, servicesCtx, deps)
+      state = r.nextState
+    }
+    expect(state.step).toBe('ask_reason')
+
+    r = await advanceBookingFlow(state, 'control general', servicesCtx, deps)
+    state = r.nextState
+    r = await advanceBookingFlow(state, `el ${DATE}`, servicesCtx, deps)
+    state = r.nextState
+    r = await advanceBookingFlow(state, '10:00', servicesCtx, deps)
+    state = r.nextState
+    r = await advanceBookingFlow(state, 'sí, confirmo', servicesCtx, deps)
+    return { result: r, calendar, deps }
+  }
+
+  it('asks which service when the doctor offers several, then books with that service duration', async () => {
+    const multiCtx: BookingContext = {
+      ...ctx,
+      providers: [{ id: 'prov-1', fullName: 'Dra. García', specialty: 'Pediatría', services: twoServices }],
+    }
+    const { result, calendar, deps } = await walkToBooking(multiCtx, 'limpieza')
+    expect(result.done).toBe(true)
+    // 45-minute service duration is used for the calendar event (not the 30 default).
+    expect((calendar.createEvent as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      durationMinutes: 45,
+    })
+    expect((deps.saveAppointment as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      serviceId: 's2',
+    })
+  })
+
+  it('matches the service by its list number', async () => {
+    const multiCtx: BookingContext = {
+      ...ctx,
+      providers: [{ id: 'prov-1', fullName: 'Dra. García', services: twoServices }],
+    }
+    const { deps } = await walkToBooking(multiCtx, '1')
+    expect((deps.saveAppointment as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      serviceId: 's1',
+    })
+  })
+
+  it('re-prompts when the service reply is not recognised', async () => {
+    const multiCtx: BookingContext = {
+      ...ctx,
+      providers: [{ id: 'prov-1', fullName: 'Dra. García', services: twoServices }],
+    }
+    const deps = makeDeps(makeCalendar())
+    let r = await advanceBookingFlow(initialBookingState(), 'cita', multiCtx, deps)
+    r = await advanceBookingFlow(r.nextState, 'algo que no existe', multiCtx, deps)
+    expect(r.nextState.step).toBe('ask_service')
+    expect(r.reply).toContain('Consulta general')
+  })
+
+  it('auto-picks a single service and skips the question', async () => {
+    const oneCtx: BookingContext = {
+      ...ctx,
+      providers: [{ id: 'prov-1', fullName: 'Dra. García', services: [{ id: 's1', name: 'Consulta', durationMinutes: 20 }] }],
+    }
+    const { result, calendar, deps } = await walkToBooking(oneCtx, null)
+    expect(result.done).toBe(true)
+    expect((calendar.createEvent as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      durationMinutes: 20,
+    })
+    expect((deps.saveAppointment as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      serviceId: 's1',
+    })
+  })
+
+  it('skips the service step and uses the default duration when the doctor offers none', async () => {
+    // ctx providers have no `services`; the flow must go straight to ask_reason.
+    const { result, calendar, deps } = await walkToBooking(ctx, null)
+    expect(result.done).toBe(true)
+    expect((calendar.createEvent as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      durationMinutes: 30,
+    })
+    expect((deps.saveAppointment as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+      serviceId: null,
+    })
+  })
+})
+
 describe('double-booking protection', () => {
   it('detects a conflict and offers alternative slots', async () => {
     // The requested 10:00 is NOT free; only 09:00 and 11:00 are.

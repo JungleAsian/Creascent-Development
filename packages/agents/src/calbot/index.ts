@@ -23,10 +23,12 @@ export {
   isAffirmative,
   isNegative,
   matchProvider,
+  matchService,
   formatSlotLabel,
   pick,
   type ClinicInfo,
   type ProviderRef,
+  type ServiceRef,
   type UpcomingAppointment,
 } from './shared.js'
 
