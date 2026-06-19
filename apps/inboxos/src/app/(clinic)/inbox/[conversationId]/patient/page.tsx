@@ -9,13 +9,16 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { useI18n } from '@/shared/hooks/useI18n'
+import { useTeam } from '@/shared/hooks/useTeam'
 import { formatDateTime, relativeTime } from '@/shared/format'
 import type {
   Appointment,
   AppointmentStatus,
   Conversation,
   ConversationStatus,
+  Note,
   Patient,
+  Tag,
 } from '@/shared/types'
 
 const APPT_BADGE: Record<AppointmentStatus, string> = {
@@ -43,6 +46,7 @@ export default function PatientHistoryPage({
 }) {
   const { conversationId } = use(params)
   const { t, language } = useI18n()
+  const team = useTeam()
 
   const conversationQuery = useQuery({
     queryKey: ['conversation', conversationId],
@@ -66,17 +70,40 @@ export default function PatientHistoryPage({
     queryFn: () =>
       api.get<{ conversations: Conversation[] }>(`/patients/${patientId}/conversations`),
   })
+  const tagsQuery = useQuery({
+    queryKey: ['patient-tags', patientId],
+    enabled: Boolean(patientId),
+    queryFn: () => api.get<{ tags: Tag[] }>(`/patients/${patientId}/tags`),
+  })
+  const notesQuery = useQuery({
+    queryKey: ['patient-notes', patientId],
+    enabled: Boolean(patientId),
+    queryFn: () => api.get<{ notes: Note[] }>(`/patients/${patientId}/notes`),
+  })
 
   const conversation = conversationQuery.data?.conversation
   const patient = patientQuery.data?.patient
   const appointments = appointmentsQuery.data?.appointments ?? []
   const conversations = conversationsQuery.data?.conversations ?? []
+  const tags = tagsQuery.data?.tags ?? []
+  const notes = notesQuery.data?.notes ?? []
 
   const now = new Date().toISOString()
   const upcoming = appointments.filter((a) => a.startTime >= now)
   const past = appointments.filter((a) => a.startTime < now)
   // Past closed conversations only, excluding the one we came from.
   const history = conversations.filter((c) => c.id !== conversationId && c.status === 'resolved')
+
+  // Soonest upcoming appointment that is still live (not cancelled). `upcoming` is
+  // newest-first (listByPatient orders start_time DESC), so the soonest is the last.
+  const nextAppointment =
+    [...upcoming].reverse().find((a) => a.status !== 'cancelled' && a.status !== 'no_show') ?? null
+  // Last interaction = most recent message across every conversation (this one included).
+  const lastInteractionAt = conversations
+    .map((c) => c.lastMessageAt)
+    .filter((d): d is string => Boolean(d))
+    .sort()
+    .at(-1)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -96,6 +123,41 @@ export default function PatientHistoryPage({
       ) : (
         <>
           <ProfileSection patient={patient} waId={conversation?.channelContactHandle ?? '—'} />
+
+          <Section title={t('patient.summary')}>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              <Row
+                label={t('patient.lastInteraction')}
+                value={lastInteractionAt ? relativeTime(lastInteractionAt) : t('patient.none')}
+              />
+              <Row
+                label={t('patient.nextAppointment')}
+                value={
+                  nextAppointment
+                    ? formatDateTime(nextAppointment.startTime, language)
+                    : t('patient.none')
+                }
+              />
+            </dl>
+          </Section>
+
+          <Section title={t('patient.tags')}>
+            {tags.length === 0 ? (
+              <p className="text-sm text-gray-400">{t('patient.noTags')}</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="rounded-full px-2 py-0.5 text-xs font-medium"
+                    style={{ backgroundColor: `${tag.color}22`, color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Section>
 
           <Section title={t('patient.appointments')}>
             {appointments.length === 0 ? (
@@ -134,6 +196,31 @@ export default function PatientHistoryPage({
                     </div>
                   </li>
                 ))}
+              </ul>
+            )}
+          </Section>
+
+          <Section title={t('patient.notes')}>
+            <p className="mb-3 text-xs text-gray-400">{t('patient.notesPrivate')}</p>
+            {notes.length === 0 ? (
+              <p className="text-sm text-gray-400">{t('patient.noNotes')}</p>
+            ) : (
+              <ul className="space-y-2">
+                {notes.map((n) => {
+                  const author = team.find((m) => m.id === n.authorId)
+                  return (
+                    <li
+                      key={n.id}
+                      className="rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"
+                    >
+                      <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-200">{n.content}</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        {author?.fullName ?? author?.email ?? t('patient.unknownAuthor')} ·{' '}
+                        {relativeTime(n.createdAt)}
+                      </p>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </Section>

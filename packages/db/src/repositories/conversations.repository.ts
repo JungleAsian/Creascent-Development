@@ -62,6 +62,8 @@ export interface ConversationsRepository {
   listTags(clinicId: string): Promise<ConversationTag[]>
   /** Tags currently linked to one conversation. */
   listTagsForConversation(clinicId: string, conversationId: string): Promise<ConversationTag[]>
+  /** Distinct tags linked to any of a patient's conversations (patient history view). */
+  listTagsForPatient(clinicId: string, patientId: string): Promise<ConversationTag[]>
   /** Resolve a clinic tag by its name (case-sensitive), or null. */
   findTagByName(clinicId: string, name: string): Promise<ConversationTag | null>
   createTag(data: CreateTagInput): Promise<ConversationTag>
@@ -69,6 +71,8 @@ export interface ConversationsRepository {
   removeTag(clinicId: string, conversationId: string, tagId: string): Promise<void>
 
   listNotes(clinicId: string, conversationId: string): Promise<InternalNote[]>
+  /** Internal notes across all of a patient's conversations, newest first (patient history view). */
+  listNotesForPatient(clinicId: string, patientId: string): Promise<InternalNote[]>
   addNote(data: CreateNoteInput): Promise<InternalNote>
   /** A single note scoped to the clinic, or null. Used to authorize edit/delete. */
   findNoteById(clinicId: string, noteId: string): Promise<InternalNote | null>
@@ -185,6 +189,16 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
       `
     },
 
+    async listTagsForPatient(clinicId, patientId) {
+      return sql<ConversationTag[]>`
+        SELECT DISTINCT t.* FROM conversation_tags t
+        JOIN conversation_tag_links l ON l.tag_id = t.id
+        JOIN conversations c ON c.id = l.conversation_id
+        WHERE t.clinic_id = ${clinicId} AND c.patient_id = ${patientId}
+        ORDER BY t.name
+      `
+    },
+
     async findTagByName(clinicId, name) {
       const rows = await sql<ConversationTag[]>`
         SELECT * FROM conversation_tags WHERE clinic_id = ${clinicId} AND name = ${name} LIMIT 1
@@ -225,6 +239,15 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         SELECT * FROM internal_notes
         WHERE clinic_id = ${clinicId} AND conversation_id = ${conversationId}
         ORDER BY created_at
+      `
+    },
+
+    async listNotesForPatient(clinicId, patientId) {
+      return sql<InternalNote[]>`
+        SELECT n.* FROM internal_notes n
+        JOIN conversations c ON c.id = n.conversation_id
+        WHERE n.clinic_id = ${clinicId} AND c.patient_id = ${patientId}
+        ORDER BY n.created_at DESC
       `
     },
 

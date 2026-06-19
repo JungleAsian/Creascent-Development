@@ -2,6 +2,8 @@
 //   GET /patients/:id                (any authenticated user, own clinic)
 //   GET /patients/:id/appointments   (any authenticated user, own clinic)
 //   GET /patients/:id/conversations  (any authenticated user, own clinic — history)
+//   GET /patients/:id/tags           (any authenticated user, own clinic — history)
+//   GET /patients/:id/notes          (any authenticated user, own clinic — history)
 //   GET /clinics/:id/patients        (clinic_admin, ia_studio_admin)
 import type { FastifyPluginAsync } from 'fastify'
 import {
@@ -50,6 +52,32 @@ const patientsRoute: FastifyPluginAsync = async (app) => {
     })
     if (conversations === null) return reply.code(404).send({ error: 'Patient not found' })
     return { conversations }
+  })
+
+  // ── Tags linked to any of one patient's conversations (patient history view) ──
+  app.get<{ Params: { id: string } }>('/patients/:id/tags', async (request, reply) => {
+    const clinicId = resolveClinicScope(request)
+    if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+    const tags = await withDb(async (sql) => {
+      const patient = await createPatientsRepository(sql).findById(clinicId, request.params.id)
+      if (!patient) return null
+      return createConversationsRepository(sql).listTagsForPatient(clinicId, request.params.id)
+    })
+    if (tags === null) return reply.code(404).send({ error: 'Patient not found' })
+    return { tags }
+  })
+
+  // ── Internal notes across one patient's conversations (patient history view) ──
+  app.get<{ Params: { id: string } }>('/patients/:id/notes', async (request, reply) => {
+    const clinicId = resolveClinicScope(request)
+    if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+    const notes = await withDb(async (sql) => {
+      const patient = await createPatientsRepository(sql).findById(clinicId, request.params.id)
+      if (!patient) return null
+      return createConversationsRepository(sql).listNotesForPatient(clinicId, request.params.id)
+    })
+    if (notes === null) return reply.code(404).send({ error: 'Patient not found' })
+    return { notes }
   })
 
   app.get<{ Params: { id: string } }>(
