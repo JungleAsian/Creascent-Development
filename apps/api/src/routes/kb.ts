@@ -6,7 +6,7 @@
 //   POST   /clinics/:id/kb/reembed       (clinic_admin, ia_studio_admin)
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { createKnowledgeRepository } from '@docmee/db'
+import { createKnowledgeRepository, createDoctorsRepository } from '@docmee/db'
 import { kbEmbedQueue } from '@docmee/queue'
 import { withDb } from '../lib/db.js'
 import { validate } from '../lib/validate.js'
@@ -18,11 +18,19 @@ const createSchema = z.object({
   content: z.string().min(1),
   documentType: z.enum(['faq', 'policy', 'service_info', 'custom']).optional(),
   status: z.enum(['active', 'draft', 'archived']).optional(),
+  // Per-doctor FAQ scope (Req 30); null/omitted = clinic-wide.
+  doctorId: z.string().uuid().nullable().optional(),
 })
 
-const patchSchema = z.object({
-  status: z.enum(['active', 'draft', 'archived']),
-})
+// Either change the status, the doctor scope, or both — but at least one.
+const patchSchema = z
+  .object({
+    status: z.enum(['active', 'draft', 'archived']).optional(),
+    doctorId: z.string().uuid().nullable().optional(),
+  })
+  .refine((d) => d.status !== undefined || d.doctorId !== undefined, {
+    message: 'Provide status or doctorId',
+  })
 
 const kbRoute: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth)
@@ -44,18 +52,27 @@ const kbRoute: FastifyPluginAsync = async (app) => {
       if (!parsed.ok) return
       const clinicId = resolveClinicScope(request, request.params.id)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-      const document = await withDb(async (sql) =>
-        createKnowledgeRepository(sql).createDocument({
-          clinicId,
-          title: parsed.data.title,
-          content: parsed.data.content,
-          documentType: parsed.data.documentType ?? 'faq',
-          status: parsed.data.status ?? 'active',
-        }),
-      )
+      const { doctorId } = parsed.data
+      const result = await withDb(async (sql) => {
+        // A doctor-scoped FAQ (Req 30) must reference a doctor of THIS clinic.
+        if (doctorId && !(await createDoctorsRepository(sql).findById(clinicId, doctorId))) {
+          return { error: 'doctor_not_found' as const }
+        }
+        return {
+          document: await createKnowledgeRepository(sql).createDocument({
+            clinicId,
+            title: parsed.data.title,
+            content: parsed.data.content,
+            documentType: parsed.data.documentType ?? 'faq',
+            status: parsed.data.status ?? 'active',
+            doctorId: doctorId ?? null,
+          }),
+        }
+      })
+      if ('error' in result) return reply.code(404).send({ error: 'Doctor not found' })
       // New content needs embedding before it can be retrieved.
-      await kbEmbedQueue.add('embed-document', { clinicId, documentId: document.id })
-      return reply.code(201).send({ document })
+      await kbEmbedQueue.add('embed-document', { clinicId, documentId: result.document.id })
+      return reply.code(201).send({ document: result.document })
     },
   )
 
@@ -67,13 +84,29 @@ const kbRoute: FastifyPluginAsync = async (app) => {
       if (!parsed.ok) return
       const clinicId = resolveClinicScope(request, request.params.id)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-      const document = await withDb(async (sql) => {
+      const { status, doctorId } = parsed.data
+      const result = await withDb(async (sql) => {
         const repo = createKnowledgeRepository(sql)
-        if (!(await repo.findDocument(clinicId, request.params.entryId))) return null
-        return repo.updateDocumentStatus(clinicId, request.params.entryId, parsed.data.status)
+        let document = await repo.findDocument(clinicId, request.params.entryId)
+        if (!document) return { error: 'not_found' as const }
+        // A doctor-scoped FAQ (Req 30) must reference a doctor of THIS clinic.
+        if (doctorId && !(await createDoctorsRepository(sql).findById(clinicId, doctorId))) {
+          return { error: 'doctor_not_found' as const }
+        }
+        if (status !== undefined) {
+          document = await repo.updateDocumentStatus(clinicId, request.params.entryId, status)
+        }
+        if (doctorId !== undefined) {
+          document = await repo.setDocumentDoctor(clinicId, request.params.entryId, doctorId)
+        }
+        return { document }
       })
-      if (!document) return reply.code(404).send({ error: 'Document not found' })
-      return { document }
+      if ('error' in result) {
+        return reply
+          .code(404)
+          .send({ error: result.error === 'doctor_not_found' ? 'Doctor not found' : 'Document not found' })
+      }
+      return { document: result.document }
     },
   )
 

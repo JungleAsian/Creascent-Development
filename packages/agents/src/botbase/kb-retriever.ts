@@ -13,6 +13,9 @@ export interface EmbeddedChunk {
   title: string
   content: string
   embedding: number[]
+  /** When set, the chunk belongs to a doctor-scoped document (Req 30 per-doctor
+   *  FAQs) and is only retrievable when the patient asks about that doctor. */
+  doctorId?: string | null
 }
 
 export interface KbMatch {

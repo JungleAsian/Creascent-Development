@@ -16,6 +16,15 @@ export {
 } from './kb-retriever.js'
 
 export {
+  detectDoctorId,
+  scopeChunksToDoctor,
+  scopeKbToMessage,
+  hasDoctorScopedChunks,
+  type DoctorRef,
+  type DoctorScoped,
+} from './doctor-kb.js'
+
+export {
   runClinicBot,
   isEmergencyMessage,
   isLikelyQuestion,

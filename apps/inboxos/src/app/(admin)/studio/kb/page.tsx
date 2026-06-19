@@ -8,7 +8,7 @@ import { api, API_BASE } from '@/shared/api/client'
 import { authSnapshot } from '@/shared/store/auth'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { useI18n } from '@/shared/hooks/useI18n'
-import type { DocumentStatus, DocumentType, KnowledgeDocument } from '@/shared/types'
+import type { DocumentStatus, DocumentType, Doctor, KnowledgeDocument } from '@/shared/types'
 
 const DOC_TYPES: DocumentType[] = ['faq', 'policy', 'service_info', 'custom']
 const DOC_STATUSES: DocumentStatus[] = ['active', 'draft', 'archived']
@@ -26,6 +26,14 @@ export default function KbPage() {
     queryFn: () => api.get<{ documents: KnowledgeDocument[] }>(`/clinics/${clinicId}/kb`),
   })
 
+  // Per-doctor FAQs (Req 30): the clinic's doctors populate the scope selectors.
+  const doctorsQuery = useQuery({
+    queryKey: ['doctors', clinicId],
+    enabled: Boolean(clinicId),
+    queryFn: () => api.get<{ doctors: Doctor[] }>(`/clinics/${clinicId}/doctors`),
+  })
+  const doctors = doctorsQuery.data?.doctors ?? []
+
   const reembedMutation = useMutation({
     mutationFn: () => api.post(`/clinics/${clinicId}/kb/reembed`),
     onSuccess: () => {
@@ -42,6 +50,12 @@ export default function KbPage() {
   const statusMutation = useMutation({
     mutationFn: ({ entryId, status }: { entryId: string; status: DocumentStatus }) =>
       api.patch(`/clinics/${clinicId}/kb/${entryId}`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+  })
+
+  const doctorMutation = useMutation({
+    mutationFn: ({ entryId, doctorId }: { entryId: string; doctorId: string | null }) =>
+      api.patch(`/clinics/${clinicId}/kb/${entryId}`, { doctorId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   })
 
@@ -79,7 +93,7 @@ export default function KbPage() {
             </div>
           )}
 
-          <NewDocForm clinicId={clinicId} />
+          <NewDocForm clinicId={clinicId} doctors={doctors} />
 
           {query.isLoading ? (
             <p className="text-sm text-gray-400">{t('common.loading')}</p>
@@ -117,6 +131,22 @@ export default function KbPage() {
                           {t('studio.kb.pendingReview')}
                         </span>
                       )}
+                      <select
+                        value={d.metadata?.doctorId ?? ''}
+                        onChange={(e) =>
+                          doctorMutation.mutate({ entryId: d.id, doctorId: e.target.value || null })
+                        }
+                        disabled={doctorMutation.isPending || doctors.length === 0}
+                        title={t('studio.kb.doctorHint')}
+                        className="rounded border border-gray-300 bg-transparent px-1 py-0.5 text-[10px] text-gray-500 dark:border-gray-700"
+                      >
+                        <option value="">{t('studio.kb.allDoctors')}</option>
+                        {doctors.map((doc) => (
+                          <option key={doc.id} value={doc.id}>
+                            {doc.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs text-gray-500">{d.content}</p>
                   </div>
@@ -210,19 +240,22 @@ function UploadDocForm({ clinicId, onUploaded }: { clinicId: string; onUploaded:
   )
 }
 
-function NewDocForm({ clinicId }: { clinicId: string }) {
+function NewDocForm({ clinicId, doctors }: { clinicId: string; doctors: Doctor[] }) {
   const { t } = useI18n()
   const qc = useQueryClient()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [documentType, setDocumentType] = useState<DocumentType>('faq')
+  const [doctorId, setDoctorId] = useState('')
 
   const mutation = useMutation({
-    mutationFn: () => api.post(`/clinics/${clinicId}/kb`, { title, content, documentType }),
+    mutationFn: () =>
+      api.post(`/clinics/${clinicId}/kb`, { title, content, documentType, doctorId: doctorId || null }),
     onSuccess: () => {
       setTitle('')
       setContent('')
       setDocumentType('faq')
+      setDoctorId('')
       qc.invalidateQueries({ queryKey: ['kb', clinicId] })
     },
   })
@@ -255,6 +288,21 @@ function NewDocForm({ clinicId }: { clinicId: string }) {
             </option>
           ))}
         </select>
+        {doctors.length > 0 && (
+          <select
+            value={doctorId}
+            onChange={(e) => setDoctorId(e.target.value)}
+            title={t('studio.kb.doctorHint')}
+            className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option value="">{t('studio.kb.allDoctors')}</option>
+            {doctors.map((doc) => (
+              <option key={doc.id} value={doc.id}>
+                {doc.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       <textarea
         value={content}

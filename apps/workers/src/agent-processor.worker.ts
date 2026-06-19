@@ -9,6 +9,8 @@ import {
   routeIntent,
   runClinicBot,
   searchKb,
+  scopeKbToMessage,
+  hasDoctorScopedChunks,
   isInsideBusinessHours,
   detectLanguage,
   matchCustomFlow,
@@ -39,6 +41,7 @@ import {
   createChannelAccountsRepository,
   createPatientsRepository,
   createKnowledgeRepository,
+  createDoctorsRepository,
   createErrorReviewsRepository,
   createConversationsRepository,
   createMessagesRepository,
@@ -606,7 +609,17 @@ export async function processAgentJob(job: Job): Promise<void> {
           console.warn(`[agent] no reply transport for clinic ${data.clinicId} on ${data.channel}; cannot reply`)
           break
         }
-        const chunks = await knowledge.listEmbeddedChunks(data.clinicId)
+        const allChunks = await knowledge.listEmbeddedChunks(data.clinicId)
+        // Per-doctor FAQs (Req 30): when any document is doctor-scoped, restrict the
+        // retrievable chunks to clinic-wide ones plus the doctor the patient named —
+        // so "Does Dr. García do video calls?" pulls García's FAQ but not López's,
+        // and a generic question never surfaces a doctor-specific FAQ. Only load the
+        // doctor list when scoping is actually in play (back-compat / no extra query).
+        let chunks = allChunks
+        if (hasDoctorScopedChunks(allChunks)) {
+          const doctors = await createDoctorsRepository(sql).listByClinic(data.clinicId)
+          chunks = scopeKbToMessage(data.message, allChunks, doctors)
+        }
         let kbHit = false
 
         const botResult = await runClinicBot(

@@ -612,6 +612,8 @@ const es: Dict = {
   'studio.kb.pendingReview': 'Pendiente de revisión',
   'studio.kb.approve': 'Aprobar',
   'studio.kb.reviewBanner': '{n} documento(s) subido(s) esperan revisión antes de estar disponibles para el bot.',
+  'studio.kb.allDoctors': 'Toda la clínica',
+  'studio.kb.doctorHint': 'Limita esta FAQ a un médico: solo se usará cuando el paciente pregunte por ese médico.',
 
   // ── Notifications (Req 24) ──────────────────────────────────────────────────
   'notif.title': 'Notificaciones',
@@ -1257,6 +1259,8 @@ const en: Dict = {
   'studio.kb.pendingReview': 'Pending review',
   'studio.kb.approve': 'Approve',
   'studio.kb.reviewBanner': '{n} uploaded document(s) await review before they are available to the bot.',
+  'studio.kb.allDoctors': 'Whole clinic',
+  'studio.kb.doctorHint': 'Limit this FAQ to one doctor: it is only used when the patient asks about that doctor.',
 
   // ── Notifications (Req 24) ──────────────────────────────────────────────────
   'notif.title': 'Notifications',

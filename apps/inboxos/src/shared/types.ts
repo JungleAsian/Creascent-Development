@@ -250,6 +250,8 @@ export interface KnowledgeDocument {
   content: string
   documentType: DocumentType
   status: DocumentStatus
+  /** Per-doctor FAQ scope (Req 30): metadata.doctorId limits the doc to one doctor. */
+  metadata?: { doctorId?: string | null } & Record<string, unknown>
   createdAt: string
   updatedAt: string
 }

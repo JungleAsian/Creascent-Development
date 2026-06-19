@@ -16,6 +16,9 @@ export interface CreateDocumentInput {
   content: string
   documentType?: DocumentType
   status?: DocumentStatus
+  /** Scope this document to a single doctor (Req 30 per-doctor FAQs); stored in
+   *  metadata.doctorId. Omit/null for a clinic-wide document. */
+  doctorId?: string | null
   metadata?: Record<string, unknown>
 }
 
@@ -32,6 +35,8 @@ export interface EmbeddedChunkRow {
   title: string
   content: string
   embedding: number[]
+  /** Owning document's doctor scope (Req 30); null for a clinic-wide document. */
+  doctorId: string | null
 }
 
 export interface CreateIaProfileInput {
@@ -68,6 +73,8 @@ export interface KnowledgeRepository {
   findDocument(clinicId: string, id: string): Promise<KnowledgeDocument | null>
   createDocument(data: CreateDocumentInput): Promise<KnowledgeDocument>
   updateDocumentStatus(clinicId: string, id: string, status: DocumentStatus): Promise<KnowledgeDocument>
+  /** Scope a document to a doctor (Req 30), or pass null to make it clinic-wide. */
+  setDocumentDoctor(clinicId: string, id: string, doctorId: string | null): Promise<KnowledgeDocument>
   deleteDocument(clinicId: string, id: string): Promise<void>
 
   listChunks(clinicId: string, documentId: string): Promise<KnowledgeChunk[]>
@@ -102,6 +109,12 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
     },
 
     async createDocument(data) {
+      // Per-doctor FAQ scope (Req 30) lives in metadata.doctorId alongside any
+      // caller-supplied metadata, so retrieval can filter on it (listEmbeddedChunks).
+      const metadata = {
+        ...(data.metadata ?? {}),
+        ...(data.doctorId ? { doctorId: data.doctorId } : {}),
+      }
       const rows = await sql<KnowledgeDocument[]>`
         INSERT INTO knowledge_documents (clinic_id, title, content, document_type, status, metadata)
         VALUES (
@@ -110,7 +123,7 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
           ${data.content},
           ${data.documentType ?? 'faq'},
           ${data.status       ?? 'draft'},
-          ${sql.json(toJson(data.metadata ?? {}))}
+          ${sql.json(toJson(metadata))}
         )
         RETURNING *
       `
@@ -120,6 +133,22 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
     async updateDocumentStatus(clinicId, id, status) {
       const rows = await sql<KnowledgeDocument[]>`
         UPDATE knowledge_documents SET status = ${status}
+        WHERE clinic_id = ${clinicId} AND id = ${id}
+        RETURNING *
+      `
+      if (!rows[0]) throw new Error(`Document not found: ${id}`)
+      return rows[0]
+    },
+
+    async setDocumentDoctor(clinicId, id, doctorId) {
+      // Merge onto existing metadata so other keys survive; null removes the scope.
+      const rows = await sql<KnowledgeDocument[]>`
+        UPDATE knowledge_documents
+        SET metadata = ${
+          doctorId
+            ? sql`metadata || ${sql.json(toJson({ doctorId }))}`
+            : sql`metadata - 'doctorId'`
+        }
         WHERE clinic_id = ${clinicId} AND id = ${id}
         RETURNING *
       `
@@ -143,7 +172,8 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
       return sql<EmbeddedChunkRow[]>`
         SELECT d.title AS title,
                c.content AS content,
-               c.metadata -> 'embedding' -> 'v' AS embedding
+               c.metadata -> 'embedding' -> 'v' AS embedding,
+               d.metadata ->> 'doctorId' AS doctor_id
         FROM knowledge_chunks c
         JOIN knowledge_documents d
           ON d.id = c.document_id AND d.clinic_id = c.clinic_id
