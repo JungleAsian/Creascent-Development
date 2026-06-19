@@ -12,6 +12,11 @@ import {
   isInsideBusinessHours,
   detectLanguage,
   matchCustomFlow,
+  isBotPaused,
+  detectHumanRequest,
+  handoffNotice,
+  BOT_PAUSED_AT,
+  HANDOFF_REASON,
   type BusinessHours,
   type ClinicBotConfig,
   type Language,
@@ -170,6 +175,28 @@ async function runMatchingCustomFlow(
   return true
 }
 
+/**
+ * Pause the bot for a human handoff (Rev1 #5/#6): flip the conversation to
+ * `handoff` and stamp who/why so the inbox shows the bot is off and the timeout
+ * monitor can later reactivate it. No-op when the job carries no conversation id.
+ */
+async function pauseBotForHandoff(
+  conversations: ReturnType<typeof createConversationsRepository>,
+  data: AgentJobData,
+  currentMetadata: Record<string, unknown> | undefined,
+  reason: string,
+): Promise<void> {
+  if (!data.conversationId) return
+  await conversations.update(data.clinicId, data.conversationId, {
+    status: 'handoff',
+    metadata: {
+      ...(currentMetadata ?? {}),
+      [BOT_PAUSED_AT]: new Date().toISOString(),
+      [HANDOFF_REASON]: reason,
+    },
+  })
+}
+
 export async function processAgentJob(job: Job): Promise<void> {
   const data = AgentJobSchema.parse(job.data)
   const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
@@ -193,6 +220,41 @@ export async function processAgentJob(job: Job): Promise<void> {
     // Channel-aware reply transport (WhatsApp account or Messenger Page token).
     const sendReply = resolveSendReply(data.channel, clinic, account, data.patientWaId)
 
+    const conversations = createConversationsRepository(sql)
+    const conversation = data.conversationId
+      ? await conversations.findById(data.clinicId, data.conversationId)
+      : null
+
+    // Bot Interruption Rule (Rev1 #6): once a human owns the conversation
+    // (assigned/handoff) or it is closed (resolved), the bot stays completely
+    // silent — no custom flow, no LLM, no auto-reply. Control returns to the bot
+    // only when the conversation is reactivated to `open` (manual resume or the
+    // reactivation timeout), at which point a later message routes normally.
+    if (conversation && isBotPaused(conversation.status)) {
+      console.log(`[agent] conversation ${conversation.id} is human-owned (${conversation.status}); bot silent`)
+      return
+    }
+
+    const patientLanguage = data.isNewPatient
+      ? detectLanguage(data.message)
+      : getPatientLanguage(patient)
+
+    // Explicit "connect me with a human" request (Rev1 #5). Cheap keyword check so
+    // an unambiguous request hands off reliably without waiting on the LLM: ack the
+    // patient, pause the bot (status → handoff), and alert a human.
+    if (sendReply && detectHumanRequest(data.message)) {
+      await sendReply(handoffNotice(patientLanguage))
+      if (conversation) {
+        await pauseBotForHandoff(conversations, data, conversation.metadata, 'patient_request')
+      }
+      await notificationQueue.add('notify', {
+        clinicId: data.clinicId,
+        conversationId: data.conversationId,
+        reason: 'human_handoff',
+      })
+      return
+    }
+
     // P18 (Gap #34): custom flows run BEFORE intent classification. A keyword match
     // runs the clinic's scripted message sequence (and optional terminal action)
     // and skips the LLM entirely.
@@ -208,16 +270,12 @@ export async function processAgentJob(job: Job): Promise<void> {
 
     // Sentiment detection + intent persistence (Gap #30 / Gap #27 metrics). Both
     // hang off the conversation row, so they only run when we know which one.
-    if (data.conversationId) {
-      const conversations = createConversationsRepository(sql)
+    if (data.conversationId && conversation) {
       const upset = detectUpsetTone(data.message)
 
-      const existing = await conversations.findById(data.clinicId, data.conversationId)
-      if (existing) {
-        await conversations.update(data.clinicId, data.conversationId, {
-          metadata: { ...existing.metadata, lastIntent: intent, lastUpset: upset },
-        })
-      }
+      await conversations.update(data.clinicId, data.conversationId, {
+        metadata: { ...conversation.metadata, lastIntent: intent, lastUpset: upset },
+      })
 
       if (upset) {
         // Tag the conversation and alert a human (HUMAN_HANDOFF_REQUESTED).
@@ -244,10 +302,7 @@ export async function processAgentJob(job: Job): Promise<void> {
         // Outside-hours: collect name + reason so a human can follow up (Decision 1).
         // Opt-out silence stays fully silent.
         if (route.reason === 'outside_hours' && sendReply) {
-          const language = data.isNewPatient
-            ? detectLanguage(data.message)
-            : getPatientLanguage(patient)
-          await sendReply(outsideHoursMessage(language))
+          await sendReply(outsideHoursMessage(patientLanguage))
         } else {
           console.log('[agent] silence route:', route.reason, data.clinicId)
         }
@@ -291,9 +346,9 @@ export async function processAgentJob(job: Job): Promise<void> {
           },
         )
 
-        // Record KB usage for the analytics KB-hit rate (Gap #39).
+        // Record KB usage for the analytics KB-hit rate (Gap #39). Re-read so we
+        // merge onto the metadata the sentiment block just persisted.
         if (kbHit && data.conversationId) {
-          const conversations = createConversationsRepository(sql)
           const existing = await conversations.findById(data.clinicId, data.conversationId)
           if (existing) {
             await conversations.update(data.clinicId, data.conversationId, {

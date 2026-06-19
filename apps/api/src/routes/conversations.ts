@@ -4,6 +4,7 @@
 //   GET    /conversations/:id
 //   POST   /conversations/:id/assign           (secretary, clinic_admin)
 //   POST   /conversations/:id/close
+//   POST   /conversations/:id/resume-bot        (secretary, doctor, clinic_admin) — return to bot
 //   POST   /conversations/:id/reopen           → CREATES A NEW conversation (Decision 4)
 //   GET    /conversations/:id/messages
 //   POST   /conversations/:id/messages         (secretary, doctor, clinic_admin)
@@ -100,6 +101,36 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
     return { conversation }
   })
 
+  // ── Return to bot (Rev1 #5/#6) — manual reactivation of a paused bot ──
+  // Flips a human-owned conversation back to `open` so the bot resumes auto-
+  // replying, and unassigns it. The counterpart to the human-takeover pause.
+  app.post<{ Params: { id: string } }>(
+    '/:id/resume-bot',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+      const conversation = await withDb(async (sql) => {
+        const repo = createConversationsRepository(sql)
+        const existing = await repo.findById(clinicId, request.params.id)
+        if (!existing) return null
+        const metadata: Record<string, unknown> = {
+          ...existing.metadata,
+          botReactivatedAt: new Date().toISOString(),
+        }
+        delete metadata.botPausedAt
+        delete metadata.handoffReason
+        return repo.update(clinicId, request.params.id, {
+          status: 'open',
+          assignedTo: null,
+          metadata,
+        })
+      })
+      if (!conversation) return reply.code(404).send({ error: 'Conversation not found' })
+      return { conversation }
+    },
+  )
+
   // ── Reopen → NEW conversation (Decision 4) ──
   app.post<{ Params: { id: string } }>('/:id/reopen', async (request, reply) => {
     const clinicId = resolveClinicScope(request)
@@ -144,9 +175,10 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
 
       const message = await withDb(async (sql) => {
-        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        const repo = createConversationsRepository(sql)
+        const convo = await repo.findById(clinicId, request.params.id)
         if (!convo) return null
-        return createMessagesRepository(sql).create({
+        const created = await createMessagesRepository(sql).create({
           conversationId: request.params.id,
           clinicId,
           role: 'agent',
@@ -154,6 +186,21 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
           contentType: parsed.data.contentType ?? 'text',
           metadata: { authorId: request.user!.userId },
         })
+        // Bot Interruption Rule (Rev1 #6): a manual human reply takes the
+        // conversation over, so pause the bot. Only escalate an `open`
+        // conversation — `assigned`/`handoff` are already human-owned, and
+        // `resolved` stays closed.
+        if (convo.status === 'open') {
+          await repo.update(clinicId, request.params.id, {
+            status: 'handoff',
+            metadata: {
+              ...convo.metadata,
+              botPausedAt: new Date().toISOString(),
+              handoffReason: 'human_reply',
+            },
+          })
+        }
+        return created
       })
       if (!message) return reply.code(404).send({ error: 'Conversation not found' })
       return reply.code(201).send({ message })

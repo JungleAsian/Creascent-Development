@@ -1,9 +1,13 @@
 // Background timeout detection (Gap: secretary inactivity + stale conversations).
-// Runs on an interval from index.ts. Two checks, both deduped per conversation so
-// a long-stale conversation alerts at most once per DEDUP_WINDOW_MINUTES:
+// Runs on an interval from index.ts. Two alert checks, both deduped per
+// conversation so a long-stale conversation alerts at most once per
+// DEDUP_WINDOW_MINUTES, plus a bot-reactivation pass:
 //   1. SECRETARY_TIMEOUT  — a human-handled conversation (status handoff/assigned)
 //      with no message in > SECRETARY_TIMEOUT_MINUTES.
 //   2. STALE_CONVERSATION — an open conversation with no reply in > STALE_MINUTES.
+//   3. BOT_REACTIVATION   — an auto-paused conversation (status handoff, never
+//      assigned to a person) idle past BOT_REACTIVATION_MINUTES returns to the
+//      bot (status → open) so it can answer again (Rev1 #5/#6).
 import {
   dispatchNotification,
   NOTIFICATION_TYPES,
@@ -20,7 +24,21 @@ import { buildNotificationStore } from './notification-store.js'
 
 export const SECRETARY_TIMEOUT_MINUTES = 10
 export const STALE_MINUTES = 30
+export const BOT_REACTIVATION_MINUTES = 60
 const DEDUP_WINDOW_MINUTES = 60
+
+/**
+ * A handoff is *auto-paused* (eligible for bot reactivation) when the bot paused
+ * it (metadata.botPausedAt) and no human deliberately claimed it (assignedTo
+ * null). Conversations a secretary explicitly assigned stay human-owned.
+ */
+export function isAutoPausedHandoff(conv: Conversation): boolean {
+  return (
+    conv.status === 'handoff' &&
+    conv.assignedTo === null &&
+    typeof (conv.metadata as { botPausedAt?: unknown }).botPausedAt === 'string'
+  )
+}
 
 export async function runTimeoutChecks(): Promise<void> {
   const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
@@ -67,6 +85,16 @@ export async function runTimeoutChecks(): Promise<void> {
 
     const stale = await conversations.listStale(['open'], STALE_MINUTES)
     for (const conv of stale) await alertFor(conv, NOTIFICATION_TYPES.STALE_CONVERSATION)
+
+    // Bot reactivation (Rev1 #5/#6): hand auto-paused, unclaimed conversations
+    // back to the bot once the patient/secretary have gone quiet long enough.
+    const reactivatable = await conversations.listStale(['handoff'], BOT_REACTIVATION_MINUTES)
+    for (const conv of reactivatable.filter(isAutoPausedHandoff)) {
+      const metadata = { ...conv.metadata, botReactivatedAt: new Date().toISOString() }
+      delete (metadata as { botPausedAt?: unknown }).botPausedAt
+      delete (metadata as { handoffReason?: unknown }).handoffReason
+      await conversations.update(conv.clinicId, conv.id, { status: 'open', metadata })
+    }
   } catch (err) {
     // A monitor tick must never crash the worker process.
     console.error('[timeout-monitor] check failed:', err instanceof Error ? err.message : err)

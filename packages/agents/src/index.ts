@@ -3,6 +3,15 @@ import type { AgentRoute } from './router.js'
 export type { AgentRoute, RouteContext } from './router.js'
 export { routeIntent } from './router.js'
 
+export type { HandoffStatus } from './handoff.js'
+export {
+  isBotPaused,
+  detectHumanRequest,
+  handoffNotice,
+  BOT_PAUSED_AT,
+  HANDOFF_REASON,
+} from './handoff.js'
+
 export * from './botbase/index.js'
 
 export interface MessageContext {
