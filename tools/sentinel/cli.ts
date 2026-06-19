@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { spawn } from 'node:child_process'
-import { daemonPidFile, sentinelRoot, configLocalFile } from './lib/paths.js'
+import { daemonPidFile, sentinelRoot, toolsRoot, configLocalFile } from './lib/paths.js'
 import { readJsonFile } from './lib/json-store.js'
 import { isProcessAlive, killPid } from './lib/proc.js'
 import { loadConfig } from './config/index.js'
@@ -35,7 +35,9 @@ function startDaemon() {
     return
   }
   const daemonEntry = path.join(sentinelRoot, 'daemon.ts')
-  const child = spawn('tsx', [daemonEntry], { cwd: sentinelRoot, detached: true, stdio: 'ignore', shell: process.platform === 'win32' })
+  // Launch via `pnpm exec tsx` from the tools root so the local tsx binary resolves
+  // for the detached child (bare `tsx` is not on PATH).
+  const child = spawn('pnpm', ['exec', 'tsx', daemonEntry], { cwd: toolsRoot, detached: true, stdio: 'ignore', shell: process.platform === 'win32' })
   child.unref()
   console.log('Sentinel daemon starting…')
 }

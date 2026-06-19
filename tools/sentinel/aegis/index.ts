@@ -67,7 +67,12 @@ export class AegisScanner {
     this.config = loadAegisConfig()
     if (!this.configured()) {
       this.writeNotConfigured()
-      this.timers.push(setInterval(() => this.writeNotConfigured(), 60_000))
+      this.timers.push(
+        setInterval(() => {
+          this.writeNotConfigured()
+          this.deps.reportAlive()
+        }, 60_000)
+      )
       this.deps.reportAlive()
       return
     }

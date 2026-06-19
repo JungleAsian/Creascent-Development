@@ -2,11 +2,22 @@ $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appExe = Join-Path $toolsDir "app\src-tauri\target\debug\docmee-devtools.exe"
 $tauriDir = Join-Path $toolsDir "app\src-tauri"
 $nextBin = Join-Path $toolsDir "dashboard\node_modules\next\dist\bin\next"
+$tsxBin = Join-Path $toolsDir "node_modules\tsx\dist\cli.mjs"
+$sentinelEntry = Join-Path $toolsDir "sentinel\daemon.ts"
 
 function Test-Dashboard {
   try {
     $response = Invoke-WebRequest -Uri "http://127.0.0.1:4000" -UseBasicParsing -TimeoutSec 2
     return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+  } catch {
+    return $false
+  }
+}
+
+function Test-Sentinel {
+  try {
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:4001/health" -UseBasicParsing -TimeoutSec 2
+    return $response.StatusCode -eq 200
   } catch {
     return $false
   }
@@ -39,6 +50,16 @@ if (-not (Test-Dashboard)) {
     if (Test-Dashboard) { break }
     Start-Sleep -Seconds 1
   }
+}
+
+# Start the Sentinel daemon (independent process) if it is not already running.
+if (-not (Test-Sentinel)) {
+  $node = (Get-Command node -ErrorAction Stop).Source
+  Start-Process `
+    -FilePath $node `
+    -ArgumentList "`"$tsxBin`" `"$sentinelEntry`"" `
+    -WorkingDirectory $toolsDir `
+    -WindowStyle Hidden
 }
 
 if (-not (Test-Path $appExe)) {

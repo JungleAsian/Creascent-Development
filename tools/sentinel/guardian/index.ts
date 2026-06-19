@@ -85,8 +85,14 @@ export class GuardianScanner {
   start() {
     if (!this.configured()) {
       this.writeNotConfigured()
-      // Still emit a heartbeat on the standard cadence so Beacon sees Guardian alive.
-      this.timers.push(setInterval(() => this.writeNotConfigured(), this.config.schedules.heartbeatIntervalSeconds * 1000))
+      // Still emit a heartbeat on the standard cadence so Beacon sees Guardian alive,
+      // and report alive to the daemon supervisor so it isn't falsely restarted.
+      this.timers.push(
+        setInterval(() => {
+          this.writeNotConfigured()
+          this.deps.reportAlive()
+        }, this.config.schedules.heartbeatIntervalSeconds * 1000)
+      )
       this.deps.reportAlive()
       return
     }

@@ -351,7 +351,14 @@ export class SentinelDaemon {
   }
 
   private startCortexAutoFallback() {
-    this.timers.push(setInterval(() => void this.cortex.autoFallbackTick(), 60_000))
+    // Cortex is passive (no scan loop) — heartbeat it here so the supervisor
+    // doesn't falsely flag it offline, and run the optional auto-fallback check.
+    this.timers.push(
+      setInterval(() => {
+        this.markAlive('cortex')
+        void this.cortex.autoFallbackTick()
+      }, 60_000)
+    )
   }
 
   // --- tray ---------------------------------------------------------------
