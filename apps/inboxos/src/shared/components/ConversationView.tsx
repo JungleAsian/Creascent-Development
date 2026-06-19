@@ -179,6 +179,18 @@ export function ConversationView({
     },
   })
 
+  // Req 5: hand a human-owned conversation back to the bot (status→open, unassign,
+  // clear the bot-pause metadata). The one-click counterpart to the human takeover
+  // that fires when a secretary replies; the bot then resumes auto-answering.
+  const resumeBotMutation = useMutation({
+    mutationFn: () => api.post(`/conversations/${conversationId}/resume-bot`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
   // Req 29: flag a bad bot reply → IA Studio Error Review (bad_response).
   const flagMutation = useMutation({
     mutationFn: (message: Message) =>
@@ -287,6 +299,18 @@ export function ConversationView({
             {humanMode ? t('view.mode.human') : t('view.mode.bot')}
           </span>
           <span className="text-gray-400">{humanMode ? t('view.mode.humanHint') : t('view.mode.botHint')}</span>
+          {/* Req 5: while a human owns the thread, offer a one-click return to the bot
+              (the counterpart to the takeover that fired when the secretary replied). */}
+          {humanMode && !closed && (
+            <button
+              type="button"
+              onClick={() => resumeBotMutation.mutate()}
+              disabled={resumeBotMutation.isPending}
+              className="ml-auto rounded-full border border-indigo-300 px-2 py-0.5 font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+            >
+              {resumeBotMutation.isPending ? t('view.mode.resuming') : t('view.mode.resumeBot')}
+            </button>
+          )}
         </div>
         {conversation?.patientId && (
           <ApptSummary conversationId={conversationId} patientId={conversation.patientId} />
