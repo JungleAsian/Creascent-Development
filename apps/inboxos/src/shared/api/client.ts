@@ -126,8 +126,30 @@ async function download(path: string, filename: string, isRetry = false): Promis
   }
 }
 
+// Authenticated inline media fetch (Req 3 — patient image). Like download(), but
+// returns an object URL for rendering in an <img> (the browser can't set the bearer
+// header on an <img src>). The caller revokes the URL when the element unmounts.
+async function blobUrl(path: string, isRetry = false): Promise<string> {
+  const { accessToken } = authSnapshot()
+  const headers: Record<string, string> = {}
+  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`
+
+  const res = await fetch(`${API_BASE}${path}`, { method: 'GET', headers })
+
+  if (res.status === 401 && !isRetry) {
+    const next = await refreshAccessToken()
+    if (next) return blobUrl(path, true)
+    redirectToLogin()
+    throw new ApiError(401, 'Unauthorized')
+  }
+  if (!res.ok) throw new ApiError(res.status, res.statusText)
+
+  return URL.createObjectURL(await res.blob())
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  blobUrl,
   post: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
     request<T>(path, { ...opts, method: 'POST', body }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),

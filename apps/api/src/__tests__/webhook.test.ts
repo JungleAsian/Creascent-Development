@@ -120,6 +120,53 @@ describe('webhook routes', () => {
     expect(statusAdd).not.toHaveBeenCalled()
   })
 
+  it('POST with an inbound image enqueues with the media id, mime type and caption', async () => {
+    const imagePayload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'WABA',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '15550001111', phone_number_id: 'PHONE_ID' },
+                contacts: [{ profile: { name: 'Ana' }, wa_id: '5215555555555' }],
+                messages: [
+                  {
+                    from: '5215555555555',
+                    id: 'wamid.IMG1',
+                    timestamp: '1700000300',
+                    type: 'image',
+                    image: { id: 'media-abc', mime_type: 'image/jpeg', caption: 'mi receta' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(imagePayload) },
+      payload: imagePayload,
+    })
+    await flush()
+
+    expect(res.statusCode).toBe(200)
+    expect(add).toHaveBeenCalledTimes(1)
+    const [, job] = add.mock.calls[0] as [string, Record<string, unknown>]
+    expect(job['messageType']).toBe('image')
+    expect(job['mediaId']).toBe('media-abc')
+    expect(job['mimeType']).toBe('image/jpeg')
+    expect(job['content']).toBe('mi receta')
+    expect(statusAdd).not.toHaveBeenCalled()
+  })
+
   it('POST with a delivery-status receipt enqueues to the status queue', async () => {
     const statusPayload = JSON.stringify({
       object: 'whatsapp_business_account',

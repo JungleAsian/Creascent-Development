@@ -17,10 +17,12 @@ import { z } from 'zod'
 import {
   createConversationsRepository,
   createMessagesRepository,
+  createChannelAccountsRepository,
   createErrorReviewsRepository,
 } from '@docmee/db'
 import type { ConversationStatus } from '@docmee/db'
 import { withDb } from '../lib/db.js'
+import { fetchWhatsAppMedia } from '../lib/whatsapp-media.js'
 import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -223,6 +225,53 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
     if (messages === null) return reply.code(404).send({ error: 'Conversation not found' })
     return { messages }
   })
+
+  // ── Inbound media proxy (Req 3) — authenticated, on-demand WhatsApp image ──
+  // A patient's image lives behind a short-lived, bearer-gated Meta URL, and the
+  // browser can't attach the panel's JWT to an <img src>, so the inbox fetches the
+  // image through this clinic-scoped proxy. The bytes are downloaded on demand and
+  // streamed straight back — never persisted. Image messages only.
+  app.get<{ Params: { id: string; messageId: string } }>(
+    '/:id/messages/:messageId/media',
+    async (request, reply) => {
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const resolved = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return { code: 404 as const }
+        const message = await createMessagesRepository(sql).findById(clinicId, request.params.messageId)
+        if (!message || message.conversationId !== request.params.id || message.contentType !== 'image') {
+          return { code: 404 as const }
+        }
+        const mediaId = (message.metadata as { mediaId?: unknown }).mediaId
+        if (typeof mediaId !== 'string') return { code: 404 as const }
+        // The bearer token for the Graph media fetch lives on the clinic's active
+        // WhatsApp channel account (same credential the inbound/outbound path uses).
+        const accounts = await createChannelAccountsRepository(sql).listByClinic(clinicId)
+        const account = accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
+        if (!account?.accessTokenEnc) return { code: 502 as const }
+        return { code: 200 as const, mediaId, token: account.accessTokenEnc }
+      })
+
+      if (resolved.code !== 200) {
+        return reply
+          .code(resolved.code)
+          .send({ error: resolved.code === 404 ? 'Media not found' : 'Channel not configured' })
+      }
+
+      try {
+        const media = await fetchWhatsAppMedia(resolved.mediaId, resolved.token)
+        return reply
+          .header('content-type', media.mimeType)
+          .header('cache-control', 'private, max-age=300')
+          .send(Buffer.from(media.buffer))
+      } catch (err) {
+        request.log.error(`[media] download failed: ${(err as Error).message}`)
+        return reply.code(502).send({ error: 'Media download failed' })
+      }
+    },
+  )
 
   app.post<{ Params: { id: string } }>(
     '/:id/messages',

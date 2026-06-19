@@ -13,6 +13,7 @@ import { formatDateTime } from '../format'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
 import { deliveryIndicator, type DeliveryTone } from '../delivery'
+import { isImageMessage, messageMediaPath } from '../media'
 import type {
   Appointment,
   AppointmentStatus,
@@ -236,6 +237,8 @@ export function ConversationView({
                 onFlag={() => flagMutation.mutate(m)}
                 delivery={ind ? { glyph: ind.glyph, tone: ind.tone, label: t(ind.labelKey) } : null}
                 language={language}
+                conversationId={conversationId}
+                imageLabel={t('view.image')}
               />
             )
           })
@@ -343,6 +346,8 @@ function MessageBubble({
   onFlag,
   delivery,
   language,
+  conversationId,
+  imageLabel,
 }: {
   message: Message
   roleLabel: string
@@ -354,6 +359,8 @@ function MessageBubble({
   onFlag: () => void
   delivery: { glyph: string; tone: DeliveryTone; label: string } | null
   language: 'es' | 'en'
+  conversationId: string
+  imageLabel: string
 }) {
   // Patient messages on the left; clinic (agent/bot/system) on the right.
   const fromPatient = message.role === 'user'
@@ -362,6 +369,9 @@ function MessageBubble({
   // Voice note (Req 8): a transcribed audio message shows a 🎤 marker above its
   // transcript so the secretary knows the patient spoke rather than typed.
   const isVoiceNote = message.contentType === 'audio'
+  // Image (Req 3): a patient's photo is rendered inline; the message content, if any,
+  // is the caption shown beneath it.
+  const isImage = isImageMessage(message)
   const transcript = message.transcription ?? message.content
   return (
     <div className={`group flex ${fromPatient ? 'justify-start' : 'justify-end'}`}>
@@ -394,7 +404,18 @@ function MessageBubble({
             <span>{voiceLabel}</span>
           </div>
         )}
-        <p className="whitespace-pre-wrap break-words">{transcript}</p>
+        {isImage && (
+          <MessageImage
+            conversationId={conversationId}
+            messageId={message.id}
+            alt={imageLabel}
+          />
+        )}
+        {/* Image messages show their caption (if any) below the image; non-image
+            messages show their text/transcript. */}
+        {(!isImage || transcript) && (
+          <p className="whitespace-pre-wrap break-words">{transcript}</p>
+        )}
         {canFlag && (
           <div className="mt-1 text-right">
             {flagged ? (
@@ -417,4 +438,57 @@ function MessageBubble({
       </div>
     </div>
   )
+}
+
+// Inbound image (Req 3): fetch the patient's photo through the authenticated proxy
+// (the browser can't set the bearer header on a plain <img src>) as a blob, render
+// it from an object URL, and revoke the URL on unmount. Shows a placeholder while
+// loading and a fallback marker if the fetch fails (e.g. an expired Meta media id).
+function MessageImage({
+  conversationId,
+  messageId,
+  alt,
+}: {
+  conversationId: string
+  messageId: string
+  alt: string
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    let objectUrl: string | null = null
+    api
+      .blobUrl(messageMediaPath(conversationId, messageId))
+      .then((u) => {
+        if (!active) {
+          URL.revokeObjectURL(u)
+          return
+        }
+        objectUrl = u
+        setUrl(u)
+      })
+      .catch(() => {
+        if (active) setFailed(true)
+      })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [conversationId, messageId])
+
+  if (failed) {
+    return (
+      <div className="my-1 flex items-center gap-1 rounded-lg bg-black/5 px-2 py-3 text-[11px] opacity-70 dark:bg-white/10">
+        <span aria-hidden>🖼️</span>
+        <span>{alt} ⚠</span>
+      </div>
+    )
+  }
+  if (!url) {
+    return <div className="my-1 h-32 w-48 max-w-full animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+  }
+  // A blob object URL (not a static/remote asset), so next/image can't optimise it.
+  return <img src={url} alt={alt} className="my-1 max-h-64 max-w-full rounded-lg" />
 }

@@ -32,6 +32,14 @@ const WhatsAppEntrySchema = z.object({
                   type: z.enum(['text', 'audio', 'image', 'document', 'button', 'interactive']),
                   text: z.object({ body: z.string() }).optional(),
                   audio: z.object({ id: z.string(), mime_type: z.string() }).optional(),
+                  // Inbound media (Req 3): an image/document carries a media id we
+                  // resolve + proxy on demand, plus an optional caption shown as text.
+                  image: z
+                    .object({ id: z.string(), mime_type: z.string(), caption: z.string().optional() })
+                    .optional(),
+                  document: z
+                    .object({ id: z.string(), mime_type: z.string(), caption: z.string().optional() })
+                    .optional(),
                 }),
               )
               .optional(),
@@ -107,9 +115,9 @@ const webhookRoute: FastifyPluginAsync = async (app) => {
               patientWaId: msg.from,
               patientName: contacts?.[0]?.profile.name ?? '',
               messageType: msg.type,
-              content: msg.text?.body,
-              mediaId: msg.audio?.id,
-              mimeType: msg.audio?.mime_type,
+              content: msg.text?.body ?? msg.image?.caption ?? msg.document?.caption,
+              mediaId: msg.audio?.id ?? msg.image?.id ?? msg.document?.id,
+              mimeType: msg.audio?.mime_type ?? msg.image?.mime_type ?? msg.document?.mime_type,
               waMessageId: msg.id,
               timestamp: Number.parseInt(msg.timestamp, 10),
             })

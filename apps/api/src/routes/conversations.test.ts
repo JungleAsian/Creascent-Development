@@ -6,6 +6,14 @@ vi.mock('@docmee/queue', () => ({
   kbEmbedQueue: { add: vi.fn() },
 }))
 vi.mock('@docmee/agents', () => ({ getOAuth2Client: () => ({}) }))
+// Req 3 media proxy: stub the Graph media fetch so no real network call runs.
+const { fetchMedia } = vi.hoisted(() => ({
+  fetchMedia: vi.fn(async () => ({
+    buffer: new TextEncoder().encode('JPEGBYTES').buffer,
+    mimeType: 'image/jpeg',
+  })),
+}))
+vi.mock('../lib/whatsapp-media.js', () => ({ fetchWhatsAppMedia: fetchMedia }))
 vi.mock('@docmee/shared', () => ({
   encryptValue: (v: string) => `enc:${v}`,
   verifyPassword: () => true,
@@ -67,6 +75,13 @@ const store = vi.hoisted(() => ({
   ]),
   created: [] as Record<string, unknown>[],
   flagged: [] as Record<string, unknown>[],
+  // Conversation messages (Req 3 media proxy). An image with a media id on open-1,
+  // an image with no media id, and a text message — to exercise the proxy guards.
+  messages: new Map<string, Record<string, unknown>>([
+    ['msg-img', { id: 'msg-img', conversationId: 'open-1', clinicId: 'c-1', contentType: 'image', metadata: { mediaId: 'media-1' } }],
+    ['msg-nomedia', { id: 'msg-nomedia', conversationId: 'open-1', clinicId: 'c-1', contentType: 'image', metadata: {} }],
+    ['msg-text', { id: 'msg-text', conversationId: 'open-1', clinicId: 'c-1', contentType: 'text', metadata: {} }],
+  ]),
   // Internal notes (Req 13). 'note-1' is authored by u-1; edit/delete is author-only.
   notes: new Map<string, Record<string, unknown>>([
     [
@@ -132,7 +147,18 @@ vi.mock('@docmee/db', () => ({
       store.notes.delete(noteId)
     },
   }),
-  createMessagesRepository: () => ({}),
+  createMessagesRepository: () => ({
+    findById: async (clinicId: string, id: string) => {
+      const m = store.messages.get(id)
+      return m && m.clinicId === clinicId ? m : null
+    },
+  }),
+  createChannelAccountsRepository: () => ({
+    listByClinic: async (clinicId: string) =>
+      clinicId === 'c-1'
+        ? [{ channel: 'whatsapp', status: 'active', accountId: 'PHONE', accessTokenEnc: 'tok' }]
+        : [],
+  }),
   createClinicsRepository: () => ({}),
   createPatientsRepository: () => ({}),
   createKnowledgeRepository: () => ({}),
@@ -370,5 +396,55 @@ describe('conversation routes', () => {
       payload: { content: 'x' },
     })
     expect(res.statusCode).toBe(401)
+  })
+
+  // ── Inbound media proxy (Req 3) ──
+  it('GET /conversations/:id/messages/:messageId/media streams an image with the right mime type', async () => {
+    fetchMedia.mockClear()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/open-1/messages/msg-img/media',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('image/jpeg')
+    expect(res.body).toBe('JPEGBYTES')
+    // The Graph fetch is called with the stored media id and the clinic's WhatsApp token.
+    expect(fetchMedia).toHaveBeenCalledWith('media-1', 'tok')
+  })
+
+  it('GET media without auth → 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/open-1/messages/msg-img/media',
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('GET media for a non-image message → 404', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/open-1/messages/msg-text/media',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('GET media for an image with no stored media id → 404', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/open-1/messages/msg-nomedia/media',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('GET media for an unknown message → 404', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/open-1/messages/ghost/media',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(404)
   })
 })
