@@ -1,12 +1,14 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { whatsappInboundQueue } from '@docmee/queue'
+import { whatsappInboundQueue, messengerStatusQueue } from '@docmee/queue'
 import { validateHmacSignature } from '../lib/hmac.js'
 
 type RawBodyRequest = FastifyRequest & { rawBody?: Buffer }
 
-// Facebook Messenger inbound payload (the subset we act on). Inbound messages
-// arrive under object='page' with a `messaging` array per entry.
+// Facebook Messenger inbound payload (the subset we act on). Inbound messages,
+// delivery confirmations and read receipts all arrive under object='page' with a
+// `messaging` array per entry — each event carries at most one of message /
+// delivery / read.
 const MessengerEntrySchema = z.object({
   object: z.literal('page'),
   entry: z.array(
@@ -24,6 +26,21 @@ const MessengerEntrySchema = z.object({
                 mid: z.string(),
                 text: z.string().optional(),
                 is_echo: z.boolean().optional(),
+              })
+              .optional(),
+            // Delivery confirmation (Req 33): `mids` lists the outbound message ids
+            // confirmed delivered; `watermark` is the high-water timestamp.
+            delivery: z
+              .object({
+                mids: z.array(z.string()).optional(),
+                watermark: z.number(),
+              })
+              .optional(),
+            // Read receipt (Req 33): Messenger reports reads as a `watermark` — every
+            // message sent at/before it has been read (there are no per-message ids).
+            read: z
+              .object({
+                watermark: z.number(),
               })
               .optional(),
           }),
@@ -79,18 +96,48 @@ const messengerRoute: FastifyPluginAsync = async (app) => {
 
       for (const entry of parsed.data.entry) {
         for (const event of entry.messaging ?? []) {
-          // Skip echoes (our own outbound) and non-text/empty events.
-          if (!event.message || event.message.is_echo || !event.message.text) continue
-          await whatsappInboundQueue.add('inbound', {
-            channel: 'messenger',
-            phoneNumberId: event.recipient.id, // Page id — resolves the clinic
-            patientWaId: event.sender.id, // patient PSID
-            patientName: '',
-            messageType: 'text',
-            content: event.message.text,
-            waMessageId: event.message.mid,
-            timestamp: event.timestamp ?? 0,
-          })
+          // Inbound patient message (skip echoes of our own outbound + empty events).
+          if (event.message && !event.message.is_echo && event.message.text) {
+            await whatsappInboundQueue.add('inbound', {
+              channel: 'messenger',
+              phoneNumberId: event.recipient.id, // Page id — resolves the clinic
+              patientWaId: event.sender.id, // patient PSID
+              patientName: '',
+              messageType: 'text',
+              content: event.message.text,
+              waMessageId: event.message.mid,
+              timestamp: event.timestamp ?? 0,
+            })
+            continue
+          }
+
+          // Delivery confirmation (Req 33): one status job per confirmed mid. The
+          // page id resolves the clinic; the mid matches the persisted reply.
+          if (event.delivery) {
+            for (const mid of event.delivery.mids ?? []) {
+              await messengerStatusQueue.add('status', {
+                channel: 'messenger',
+                phoneNumberId: event.recipient.id, // Page id
+                channelMessageId: mid,
+                status: 'delivered',
+                recipientId: event.sender.id, // patient PSID
+                timestamp: event.delivery.watermark,
+              })
+            }
+            continue
+          }
+
+          // Read receipt (Req 33): a watermark, not per-message ids — the worker
+          // marks every outbound message in the patient's thread sent at/before it.
+          if (event.read) {
+            await messengerStatusQueue.add('status', {
+              channel: 'messenger',
+              phoneNumberId: event.recipient.id, // Page id
+              status: 'read',
+              recipientId: event.sender.id, // patient PSID
+              watermark: event.read.watermark,
+            })
+          }
         }
       }
     } catch (err) {

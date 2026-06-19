@@ -6,7 +6,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => ({
   findByAccount: vi.fn(),
+  findByMessengerPageId: vi.fn(),
+  findOpenByContact: vi.fn(),
   recordDeliveryStatus: vi.fn(),
+  recordReadReceipt: vi.fn(),
   createError: vi.fn(),
   end: vi.fn(),
 }))
@@ -14,7 +17,12 @@ const h = vi.hoisted(() => ({
 vi.mock('@docmee/db', () => ({
   createServiceDbClient: () => ({ end: h.end }),
   createChannelAccountsRepository: () => ({ findByAccount: h.findByAccount }),
-  createMessagesRepository: () => ({ recordDeliveryStatus: h.recordDeliveryStatus }),
+  createClinicsRepository: () => ({ findByMessengerPageId: h.findByMessengerPageId }),
+  createConversationsRepository: () => ({ findOpenByContact: h.findOpenByContact }),
+  createMessagesRepository: () => ({
+    recordDeliveryStatus: h.recordDeliveryStatus,
+    recordReadReceipt: h.recordReadReceipt,
+  }),
   createErrorReviewsRepository: () => ({ create: h.createError }),
 }))
 
@@ -26,7 +34,10 @@ const makeJob = (data: unknown) => ({ data }) as never
 beforeEach(() => {
   vi.clearAllMocks()
   h.findByAccount.mockResolvedValue({ clinicId: CLINIC, accountId: 'PHONE_ID' })
+  h.findByMessengerPageId.mockResolvedValue({ id: CLINIC })
+  h.findOpenByContact.mockResolvedValue({ id: 'conv-1' })
   h.recordDeliveryStatus.mockResolvedValue(true)
+  h.recordReadReceipt.mockResolvedValue(2)
   h.createError.mockResolvedValue({ id: 'e1' })
 })
 
@@ -85,5 +96,72 @@ describe('processDeliveryStatusJob', () => {
 
     expect(h.recordDeliveryStatus).toHaveBeenCalledTimes(1)
     expect(h.createError).not.toHaveBeenCalled()
+  })
+
+  it('records a Messenger delivered receipt, resolving the clinic by Page id', async () => {
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        channelMessageId: 'mid.OUT1',
+        status: 'delivered',
+        recipientId: 'PSID_123',
+      }),
+    )
+
+    expect(h.findByMessengerPageId).toHaveBeenCalledWith('PAGE_ID')
+    expect(h.findByAccount).not.toHaveBeenCalled()
+    expect(h.recordDeliveryStatus).toHaveBeenCalledWith(CLINIC, 'mid.OUT1', 'delivered', null)
+    expect(h.createError).not.toHaveBeenCalled()
+  })
+
+  it('marks the Messenger thread read up to the watermark', async () => {
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        status: 'read',
+        recipientId: 'PSID_123',
+        watermark: 1700000002000,
+      }),
+    )
+
+    expect(h.findOpenByContact).toHaveBeenCalledWith(CLINIC, 'messenger', 'PSID_123')
+    expect(h.recordReadReceipt).toHaveBeenCalledWith(CLINIC, 'conv-1', 1700000002000)
+    expect(h.recordDeliveryStatus).not.toHaveBeenCalled()
+  })
+
+  it('ignores a Messenger read when the patient has no open thread', async () => {
+    h.findOpenByContact.mockResolvedValue(null)
+
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        status: 'read',
+        recipientId: 'PSID_123',
+        watermark: 1700000002000,
+      }),
+    )
+
+    expect(h.recordReadReceipt).not.toHaveBeenCalled()
+    expect(h.end).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a Messenger receipt when no clinic owns the Page id', async () => {
+    h.findByMessengerPageId.mockResolvedValue(null)
+
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'UNKNOWN_PAGE',
+        channelMessageId: 'mid.X',
+        status: 'delivered',
+      }),
+    )
+
+    expect(h.recordDeliveryStatus).not.toHaveBeenCalled()
+    expect(h.recordReadReceipt).not.toHaveBeenCalled()
+    expect(h.end).toHaveBeenCalledTimes(1)
   })
 })

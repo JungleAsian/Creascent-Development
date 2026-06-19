@@ -41,6 +41,14 @@ export interface MessagesRepository {
     status: DeliveryStatus,
     error?: string | null,
   ): Promise<boolean>
+  /**
+   * Record a `read` event for every outbound (assistant/agent) message in a
+   * conversation sent at or before `watermarkMs` (epoch ms) that carries a
+   * channel_message_id and is not already marked read. Messenger reports reads as a
+   * watermark rather than per-message ids (Req 33), so this marks the whole prefix
+   * of the thread read in one pass. Returns the number of messages newly marked.
+   */
+  recordReadReceipt(clinicId: string, conversationId: string, watermarkMs: number): Promise<number>
 }
 
 export function createMessagesRepository(sql: Sql): MessagesRepository {
@@ -151,6 +159,28 @@ export function createMessagesRepository(sql: Sql): MessagesRepository {
         VALUES (${message.id}, ${clinicId}, ${channelMessageId}, ${status}, ${error ?? null})
       `
       return true
+    },
+
+    async recordReadReceipt(clinicId, conversationId, watermarkMs) {
+      // Insert a 'read' event for each outbound message in the thread up to the
+      // watermark that isn't already read. Idempotent: re-delivered watermarks
+      // (Meta retries) add no duplicate rows.
+      const rows = await sql<{ id: string }[]>`
+        INSERT INTO message_delivery_events (message_id, clinic_id, channel_message_id, status)
+        SELECT m.id, m.clinic_id, m.channel_message_id, 'read'
+        FROM conversation_messages m
+        WHERE m.clinic_id = ${clinicId}
+          AND m.conversation_id = ${conversationId}
+          AND m.role IN ('assistant', 'agent')
+          AND m.channel_message_id IS NOT NULL
+          AND m.created_at <= to_timestamp(${watermarkMs} / 1000.0)
+          AND NOT EXISTS (
+            SELECT 1 FROM message_delivery_events e
+            WHERE e.message_id = m.id AND e.status = 'read'
+          )
+        RETURNING id
+      `
+      return rows.length
     },
   }
 }

@@ -5,6 +5,10 @@ export const whatsappInboundQueue = createQueue('whatsapp.inbound')
 // webhook (Req 3). Separate from inbound messages so a status backlog never
 // blocks patient messages and vice-versa.
 export const whatsappStatusQueue = createQueue('whatsapp.status')
+// Messenger delivery/read receipts (Req 33). Meta posts `delivery` (carries the
+// outbound mids) and `read` (a watermark) events on the Page webhook; the route
+// fans them here so they never block inbound patient messages.
+export const messengerStatusQueue = createQueue('messenger.status')
 export const transcriptionQueue = createQueue('transcription')
 export const agentQueue = createQueue('agent')
 export const schedulingQueue = createQueue('scheduling')

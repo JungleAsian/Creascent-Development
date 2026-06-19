@@ -170,10 +170,10 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
  * when the clinic has no usable credentials (WhatsApp account inactive, or
  * Messenger/Instagram not connected) — the caller then stays silent.
  *
- * The transport resolves to the provider message id (the WhatsApp wamid) when the
- * channel surfaces one, so the caller can store it on the persisted reply and
- * later match delivery-status receipts to it (Req 3). Messenger/Instagram delivery
- * tracking is not wired yet (Req 33/34), so they resolve to null.
+ * The transport resolves to the provider message id (the WhatsApp wamid, or the
+ * Messenger `mid`) when the channel surfaces one, so the caller can store it on the
+ * persisted reply and later match delivery-status receipts to it (Req 3/33).
+ * Instagram delivery tracking is not wired yet (Req 34), so it resolves to null.
  */
 function resolveSendReply(
   channel: 'whatsapp' | 'messenger' | 'instagram',
@@ -184,10 +184,8 @@ function resolveSendReply(
   if (channel === 'messenger') {
     const token = clinic.messengerEnabled ? clinic.messengerPageAccessTokenEncrypted : null
     if (!token) return null
-    return async (text) => {
-      await sendMessengerText(token, recipient, text)
-      return null
-    }
+    // Returns the Messenger mid so delivery/read receipts can be matched back (Req 33).
+    return (text) => sendMessengerText(token, recipient, text)
   }
   if (channel === 'instagram') {
     const token = clinic.instagramEnabled ? clinic.instagramPageAccessTokenEncrypted : null

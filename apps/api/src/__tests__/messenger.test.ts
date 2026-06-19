@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 
-const { add } = vi.hoisted(() => ({ add: vi.fn() }))
-vi.mock('@docmee/queue', () => ({ whatsappInboundQueue: { add } }))
+const { add, statusAdd } = vi.hoisted(() => ({ add: vi.fn(), statusAdd: vi.fn() }))
+vi.mock('@docmee/queue', () => ({
+  whatsappInboundQueue: { add },
+  messengerStatusQueue: { add: statusAdd },
+}))
 
 import { buildApp } from '../app.js'
 
@@ -47,6 +50,7 @@ describe('messenger webhook routes', () => {
 
   beforeEach(() => {
     add.mockClear()
+    statusAdd.mockClear()
   })
 
   it('GET verification with the correct token returns 200 + challenge', async () => {
@@ -96,6 +100,74 @@ describe('messenger webhook routes', () => {
     expect(job['messageType']).toBe('text')
     expect(job['content']).toBe('hola')
     expect(job['waMessageId']).toBe('mid.ABC')
+  })
+
+  it('POST with a delivery event enqueues a delivered status per mid (not an inbound)', async () => {
+    const delivery = JSON.stringify({
+      object: 'page',
+      entry: [
+        {
+          id: 'PAGE_ID',
+          messaging: [
+            {
+              sender: { id: 'PSID_123' },
+              recipient: { id: 'PAGE_ID' },
+              delivery: { mids: ['mid.OUT1', 'mid.OUT2'], watermark: 1700000001000 },
+            },
+          ],
+        },
+      ],
+    })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/messenger',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(delivery) },
+      payload: delivery,
+    })
+    await flush()
+    expect(res.statusCode).toBe(200)
+    expect(add).not.toHaveBeenCalled()
+    expect(statusAdd).toHaveBeenCalledTimes(2)
+    const [, job] = statusAdd.mock.calls[0] as [string, Record<string, unknown>]
+    expect(job['channel']).toBe('messenger')
+    expect(job['phoneNumberId']).toBe('PAGE_ID')
+    expect(job['channelMessageId']).toBe('mid.OUT1')
+    expect(job['status']).toBe('delivered')
+    expect(job['recipientId']).toBe('PSID_123')
+  })
+
+  it('POST with a read event enqueues a single watermark read status', async () => {
+    const read = JSON.stringify({
+      object: 'page',
+      entry: [
+        {
+          id: 'PAGE_ID',
+          messaging: [
+            {
+              sender: { id: 'PSID_123' },
+              recipient: { id: 'PAGE_ID' },
+              read: { watermark: 1700000002000 },
+            },
+          ],
+        },
+      ],
+    })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/messenger',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(read) },
+      payload: read,
+    })
+    await flush()
+    expect(res.statusCode).toBe(200)
+    expect(add).not.toHaveBeenCalled()
+    expect(statusAdd).toHaveBeenCalledTimes(1)
+    const [, job] = statusAdd.mock.calls[0] as [string, Record<string, unknown>]
+    expect(job['channel']).toBe('messenger')
+    expect(job['status']).toBe('read')
+    expect(job['recipientId']).toBe('PSID_123')
+    expect(job['watermark']).toBe(1700000002000)
+    expect(job['channelMessageId']).toBeUndefined()
   })
 
   it('POST ignores message echoes (our own outbound)', async () => {

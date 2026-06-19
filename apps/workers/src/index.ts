@@ -33,6 +33,12 @@ export const deliveryStatusWorker = createWorker(
   processDeliveryStatusJob,
   RATE_LIMITS.WORKER_CONCURRENCY_CONVERSATION,
 )
+// Messenger delivery/read receipts (Req 33): same processor, resolved by Page id.
+export const messengerStatusWorker = createWorker(
+  'messenger.status',
+  processDeliveryStatusJob,
+  RATE_LIMITS.WORKER_CONCURRENCY_CONVERSATION,
+)
 export const transcriptionWorker = createWorker(
   'transcription',
   processTranscriptionJob,
@@ -95,4 +101,4 @@ export const phase3Scheduler = setInterval(() => {
 }, HOURLY_MS)
 if (typeof phase3Scheduler.unref === 'function') phase3Scheduler.unref()
 
-console.log('[workers] all 12 workers registered and listening')
+console.log('[workers] all 13 workers registered and listening')
