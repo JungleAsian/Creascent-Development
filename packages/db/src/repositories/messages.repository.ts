@@ -17,6 +17,12 @@ export interface CreateMessageInput {
 
 export interface MessagesRepository {
   findById(clinicId: string, id: string): Promise<ConversationMessage | null>
+  /**
+   * Timestamp of the patient's most recent inbound (`user`) message across all of
+   * their conversations, or null. Drives the 24-hour customer-care window check and
+   * the no_response self-cancel for follow-up automation (Rev1 #14).
+   */
+  findLastInboundAt(clinicId: string, patientId: string): Promise<string | null>
   listByConversation(clinicId: string, conversationId: string): Promise<ConversationMessage[]>
   listByConversationSince(clinicId: string, conversationId: string, since: string): Promise<ConversationMessage[]>
   create(data: CreateMessageInput): Promise<ConversationMessage>
@@ -30,6 +36,18 @@ export function createMessagesRepository(sql: Sql): MessagesRepository {
         SELECT * FROM conversation_messages WHERE clinic_id = ${clinicId} AND id = ${id} LIMIT 1
       `
       return rows[0] ?? null
+    },
+
+    async findLastInboundAt(clinicId, patientId) {
+      const rows = await sql<[{ last: string | null }]>`
+        SELECT MAX(m.created_at) AS last
+        FROM conversation_messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE m.clinic_id = ${clinicId}
+          AND c.patient_id = ${patientId}
+          AND m.role = 'user'
+      `
+      return rows[0]?.last ?? null
     },
 
     async listByConversation(clinicId, conversationId) {

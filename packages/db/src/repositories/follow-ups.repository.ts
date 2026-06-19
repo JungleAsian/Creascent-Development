@@ -18,6 +18,12 @@ export interface FollowUpsRepository {
   findByAppointment(clinicId: string, appointmentId: string, type: string): Promise<FollowUp | null>
   /** Insert a follow-up, ignoring the (appointment, type) duplicate. Returns null if it already existed. */
   createIfAbsent(data: CreateFollowUpInput): Promise<FollowUp | null>
+  /**
+   * Has a follow-up of this type already been recorded for this conversation within
+   * the last `withinHours`? Dedupes the conversation-scoped no_response nudge, which
+   * carries its conversation id in metadata (no appointment to key on).
+   */
+  existsRecentByConversation(clinicId: string, conversationId: string, type: string, withinHours: number): Promise<boolean>
   markSent(clinicId: string, id: string): Promise<void>
   /** Stamp the click and flip status → 'clicked'. Returns the row (or null if unknown). */
   markClicked(id: string): Promise<FollowUp | null>
@@ -55,6 +61,19 @@ export function createFollowUpsRepository(sql: Sql): FollowUpsRepository {
         RETURNING *
       `
       return rows[0] ?? null
+    },
+
+    async existsRecentByConversation(clinicId, conversationId, type, withinHours) {
+      const rows = await sql<[{ exists: boolean }]>`
+        SELECT EXISTS (
+          SELECT 1 FROM follow_ups
+          WHERE clinic_id = ${clinicId}
+            AND type = ${type}
+            AND metadata->>'conversationId' = ${conversationId}
+            AND created_at > NOW() - ${`${withinHours} hours`}::interval
+        ) AS exists
+      `
+      return rows[0]?.exists ?? false
     },
 
     async markSent(clinicId, id) {

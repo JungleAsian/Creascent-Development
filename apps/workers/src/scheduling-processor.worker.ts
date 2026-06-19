@@ -33,6 +33,7 @@ import {
 import { sendWhatsAppText } from '@docmee/channels'
 import { notificationQueue, type Job } from '@docmee/queue'
 import { patientSource, mergePatientIntake, type BookingIntake } from './intake.js'
+import { scheduleAppointmentFollowUps, scheduleNoResponseFollowUp } from './follow-up.js'
 import {
   createServiceDbClient,
   createClinicsRepository,
@@ -220,6 +221,10 @@ export async function processSchedulingJob(job: Job): Promise<void> {
       ? await conversations.findById(data.clinicId, data.conversationId)
       : null
     const metadata: Record<string, unknown> = conversation ? { ...conversation.metadata } : {}
+    // Whether a multi-turn flow was already mid-stream when this message arrived.
+    // Used to schedule the no_response nudge only on the FIRST turn we start waiting
+    // on the patient, so a long booking conversation doesn't queue a nudge per turn.
+    const hadStoredFlow = metadata['scheduling'] != null
 
     const providers = await appointments.listProviders(data.clinicId)
     const calendarConfig = getCalendarConfig(clinic)
@@ -406,6 +411,17 @@ export async function processSchedulingJob(job: Job): Promise<void> {
               })
               await conversations.addTag(data.clinicId, data.conversationId, tag.id)
             }
+
+            // Follow-up automation (Rev1 #14): schedule the appointment-relative
+            // follow-ups (confirmation, reminder, post-consultation, 7-day, 3-month)
+            // as delayed jobs. Best-effort — a queue failure never breaks the booking.
+            await scheduleAppointmentFollowUps({
+              clinicId: data.clinicId,
+              patientId,
+              appointmentId: created.id,
+              startTime,
+              endTime,
+            })
           },
         })
         await reply(result.reply)
@@ -441,6 +457,18 @@ export async function processSchedulingJob(job: Job): Promise<void> {
       if (nextFlow) updated['scheduling'] = nextFlow
       else delete updated['scheduling']
       await conversations.update(data.clinicId, conversation.id, { metadata: updated })
+
+      // Follow-up automation (Rev1 #14): the flow asked the patient something and is
+      // now waiting on them. Schedule a single no_response nudge on the first such
+      // turn; the follow-up worker self-cancels it if the patient replies in time.
+      if (nextFlow && !hadStoredFlow) {
+        await scheduleNoResponseFollowUp({
+          clinicId: data.clinicId,
+          patientId,
+          conversationId: conversation.id,
+          silentSinceIso: nowIso,
+        })
+      }
     }
   } finally {
     await sql.end()

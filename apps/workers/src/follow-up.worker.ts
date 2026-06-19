@@ -1,89 +1,48 @@
-// Consumes: follow-up queue.
+// Consumes: follow-up queue (Rev1 #14 — Follow-up Automation).
 //
-// Phase-2 follow-up automation (Gap #28). Producers schedule a delayed job for one
-// of the seven follow-up types; when it fires this worker resolves the patient's
-// WhatsApp contact and sends the matching message — UNLESS the patient has opted
-// out, in which case it stays fully silent (never message an opted-out patient).
-//
-// Scheduling (delayed jobs) is owned by the producer, e.g. after an appointment:
-//   await followUpQueue.add('follow-up', payload, { delay: 24 * 60 * 60 * 1000 })
-import { z } from 'zod'
+// A producer schedules a delayed job for one of the seven follow-up types (see
+// follow-up.ts); when it fires this worker delivers the matching WhatsApp message —
+// but only after re-checking, at send time, everything that may have changed since
+// it was scheduled:
+//   • consent       — never message a patient who has opted out
+//   • appointment    — skip when the linked appointment was cancelled
+//   • no_response    — skip when the patient has since replied (self-cancel)
+//   • 24h window     — inside Meta's customer-care window send free text; outside it
+//                      a proactive send requires an approved template, else we skip
+//   • idempotency    — claim a follow_ups row so a re-fired job never double-sends
+import {
+  FollowUpJobSchema,
+  FOLLOW_UP_TYPES,
+  followUpMessage,
+  isWithinCustomerCareWindow,
+  templateCategoryForType,
+  type FollowUpContext,
+} from './follow-up.js'
 import { sendWhatsAppText } from '@docmee/channels'
-import { followUpQueue, type Job } from '@docmee/queue'
+import { type Job } from '@docmee/queue'
 import {
   createServiceDbClient,
   createClinicsRepository,
   createPatientsRepository,
   createChannelAccountsRepository,
+  createAppointmentsRepository,
+  createFollowUpsRepository,
+  createMessagesRepository,
+  createMessageTemplatesRepository,
   type Patient,
+  type Appointment,
   type ChannelAccount,
   type PatientContact,
 } from '@docmee/db'
 
-export const FOLLOW_UP_TYPES = {
-  POST_APPOINTMENT: 'post_appointment', // 24h after appointment
-  MISSED_APPOINTMENT: 'missed_appointment', // patient didn't show
-  NO_SHOW_REBOOKING: 'no_show_rebooking', // offer rebooking after no-show
-  PENDING_REPLY: 'pending_reply', // tagged pending_reply > 24h
-  STALE_INTAKE: 'stale_intake', // started booking but didn't finish
-  REVIEW_REQUEST: 'review_request', // 48h after appointment
-  REACTIVATION: 'reactivation', // patient inactive > 30 days
-} as const
-
-export type FollowUpType = (typeof FOLLOW_UP_TYPES)[keyof typeof FOLLOW_UP_TYPES]
-
-const FollowUpJobSchema = z.object({
-  clinicId: z.string().uuid(),
-  patientId: z.string().uuid(),
-  type: z.enum([
-    FOLLOW_UP_TYPES.POST_APPOINTMENT,
-    FOLLOW_UP_TYPES.MISSED_APPOINTMENT,
-    FOLLOW_UP_TYPES.NO_SHOW_REBOOKING,
-    FOLLOW_UP_TYPES.PENDING_REPLY,
-    FOLLOW_UP_TYPES.STALE_INTAKE,
-    FOLLOW_UP_TYPES.REVIEW_REQUEST,
-    FOLLOW_UP_TYPES.REACTIVATION,
-  ]),
-})
-
-export type FollowUpJobData = z.infer<typeof FollowUpJobSchema>
+// Re-export so existing importers (and tests) keep working from one entry point.
+export { FOLLOW_UP_TYPES, scheduleFollowUp } from './follow-up.js'
+export type { FollowUpType, FollowUpJobData } from './follow-up.js'
 
 type Language = 'es' | 'en'
 
-const MESSAGES: Record<FollowUpType, Record<Language, string>> = {
-  post_appointment: {
-    es: '¡Hola! Esperamos que tu cita haya ido bien. ¿Cómo te sientes? Estamos aquí si necesitas algo.',
-    en: 'Hi! We hope your appointment went well. How are you feeling? We are here if you need anything.',
-  },
-  missed_appointment: {
-    es: 'Notamos que no pudiste asistir a tu cita. ¿Te gustaría reagendar? Estamos para ayudarte.',
-    en: 'We noticed you missed your appointment. Would you like to reschedule? We are happy to help.',
-  },
-  no_show_rebooking: {
-    es: 'Aún tienes un espacio disponible para reagendar tu cita. Responde a este mensaje y te ayudamos a coordinar una nueva fecha.',
-    en: 'You can still rebook your appointment. Reply to this message and we will help you find a new date.',
-  },
-  pending_reply: {
-    es: 'Seguimos pendientes de tu mensaje. ¿Aún podemos ayudarte con algo?',
-    en: 'We are still following up on your message. Is there anything we can help you with?',
-  },
-  stale_intake: {
-    es: 'Vimos que empezaste a agendar una cita pero no la terminaste. ¿Quieres que la completemos juntos?',
-    en: 'We saw you started booking an appointment but did not finish. Would you like us to complete it together?',
-  },
-  review_request: {
-    es: '¡Gracias por tu visita! Tu opinión nos ayuda a mejorar. ¿Nos compartirías cómo fue tu experiencia?',
-    en: 'Thank you for your visit! Your feedback helps us improve. Would you share how your experience was?',
-  },
-  reactivation: {
-    es: 'Ha pasado un tiempo desde tu última visita. Estamos aquí cuando quieras agendar una nueva cita.',
-    en: 'It has been a while since your last visit. We are here whenever you would like to book a new appointment.',
-  },
-}
-
 function getPatientLanguage(patient: Patient): Language {
-  const lang = (patient.metadata as { language?: unknown }).language
-  return lang === 'en' ? 'en' : 'es'
+  return (patient.metadata as { language?: unknown }).language === 'en' ? 'en' : 'es'
 }
 
 function isPatientOptedOut(patient: Patient): boolean {
@@ -96,13 +55,25 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
 
 function primaryWhatsAppHandle(contacts: PatientContact[]): string | null {
   const whatsapp = contacts.filter((c) => c.channel === 'whatsapp')
-  const primary = whatsapp.find((c) => c.isPrimary) ?? whatsapp[0]
-  return primary?.contactHandle ?? null
+  return (whatsapp.find((c) => c.isPrimary) ?? whatsapp[0])?.contactHandle ?? null
 }
 
-/** Schedule a follow-up message to fire after `delayMs`. */
-export async function scheduleFollowUp(data: FollowUpJobData, delayMs: number): Promise<void> {
-  await followUpQueue.add('follow-up', data, { delay: delayMs })
+/** A friendly localized "Mon 21 at 14:30"-style label from an appointment start. */
+function formatWhen(appointment: Appointment | null, language: Language): FollowUpContext {
+  if (!appointment) return {}
+  try {
+    const d = new Date(appointment.startTime)
+    const when = d.toLocaleString(language === 'en' ? 'en-US' : 'es-ES', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    return { when }
+  } catch {
+    return {}
+  }
 }
 
 export async function processFollowUpJob(job: Job): Promise<void> {
@@ -113,6 +84,10 @@ export async function processFollowUpJob(job: Job): Promise<void> {
     const clinics = createClinicsRepository(sql)
     const patients = createPatientsRepository(sql)
     const channelAccounts = createChannelAccountsRepository(sql)
+    const appointments = createAppointmentsRepository(sql)
+    const followUps = createFollowUpsRepository(sql)
+    const messages = createMessagesRepository(sql)
+    const templates = createMessageTemplatesRepository(sql)
 
     const clinic = await clinics.findById(data.clinicId)
     if (!clinic) {
@@ -132,6 +107,45 @@ export async function processFollowUpJob(job: Job): Promise<void> {
       return
     }
 
+    // Appointment guard: an appointment-relative follow-up is pointless once the
+    // appointment is gone or cancelled — don't remind a patient about a cancelled visit.
+    let appointment: Appointment | null = null
+    if (data.appointmentId) {
+      appointment = await appointments.findById(data.clinicId, data.appointmentId)
+      if (!appointment) {
+        console.log(`[follow-up] appointment ${data.appointmentId} gone; skipping ${data.type}`)
+        return
+      }
+      if (appointment.status === 'cancelled') {
+        console.log(`[follow-up] appointment ${data.appointmentId} cancelled; skipping ${data.type}`)
+        return
+      }
+    }
+
+    const nowIso = new Date().toISOString()
+    const lastInbound = await messages.findLastInboundAt(data.clinicId, data.patientId)
+
+    // no_response self-cancel + dedupe: if the patient already replied after the job
+    // was scheduled the conversation is no longer "no response", and we send at most
+    // one nudge per conversation.
+    if (data.type === FOLLOW_UP_TYPES.NO_RESPONSE) {
+      if (
+        data.silentSinceIso &&
+        lastInbound &&
+        Date.parse(lastInbound) > Date.parse(data.silentSinceIso)
+      ) {
+        console.log(`[follow-up] patient ${data.patientId} replied; cancelling no_response`)
+        return
+      }
+      if (
+        data.conversationId &&
+        (await followUps.existsRecentByConversation(data.clinicId, data.conversationId, data.type, 24))
+      ) {
+        console.log(`[follow-up] no_response already sent for conversation ${data.conversationId}`)
+        return
+      }
+    }
+
     const account = activeWhatsAppAccount(await channelAccounts.listByClinic(data.clinicId))
     if (!account) {
       console.warn(`[follow-up] no active WhatsApp account for clinic ${data.clinicId}; cannot send`)
@@ -144,8 +158,44 @@ export async function processFollowUpJob(job: Job): Promise<void> {
       return
     }
 
-    const text = MESSAGES[data.type][getPatientLanguage(patient)]
+    const language = getPatientLanguage(patient)
+
+    // 24-hour customer-care window (Req 19 Meta Compliance). Inside the window we may
+    // send a free-text follow-up; outside it a proactive send is only allowed via an
+    // approved HSM template. Types with no template category (post-care, review, no
+    // response) simply cannot be sent late — we skip rather than risk a policy violation.
+    let text: string
+    if (isWithinCustomerCareWindow(lastInbound, nowIso)) {
+      text = followUpMessage(data.type, language, formatWhen(appointment, language))
+    } else {
+      const category = templateCategoryForType(data.type)
+      const template = category
+        ? await templates.findApprovedByCategory(data.clinicId, category)
+        : null
+      if (!template) {
+        console.log(
+          `[follow-up] outside 24h window with no approved template for ${data.type}; skipping`,
+        )
+        return
+      }
+      text = template.body
+    }
+
+    // Idempotency: claim a follow_ups row so a re-fired job never double-sends.
+    const followUp = await followUps.createIfAbsent({
+      clinicId: data.clinicId,
+      patientId: data.patientId,
+      ...(data.appointmentId ? { appointmentId: data.appointmentId } : {}),
+      type: data.type,
+      ...(data.conversationId ? { metadata: { conversationId: data.conversationId } } : {}),
+    })
+    if (!followUp) {
+      console.log(`[follow-up] ${data.type} already recorded for appointment ${data.appointmentId}`)
+      return
+    }
+
     await sendWhatsAppText(account.accountId, account.accessTokenEnc ?? '', handle, text)
+    await followUps.markSent(data.clinicId, followUp.id)
   } finally {
     await sql.end()
   }

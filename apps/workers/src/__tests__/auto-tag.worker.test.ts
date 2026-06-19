@@ -70,6 +70,7 @@ vi.mock('@docmee/queue', () => ({
   notificationQueue: { add: h.notificationAdd },
   agentQueue: { add: vi.fn() },
   transcriptionQueue: { add: vi.fn() },
+  followUpQueue: { add: vi.fn() },
 }))
 
 vi.mock('@docmee/db', () => ({

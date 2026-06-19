@@ -16,6 +16,12 @@ export interface CreateMessageTemplateInput {
 
 export interface MessageTemplatesRepository {
   listByClinic(clinicId: string): Promise<MessageTemplate[]>
+  /**
+   * The most recently updated APPROVED template in a category, or null. Lets the
+   * follow-up worker send a proactive message outside the 24h customer-care window
+   * using clinic-approved copy (Rev1 #14 / Meta compliance Rev1 #19).
+   */
+  findApprovedByCategory(clinicId: string, category: MessageTemplateCategory): Promise<MessageTemplate | null>
   create(data: CreateMessageTemplateInput): Promise<MessageTemplate>
   setStatus(clinicId: string, id: string, status: MessageTemplateStatus): Promise<MessageTemplate | null>
 }
@@ -28,6 +34,16 @@ export function createMessageTemplatesRepository(sql: Sql): MessageTemplatesRepo
         WHERE clinic_id = ${clinicId}
         ORDER BY created_at DESC
       `
+    },
+
+    async findApprovedByCategory(clinicId, category) {
+      const rows = await sql<MessageTemplate[]>`
+        SELECT * FROM message_templates
+        WHERE clinic_id = ${clinicId} AND category = ${category} AND status = 'approved'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `
+      return rows[0] ?? null
     },
 
     async create(data) {
