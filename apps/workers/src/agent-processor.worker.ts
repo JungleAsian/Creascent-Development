@@ -33,6 +33,7 @@ import {
   createKnowledgeRepository,
   createErrorReviewsRepository,
   createConversationsRepository,
+  createMessagesRepository,
   createCustomFlowsRepository,
   type Sql,
   type Clinic,
@@ -241,7 +242,33 @@ export async function processAgentJob(job: Job): Promise<void> {
     const patient = data.patientId ? await patients.findById(data.clinicId, data.patientId) : null
 
     // Channel-aware reply transport (WhatsApp account or Messenger Page token).
-    const sendReply = resolveSendReply(data.channel, clinic, account, data.patientWaId)
+    const rawSendReply = resolveSendReply(data.channel, clinic, account, data.patientWaId)
+
+    // Unified Inbox (Req 4): persist every outbound bot reply as an `assistant`
+    // message so the inbox thread shows the bot's side. Wrapping the single send
+    // transport captures ALL reply paths — emergency reassurance, handoff ack,
+    // custom-flow scripts, outside-hours collection and the botbase LLM answer —
+    // without threading persistence through each branch. Best-effort: a storage
+    // failure is logged but never blocks delivery, and we only record a reply that
+    // actually went out (persist after the send resolves).
+    const messages = createMessagesRepository(sql)
+    const sendReply: ((text: string) => Promise<void>) | null = rawSendReply
+      ? async (text: string) => {
+          await rawSendReply(text)
+          if (data.conversationId) {
+            try {
+              await messages.create({
+                conversationId: data.conversationId,
+                clinicId: data.clinicId,
+                role: 'assistant',
+                content: text,
+              })
+            } catch (err) {
+              console.error('[agent] failed to persist outbound reply:', err)
+            }
+          }
+        }
+      : null
 
     const conversations = createConversationsRepository(sql)
     const conversation = data.conversationId

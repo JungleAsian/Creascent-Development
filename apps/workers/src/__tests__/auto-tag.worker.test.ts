@@ -85,6 +85,7 @@ vi.mock('@docmee/db', () => ({
     createTag: h.createTag,
     addTag: h.addTag,
   }),
+  createMessagesRepository: () => ({ create: vi.fn() }),
   createCustomFlowsRepository: () => ({ listEnabled: h.listEnabledFlows }),
   createAppointmentsRepository: () => ({
     listProviders: h.listProviders,

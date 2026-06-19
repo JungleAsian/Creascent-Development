@@ -9,8 +9,11 @@ import {
   createChannelAccountsRepository,
   createClinicsRepository,
   createPatientsRepository,
+  createConversationsRepository,
+  createMessagesRepository,
   type Channel,
   type ChannelAccount,
+  type ContentType,
 } from '@docmee/db'
 
 export const InboundMessageSchema = z.object({
@@ -40,6 +43,64 @@ function tokenExpiresAt(account: ChannelAccount): Date | null {
   if (typeof raw !== 'string' && typeof raw !== 'number') return null
   const date = new Date(raw)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+// Map a Meta message type to the conversation_messages content_type domain
+// ('text' | 'audio' | 'image' | 'template' | 'interactive'). Documents/buttons
+// have no dedicated type, so they persist as text/interactive respectively.
+function inboundContentType(messageType: InboundMessage['messageType']): ContentType {
+  if (messageType === 'image') return 'image'
+  if (messageType === 'interactive' || messageType === 'button') return 'interactive'
+  return 'text'
+}
+
+/**
+ * Unified Inbox (Req 4): thread a non-audio inbound message onto the patient's
+ * open conversation (creating one if none is active) and persist it as a `user`
+ * message so the inbox shows the patient's side of the thread. Returns the
+ * conversation id, or null if persistence failed — the caller then enqueues the
+ * agent without a conversation id (degraded, but the patient is never left on read).
+ * Audio is handled separately: the transcription worker persists the voice note +
+ * transcript on the same conversation (Req 8).
+ */
+async function threadInboundMessage(
+  sql: ReturnType<typeof createServiceDbClient>,
+  clinicId: string,
+  channel: Channel,
+  patientId: string,
+  msg: InboundMessage,
+): Promise<string | null> {
+  try {
+    const conversations = createConversationsRepository(sql)
+    const existing = await conversations.findOpenByContact(clinicId, channel, msg.patientWaId)
+    const conversation =
+      existing ??
+      (await conversations.create({
+        clinicId,
+        patientId,
+        channel,
+        channelContactHandle: msg.patientWaId,
+      }))
+
+    await createMessagesRepository(sql).create({
+      conversationId: conversation.id,
+      clinicId,
+      role: 'user',
+      content: msg.content ?? '',
+      contentType: inboundContentType(msg.messageType),
+      channelMessageId: msg.waMessageId,
+      metadata: {
+        channel,
+        ...(msg.mediaId ? { mediaId: msg.mediaId } : {}),
+        ...(msg.mimeType ? { mimeType: msg.mimeType } : {}),
+      },
+    })
+
+    return conversation.id
+  } catch (err) {
+    console.error('[conversation] failed to persist inbound message:', err)
+    return null
+  }
 }
 
 export async function processConversationJob(job: Job): Promise<void> {
@@ -140,8 +201,11 @@ export async function processConversationJob(job: Job): Promise<void> {
         waAccessToken,
       })
     } else {
-      // Text/image/document → straight to the agent for intent classification.
-      // `channel` tells the agent worker which sender to reply through.
+      // Text/image/document → persist the inbound message onto the patient's
+      // conversation (Req 4 Unified Inbox), then hand to the agent for intent
+      // classification threaded onto that same conversation. `channel` tells the
+      // agent worker which sender to reply through.
+      const conversationId = await threadInboundMessage(sql, clinicId, channel, patientId, msg)
       await agentQueue.add('process', {
         clinicId,
         channel,
@@ -150,6 +214,7 @@ export async function processConversationJob(job: Job): Promise<void> {
         message: msg.content ?? '',
         waMessageId: msg.waMessageId,
         isNewPatient,
+        conversationId: conversationId ?? undefined,
       })
     }
   } finally {

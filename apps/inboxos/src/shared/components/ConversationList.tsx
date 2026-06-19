@@ -10,7 +10,7 @@ import { useAuthStore } from '../store/auth'
 import { useI18n } from '../hooks/useI18n'
 import { useTeam } from '../hooks/useTeam'
 import { relativeTime } from '../format'
-import type { Conversation, ConversationStatus } from '../types'
+import type { Channel, Conversation, ConversationStatus } from '../types'
 
 const STATUSES: ConversationStatus[] = [
   'open',
@@ -21,6 +21,14 @@ const STATUSES: ConversationStatus[] = [
   'resolved',
   'archived',
 ]
+
+// Channel indicator (Req 4): which platform the thread arrived on. Channel names
+// are proper nouns, so the label is language-neutral (no i18n key needed).
+const CHANNEL_INDICATOR: Record<Channel, { label: string; icon: string; className: string }> = {
+  whatsapp: { label: 'WhatsApp', icon: '🟢', className: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+  messenger: { label: 'Messenger', icon: '🔵', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  instagram: { label: 'Instagram', icon: '🟣', className: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300' },
+}
 
 const STATUS_BADGE: Record<ConversationStatus, string> = {
   open: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
@@ -99,6 +107,12 @@ export function ConversationList({
                     <span className="shrink-0 text-xs text-gray-400">{relativeTime(c.lastMessageAt)}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_INDICATOR[c.channel].className}`}
+                      title={CHANNEL_INDICATOR[c.channel].label}
+                    >
+                      {CHANNEL_INDICATOR[c.channel].icon} {CHANNEL_INDICATOR[c.channel].label}
+                    </span>
                     <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[c.status]}`}>
                       {t(`conv.status.${c.status}` as const)}
                     </span>

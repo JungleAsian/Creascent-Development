@@ -10,6 +10,9 @@ const h = vi.hoisted(() => ({
   createPatient: vi.fn(),
   addContact: vi.fn(),
   updatePatient: vi.fn(),
+  findOpenByContact: vi.fn(),
+  createConversation: vi.fn(),
+  createMessage: vi.fn(),
   end: vi.fn(),
 }))
 
@@ -29,12 +32,18 @@ vi.mock('@docmee/db', () => ({
     addContact: h.addContact,
     update: h.updatePatient,
   }),
+  createConversationsRepository: () => ({
+    findOpenByContact: h.findOpenByContact,
+    create: h.createConversation,
+  }),
+  createMessagesRepository: () => ({ create: h.createMessage }),
 }))
 
 import { processConversationJob } from '../conversation-processor.worker.js'
 
 const CLINIC = '11111111-1111-1111-1111-111111111111'
 const PATIENT = '22222222-2222-2222-2222-222222222222'
+const CONVO = '44444444-4444-4444-4444-444444444444'
 
 const makeJob = (data: unknown) => ({ data }) as never
 
@@ -54,6 +63,9 @@ beforeEach(() => {
   h.findByMessengerPageId.mockResolvedValue({ id: CLINIC })
   h.findByContact.mockResolvedValue({ id: PATIENT, status: 'returning' })
   h.createPatient.mockResolvedValue({ id: PATIENT, status: 'new' })
+  h.findOpenByContact.mockResolvedValue(null)
+  h.createConversation.mockResolvedValue({ id: CONVO })
+  h.createMessage.mockResolvedValue({ id: 'msg1' })
 })
 
 describe('processConversationJob', () => {
@@ -74,6 +86,59 @@ describe('processConversationJob', () => {
     expect(job.clinicId).toBe(CLINIC)
     expect(job.message).toBe('hola')
     expect(job.isNewPatient).toBe(false)
+  })
+
+  it('text message → persists an inbound user message and threads the conversation (Req 4)', async () => {
+    await processConversationJob(makeJob({ ...base, messageType: 'text', content: 'hola' }))
+
+    // A fresh conversation is created (none was open) and the inbound text is
+    // persisted as a `user` message carrying the wamid.
+    expect(h.createConversation).toHaveBeenCalledTimes(1)
+    const [convInput] = h.createConversation.mock.calls[0]
+    expect(convInput).toMatchObject({ clinicId: CLINIC, channel: 'whatsapp', channelContactHandle: base.patientWaId })
+
+    expect(h.createMessage).toHaveBeenCalledTimes(1)
+    const [msgInput] = h.createMessage.mock.calls[0]
+    expect(msgInput).toMatchObject({
+      conversationId: CONVO,
+      clinicId: CLINIC,
+      role: 'user',
+      content: 'hola',
+      contentType: 'text',
+      channelMessageId: base.waMessageId,
+    })
+
+    // The agent job is threaded onto that same conversation.
+    const [, job] = h.agentAdd.mock.calls[0]
+    expect(job.conversationId).toBe(CONVO)
+  })
+
+  it('reuses the open conversation instead of creating a duplicate', async () => {
+    h.findOpenByContact.mockResolvedValue({ id: CONVO })
+    await processConversationJob(makeJob({ ...base, messageType: 'text', content: 'hola otra vez' }))
+
+    expect(h.createConversation).not.toHaveBeenCalled()
+    expect(h.createMessage).toHaveBeenCalledTimes(1)
+    const [, job] = h.agentAdd.mock.calls[0]
+    expect(job.conversationId).toBe(CONVO)
+  })
+
+  it('inbound persistence failure → still enqueues the agent without a conversation id', async () => {
+    h.createConversation.mockRejectedValue(new Error('db down'))
+    await processConversationJob(makeJob({ ...base, messageType: 'text', content: 'hola' }))
+
+    expect(h.agentAdd).toHaveBeenCalledTimes(1)
+    const [, job] = h.agentAdd.mock.calls[0]
+    expect(job.conversationId).toBeUndefined()
+    expect(job.message).toBe('hola')
+  })
+
+  it('audio message does NOT persist here (handled by the transcription worker)', async () => {
+    await processConversationJob(
+      makeJob({ ...base, messageType: 'audio', mediaId: 'media1', mimeType: 'audio/ogg' }),
+    )
+    expect(h.createConversation).not.toHaveBeenCalled()
+    expect(h.createMessage).not.toHaveBeenCalled()
   })
 
   it('unknown phone_number_id → drops the message, no routing', async () => {

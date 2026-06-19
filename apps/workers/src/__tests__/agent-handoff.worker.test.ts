@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   updateConversation: vi.fn(),
   createTag: vi.fn(),
   addTag: vi.fn(),
+  createMessage: vi.fn(),
   end: vi.fn(),
 }))
 
@@ -64,6 +65,7 @@ vi.mock('@docmee/db', () => ({
     createTag: h.createTag,
     addTag: h.addTag,
   }),
+  createMessagesRepository: () => ({ create: h.createMessage }),
   createCustomFlowsRepository: () => ({ listEnabled: h.listEnabledFlows }),
 }))
 
@@ -94,6 +96,7 @@ beforeEach(() => {
   h.listEnabledFlows.mockResolvedValue([])
   h.classifyIntent.mockResolvedValue('general_question')
   h.createTag.mockResolvedValue({ id: 'tag1' })
+  h.createMessage.mockResolvedValue({ id: 'm1' })
   // runClinicBot always resolves a ClinicBotResult; the worker reads .language.
   h.runClinicBot.mockResolvedValue({ replied: true, triggeredHandoff: false, language: 'es' })
 })
@@ -186,6 +189,36 @@ describe('processAgentJob — medical emergency (Req 20)', () => {
       'notify',
       expect.objectContaining({ reason: 'emergency' }),
     )
+  })
+})
+
+describe('processAgentJob — outbound reply persistence (Req 4)', () => {
+  it('persists an outbound reply as an assistant message on the threaded conversation', async () => {
+    h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })
+    await processAgentJob(makeJob({ ...baseJob, message: 'no puedo respirar, ayuda' }))
+
+    // The emergency reassurance went out (sendWhatsAppText) AND was recorded.
+    expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+    expect(h.createMessage).toHaveBeenCalledTimes(1)
+    const [msgInput] = h.createMessage.mock.calls[0]
+    expect(msgInput).toMatchObject({ conversationId: CONVO, clinicId: CLINIC, role: 'assistant' })
+    expect(typeof msgInput.content).toBe('string')
+  })
+
+  it('does not persist a reply when the job carries no conversation id', async () => {
+    h.findConversation.mockResolvedValue(null)
+    await processAgentJob(
+      makeJob({
+        clinicId: CLINIC,
+        channel: 'whatsapp' as const,
+        patientWaId: '5215555555555',
+        message: 'no puedo respirar, ayuda',
+        waMessageId: 'wamid.ABC',
+      }),
+    )
+
+    expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+    expect(h.createMessage).not.toHaveBeenCalled()
   })
 })
 
