@@ -41,6 +41,9 @@ importers:
       '@docmee/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@docmee/notifications':
+        specifier: workspace:*
+        version: link:../../packages/notifications
       '@docmee/queue':
         specifier: workspace:*
         version: link:../../packages/queue

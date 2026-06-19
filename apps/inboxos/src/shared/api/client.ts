@@ -2,8 +2,14 @@
 // refreshes a single time on 401, and redirects to /login when refresh fails.
 import { authSnapshot, useAuthStore } from '../store/auth'
 
-const API_BASE =
-  process.env['NEXT_PUBLIC_API_URL']?.replace(/\/$/, '') ?? 'http://localhost:3001'
+function resolveApiBase() {
+  const configured = process.env['NEXT_PUBLIC_API_URL']?.replace(/\/$/, '')
+  if (typeof window === 'undefined') return configured ?? 'http://localhost:3001'
+  if (configured && !/^http:\/\/(localhost|127\.0\.0\.1):3001$/.test(configured)) return configured
+  return `${window.location.protocol}//${window.location.hostname}:3001`
+}
+
+const API_BASE = resolveApiBase()
 
 export class ApiError extends Error {
   constructor(
@@ -93,6 +99,7 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
     request<T>(path, { ...opts, method: 'POST', body }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }

@@ -6,7 +6,9 @@
 import {
   dispatchNotification,
   isNotificationType,
+  isEmailAllowedByPrefs,
   isOnline,
+  normalizeNotificationPrefs,
   NOTIFICATION_TYPES,
   type NotificationType,
 } from '@docmee/notifications'
@@ -88,6 +90,13 @@ export async function processNotificationJob(job: Job): Promise<void> {
     const lastSeen = await users.findLastSeenByEmail(data.clinicId, recipientEmail)
     const recipientOnline = isOnline(lastSeen, new Date())
 
+    // The recipient's notification preferences can mute the EMAIL for a non-urgent
+    // alert type (the bell feed still records it; p1 always emails — see routing).
+    const prefs = normalizeNotificationPrefs(
+      await users.findNotificationPrefsByEmail(data.clinicId, recipientEmail),
+    )
+    const emailAllowed = isEmailAllowedByPrefs(prefs, type)
+
     await dispatchNotification(
       {
         clinicId: data.clinicId,
@@ -96,6 +105,7 @@ export async function processNotificationJob(job: Job): Promise<void> {
         data: { reason: data.reason, ...(typeof data['daysRemaining'] === 'number' ? { daysRemaining: data['daysRemaining'] } : {}) },
         recipientEmail,
         recipientOnline,
+        emailAllowed,
       },
       { store: buildNotificationStore(notifications) },
     )

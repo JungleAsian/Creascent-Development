@@ -28,13 +28,21 @@ export interface RouteDecision {
  * Decide where a notification of `priority` goes for a recipient who is
  * `recipientOnline`. When presence is unknown (undefined) we treat the recipient
  * as offline so an alert is never silently withheld from email.
+ *
+ * `emailAllowed` is the recipient's notification preference for this alert (see
+ * ./preferences.ts). It can only SUPPRESS a non-urgent email — p1 (urgent) alerts
+ * always email regardless, so a muted preference can never hide a safety alert.
+ * Defaults to true (no preference / nothing muted), preserving prior behaviour.
  */
 export function routeNotification(
   priority: NotificationPriority,
   recipientOnline?: boolean,
+  emailAllowed = true,
 ): RouteDecision {
   const online = recipientOnline === true
-  const email = priority === 'p1' || !online
+  // Urgent alerts always email; non-urgent only when the recipient is offline AND
+  // their preferences permit an email for this type.
+  const email = priority === 'p1' ? true : !online && emailAllowed
   return { panel: true, email, channel: email ? 'email' : 'in_app' }
 }
 

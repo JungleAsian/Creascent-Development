@@ -1,5 +1,12 @@
 import type { Sql } from '../client.js'
-import type { ClinicUser, ClinicUserAuth, PanelLanguage, PanelRole } from '../types/index.js'
+import { toJson } from '../client.js'
+import type {
+  ClinicUser,
+  ClinicUserAuth,
+  NotificationPrefsRow,
+  PanelLanguage,
+  PanelRole,
+} from '../types/index.js'
 
 export interface UsersRepository {
   findById(clinicId: string, id: string): Promise<ClinicUser | null>
@@ -26,6 +33,16 @@ export interface UsersRepository {
   findAuthByEmail(email: string): Promise<ClinicUserAuth | null>
   /** Persist the panel UI language preference. Returns false if the user is unknown. */
   setPanelLanguage(id: string, language: PanelLanguage): Promise<boolean>
+  /** Raw notification preferences JSON for a user by id (clinic-scoped). Null if unknown. */
+  getNotificationPrefs(clinicId: string, id: string): Promise<NotificationPrefsRow | null>
+  /**
+   * Raw notification preferences JSON for the alert recipient resolved by email
+   * (clinic-scoped, active users) — the worker's email-routing gate. Empty object
+   * when the email is unknown (i.e. permissive default in code).
+   */
+  findNotificationPrefsByEmail(clinicId: string, email: string): Promise<NotificationPrefsRow>
+  /** Persist notification preferences for a user. Returns false if unknown. */
+  setNotificationPrefs(id: string, prefs: NotificationPrefsRow): Promise<boolean>
 }
 
 // Highest privilege wins when a user holds several roles. Unknown role names
@@ -152,6 +169,35 @@ export function createUsersRepository(sql: Sql): UsersRepository {
     async setPanelLanguage(id, language) {
       const rows = await sql<[{ id: string }]>`
         UPDATE clinic_users SET panel_language = ${language} WHERE id = ${id} RETURNING id
+      `
+      return rows.length > 0
+    },
+
+    async getNotificationPrefs(clinicId, id) {
+      const rows = await sql<[{ prefs: NotificationPrefsRow }]>`
+        SELECT notification_prefs AS prefs FROM clinic_users
+        WHERE clinic_id = ${clinicId} AND id = ${id}
+        LIMIT 1
+      `
+      return rows[0]?.prefs ?? null
+    },
+
+    async findNotificationPrefsByEmail(clinicId, email) {
+      const rows = await sql<[{ prefs: NotificationPrefsRow }]>`
+        SELECT notification_prefs AS prefs FROM clinic_users
+        WHERE clinic_id = ${clinicId} AND LOWER(email) = LOWER(${email}) AND status = 'active'
+        ORDER BY created_at
+        LIMIT 1
+      `
+      return rows[0]?.prefs ?? {}
+    },
+
+    async setNotificationPrefs(id, prefs) {
+      const rows = await sql<[{ id: string }]>`
+        UPDATE clinic_users
+        SET notification_prefs = ${sql.json(toJson(prefs))}
+        WHERE id = ${id}
+        RETURNING id
       `
       return rows.length > 0
     },

@@ -9,6 +9,7 @@ export type {
   ClinicUserStatus,
   ClinicUserAuth,
   PanelLanguage,
+  NotificationPrefsRow,
   PanelRole,
   Role,
   Permission,

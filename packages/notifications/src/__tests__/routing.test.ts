@@ -28,6 +28,31 @@ describe('routeNotification', () => {
       expect(routeNotification(p, false).panel).toBe(true)
     }
   })
+
+  describe('emailAllowed preference gate', () => {
+    it('defaults to true — unchanged behaviour when no preference is passed', () => {
+      expect(routeNotification('p2', false).email).toBe(true)
+      expect(routeNotification('standard', false).email).toBe(true)
+    })
+
+    it('a muted (emailAllowed=false) non-urgent alert → panel only, even when offline', () => {
+      expect(routeNotification('p2', false, false)).toEqual({
+        panel: true,
+        email: false,
+        channel: 'in_app',
+      })
+      expect(routeNotification('standard', false, false).email).toBe(false)
+    })
+
+    it('p1 still emails even when the preference would mute it (safety override)', () => {
+      expect(routeNotification('p1', true, false).email).toBe(true)
+      expect(routeNotification('p1', false, false).email).toBe(true)
+    })
+
+    it('an allowed (emailAllowed=true) offline alert still emails', () => {
+      expect(routeNotification('p2', false, true).email).toBe(true)
+    })
+  })
 })
 
 describe('isOnline', () => {

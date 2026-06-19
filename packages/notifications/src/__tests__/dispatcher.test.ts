@@ -127,6 +127,41 @@ describe('dispatchNotification', () => {
     expect(created[0]).toMatchObject({ notificationType: 'email' })
   })
 
+  it('offline recipient + muted (emailAllowed=false) non-urgent alert → panel only, no email', async () => {
+    const { store, created, statuses } = makeStore()
+    const sendEmail = vi.fn(async () => {})
+    await dispatchNotification(
+      {
+        clinicId: 'c1',
+        type: NOTIFICATION_TYPES.NEW_PATIENT,
+        recipientEmail: 'a@b.com',
+        recipientOnline: false,
+        emailAllowed: false,
+      },
+      { store, sendEmail },
+    )
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(created[0]).toMatchObject({ notificationType: 'in_app', priority: 'p2' })
+    expect(statuses).toEqual([{ id: 'n1', status: 'sent', error: undefined }])
+  })
+
+  it('emailAllowed=false NEVER suppresses a p1 alert (safety override)', async () => {
+    const { store, created } = makeStore()
+    const sendEmail = vi.fn(async () => {})
+    await dispatchNotification(
+      {
+        clinicId: 'c1',
+        type: NOTIFICATION_TYPES.EMERGENCY,
+        recipientEmail: 'a@b.com',
+        recipientOnline: true,
+        emailAllowed: false,
+      },
+      { store, sendEmail },
+    )
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    expect(created[0]).toMatchObject({ notificationType: 'email', priority: 'p1' })
+  })
+
   it('every notification type has a defined, non-empty template', () => {
     for (const type of Object.values(NOTIFICATION_TYPES)) {
       const email = buildNotificationEmail(type, { sample: 1 })

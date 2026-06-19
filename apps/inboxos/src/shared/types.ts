@@ -286,6 +286,36 @@ export interface CustomFlow {
   updatedAt: string
 }
 
+// ── Notifications (Req 24) ─────────────────────────────────────────────────────
+/** Delivery channel a notification was routed to (mirrors @docmee/db). */
+export type NotificationDeliveryType = 'email' | 'in_app'
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped' | 'acknowledged'
+
+/** A row from the notification feed (GET /notifications). */
+export interface NotificationEvent {
+  id: string
+  clinicId: string | null
+  notificationType: NotificationDeliveryType
+  recipient: string
+  subject: string | null
+  content: string
+  status: NotificationStatus
+  sentAt: string | null
+  error: string | null
+  conversationId: string | null
+  alertType: string | null
+  priority: string | null
+  acknowledgedAt: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+/** Per-user notification preferences (GET/PUT /user/notification-preferences). */
+export interface NotificationPrefs {
+  emailEnabled: boolean
+  mutedTypes: string[]
+}
+
 export interface AdvancedAnalytics {
   totalConversations: number
   resolutionRate: number

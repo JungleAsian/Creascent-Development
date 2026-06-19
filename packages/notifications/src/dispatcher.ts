@@ -14,6 +14,12 @@ export interface DispatchNotificationParams {
    * email-vs-panel routing (see ./routing.ts). Defaults to offline (email sent).
    */
   recipientOnline?: boolean
+  /**
+   * Whether the recipient's notification preferences permit an email for this
+   * alert type (see ./preferences.ts). Can only suppress a non-urgent email; p1
+   * alerts always email. Defaults to true (no preference set).
+   */
+  emailAllowed?: boolean
 }
 
 /** Persistence the dispatcher needs — supplied by the worker (backed by @docmee/db). */
@@ -53,7 +59,7 @@ export async function dispatchNotification(
 ): Promise<void> {
   const send = deps.sendEmail ?? defaultSendEmail
   const priority = NOTIFICATION_PRIORITY[params.type]
-  const route = routeNotification(priority, params.recipientOnline)
+  const route = routeNotification(priority, params.recipientOnline, params.emailAllowed ?? true)
   const { subject, html } = buildNotificationEmail(params.type, params.data ?? {})
 
   const saved = await deps.store.create({

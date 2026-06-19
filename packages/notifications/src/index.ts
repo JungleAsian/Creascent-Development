@@ -36,3 +36,10 @@ export {
   type DispatchNotificationDeps,
   type NotificationStore,
 } from './dispatcher.js'
+
+export {
+  normalizeNotificationPrefs,
+  isEmailAllowedByPrefs,
+  DEFAULT_NOTIFICATION_PREFS,
+  type NotificationPrefs,
+} from './preferences.js'

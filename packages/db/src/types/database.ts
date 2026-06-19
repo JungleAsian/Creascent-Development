@@ -44,11 +44,20 @@ export interface ClinicUser {
   lastSeen: string | null
   passwordHash: string | null
   panelLanguage: PanelLanguage
+  notificationPrefs: NotificationPrefsRow
   createdAt: string
   updatedAt: string
 }
 
 export type PanelLanguage = 'es' | 'en'
+
+/**
+ * Per-user notification preferences (Req 24), stored in
+ * clinic_users.notification_prefs. Free-form JSON; the notifications package owns
+ * the normalized shape ({ emailEnabled, mutedTypes }). Gates the EMAIL channel
+ * only — the bell feed always records every alert, and p1 alerts always email.
+ */
+export type NotificationPrefsRow = Record<string, unknown>
 
 /** The four panel roles, derived from the user's highest-privilege role name. */
 export type PanelRole = 'secretary' | 'doctor' | 'clinic_admin' | 'ia_studio_admin'
