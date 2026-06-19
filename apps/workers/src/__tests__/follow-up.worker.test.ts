@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   createIfAbsent: vi.fn(),
   markSent: vi.fn(),
   existsRecentByConversation: vi.fn(),
+  countSentToPatientSince: vi.fn(),
   findLastInboundAt: vi.fn(),
   findApprovedByCategory: vi.fn(),
   end: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@docmee/db', () => ({
     createIfAbsent: h.createIfAbsent,
     markSent: h.markSent,
     existsRecentByConversation: h.existsRecentByConversation,
+    countSentToPatientSince: h.countSentToPatientSince,
   }),
   createMessagesRepository: () => ({ findLastInboundAt: h.findLastInboundAt }),
   createMessageTemplatesRepository: () => ({ findApprovedByCategory: h.findApprovedByCategory }),
@@ -61,6 +63,7 @@ beforeEach(() => {
   h.findAppointment.mockResolvedValue({ id: APPT, status: 'confirmed', startTime: '2026-07-01T14:30:00.000Z' })
   h.createIfAbsent.mockResolvedValue({ id: 'fu-1' })
   h.existsRecentByConversation.mockResolvedValue(false)
+  h.countSentToPatientSince.mockResolvedValue(0)
   // Within the 24h customer-care window by default (a recent inbound message).
   h.findLastInboundAt.mockResolvedValue(new Date().toISOString())
   h.findApprovedByCategory.mockResolvedValue(null)
@@ -115,6 +118,22 @@ describe('processFollowUpJob', () => {
     h.createIfAbsent.mockResolvedValue(null) // (appointment, type) already claimed
     await processFollowUpJob(makeJob(base))
     expect(h.sendWhatsAppText).not.toHaveBeenCalled()
+  })
+
+  describe('outbound anti-spam cap (Req 19)', () => {
+    it('skips when the patient already hit the proactive cap', async () => {
+      h.countSentToPatientSince.mockResolvedValue(5) // default cap is 5 / 24h
+      await processFollowUpJob(makeJob(base))
+      expect(h.sendWhatsAppText).not.toHaveBeenCalled()
+      expect(h.createIfAbsent).not.toHaveBeenCalled()
+      expect(h.countSentToPatientSince).toHaveBeenCalledWith(CLINIC, PATIENT, 24)
+    })
+
+    it('still sends when below the cap', async () => {
+      h.countSentToPatientSince.mockResolvedValue(4)
+      await processFollowUpJob(makeJob(base))
+      expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('24h customer-care window', () => {

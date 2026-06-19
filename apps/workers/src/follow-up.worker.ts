@@ -41,6 +41,18 @@ export type { FollowUpType, FollowUpJobData } from './follow-up.js'
 
 type Language = 'es' | 'en'
 
+// Outbound anti-spam (Req 19 Meta Compliance). Cap how many PROACTIVE messages one
+// patient may receive in a rolling window so an over-eager schedule (or a scheduling
+// bug) can never flood a patient — repeated unsolicited messages are the fastest way
+// to get a WhatsApp Business number quality-flagged or banned by Meta. Reactive bot
+// replies (agent worker, answering an inbound message) are unaffected; this guards
+// only the proactive follow-up surface. Tunable via env, default 5 / 24h.
+const ANTI_SPAM_WINDOW_HOURS = 24
+function maxProactivePerPatient(): number {
+  const raw = Number(process.env['FOLLOWUP_MAX_PER_PATIENT_PER_DAY'])
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 5
+}
+
 function getPatientLanguage(patient: Patient): Language {
   return (patient.metadata as { language?: unknown }).language === 'en' ? 'en' : 'es'
 }
@@ -144,6 +156,20 @@ export async function processFollowUpJob(job: Job): Promise<void> {
         console.log(`[follow-up] no_response already sent for conversation ${data.conversationId}`)
         return
       }
+    }
+
+    // Outbound anti-spam cap (Req 19): refuse to add yet another proactive message
+    // once this patient has already received the per-day maximum, regardless of type.
+    const recentSends = await followUps.countSentToPatientSince(
+      data.clinicId,
+      data.patientId,
+      ANTI_SPAM_WINDOW_HOURS,
+    )
+    if (recentSends >= maxProactivePerPatient()) {
+      console.log(
+        `[follow-up] patient ${data.patientId} hit the proactive cap (${recentSends} in ${ANTI_SPAM_WINDOW_HOURS}h); skipping ${data.type}`,
+      )
+      return
     }
 
     const account = activeWhatsAppAccount(await channelAccounts.listByClinic(data.clinicId))

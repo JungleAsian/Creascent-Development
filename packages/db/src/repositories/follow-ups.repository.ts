@@ -24,6 +24,12 @@ export interface FollowUpsRepository {
    * carries its conversation id in metadata (no appointment to key on).
    */
   existsRecentByConversation(clinicId: string, conversationId: string, type: string, withinHours: number): Promise<boolean>
+  /**
+   * How many PROACTIVE messages were actually sent to this patient within the last
+   * `withinHours` (any follow-up type)? Feeds the outbound anti-spam cap (Req 19 Meta
+   * Compliance) — only delivered rows count (status sent/clicked, keyed on review_sent_at).
+   */
+  countSentToPatientSince(clinicId: string, patientId: string, withinHours: number): Promise<number>
   markSent(clinicId: string, id: string): Promise<void>
   /** Stamp the click and flip status → 'clicked'. Returns the row (or null if unknown). */
   markClicked(id: string): Promise<FollowUp | null>
@@ -74,6 +80,17 @@ export function createFollowUpsRepository(sql: Sql): FollowUpsRepository {
         ) AS exists
       `
       return rows[0]?.exists ?? false
+    },
+
+    async countSentToPatientSince(clinicId, patientId, withinHours) {
+      const rows = await sql<[{ count: number }]>`
+        SELECT COUNT(*)::int AS count FROM follow_ups
+        WHERE clinic_id = ${clinicId}
+          AND patient_id = ${patientId}
+          AND status IN ('sent', 'clicked')
+          AND review_sent_at > NOW() - ${`${withinHours} hours`}::interval
+      `
+      return Number(rows[0]?.count ?? 0)
     },
 
     async markSent(clinicId, id) {
