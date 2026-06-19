@@ -52,3 +52,22 @@ export {
   type CustomFlowAction,
   type CustomFlowLanguage,
 } from './custom-flows.js'
+
+export {
+  startFlow,
+  advanceFlow,
+  toFlowDef,
+  type FlowDef,
+  type FlowStep,
+  type FlowBranch,
+  type FlowBranchOp,
+  type FlowState,
+  type FlowRunResult,
+} from './flow-engine.js'
+
+export {
+  FLOW_TEMPLATES,
+  findFlowTemplate,
+  type FlowTemplate,
+  type FlowTemplateKey,
+} from './flow-templates.js'

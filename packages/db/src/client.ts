@@ -12,7 +12,7 @@ export type TxSql = postgres.TransactionSql
  * this helper contains the single `as any` escape hatch needed across all repositories.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const toJson = (obj: Record<string, unknown>): any => obj
+export const toJson = (obj: Record<string, unknown> | readonly unknown[]): any => obj
 
 /**
  * Returns a postgres.js client for clinic-scoped (RLS-enforced) operations.

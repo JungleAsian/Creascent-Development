@@ -65,6 +65,9 @@ export type {
   CustomFlow,
   CustomFlowAction,
   CustomFlowLanguage,
+  CustomFlowBranchOp,
+  CustomFlowBranch,
+  CustomFlowStep,
   FollowUp,
   FollowUpStatus,
 } from './types/index.js'

@@ -1,12 +1,16 @@
-// P18 (Gap #34): Custom flow management. Keyword-triggered scripted conversation
-// flows that bypass intent classification / the LLM. Managed in IA Studio.
-//   GET    /clinics/:id/custom-flows            (any authenticated user, own clinic)
-//   POST   /clinics/:id/custom-flows            (clinic_admin, ia_studio_admin)
-//   PATCH  /clinics/:id/custom-flows/:flowId    (clinic_admin, ia_studio_admin)
-//   DELETE /clinics/:id/custom-flows/:flowId    (clinic_admin, ia_studio_admin)
+// P18 (Gap #34) / Rev1 #28: Custom flow management. Keyword-triggered scripted
+// conversation flows that bypass intent classification / the LLM. Single-shot OR
+// multi-step / conditional (executed by the flow engine). Managed in IA Studio.
+//   GET    /clinics/:id/custom-flows              (any authenticated user, own clinic)
+//   GET    /clinics/:id/custom-flows/templates    (any authenticated user, own clinic)
+//   POST   /clinics/:id/custom-flows              (clinic_admin, ia_studio_admin)
+//   PATCH  /clinics/:id/custom-flows/:flowId      (clinic_admin, ia_studio_admin)
+//   DELETE /clinics/:id/custom-flows/:flowId      (clinic_admin, ia_studio_admin)
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { createCustomFlowsRepository } from '@docmee/db'
+import type { CustomFlowStep } from '@docmee/db'
+import { FLOW_TEMPLATES } from '@docmee/agents'
 import { withDb } from '../lib/db.js'
 import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
@@ -15,14 +19,38 @@ import { requireAuth, requireRole } from '../middleware/auth.js'
 const actionSchema = z.enum(['book', 'handoff', 'end'])
 const languageSchema = z.enum(['es', 'en', 'both'])
 
-const createSchema = z.object({
-  name: z.string().min(1),
-  triggerKeywords: z.array(z.string().min(1)).min(1),
-  messages: z.array(z.string().min(1)).min(1),
-  action: actionSchema.nullable().optional(),
-  language: languageSchema.optional(),
-  enabled: z.boolean().optional(),
+const branchSchema = z.object({
+  op: z.enum(['contains', 'equals', 'yes', 'no', 'any']),
+  keywords: z.array(z.string().min(1)).optional(),
+  next: z.string().min(1),
 })
+
+const stepSchema = z.object({
+  id: z.string().min(1),
+  messages: z.array(z.string().min(1)),
+  branches: z.array(branchSchema).optional(),
+  collect: z.string().min(1).nullable().optional(),
+  next: z.string().min(1).nullable().optional(),
+  action: actionSchema.nullable().optional(),
+})
+
+// A flow needs SOMETHING to say: either a single-shot `messages` list or a step
+// graph. The matcher always needs trigger keywords.
+const createSchema = z
+  .object({
+    name: z.string().min(1),
+    triggerKeywords: z.array(z.string().min(1)).min(1),
+    messages: z.array(z.string().min(1)).optional(),
+    action: actionSchema.nullable().optional(),
+    language: languageSchema.optional(),
+    enabled: z.boolean().optional(),
+    steps: z.array(stepSchema).optional(),
+    startStepId: z.string().min(1).nullable().optional(),
+  })
+  .refine((d) => (d.messages?.length ?? 0) > 0 || (d.steps?.length ?? 0) > 0, {
+    message: 'Provide either messages or steps',
+    path: ['messages'],
+  })
 
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
@@ -31,6 +59,8 @@ const patchSchema = z.object({
   action: actionSchema.nullable().optional(),
   language: languageSchema.optional(),
   enabled: z.boolean().optional(),
+  steps: z.array(stepSchema).optional(),
+  startStepId: z.string().min(1).nullable().optional(),
 })
 
 const customFlowsRoute: FastifyPluginAsync = async (app) => {
@@ -41,6 +71,14 @@ const customFlowsRoute: FastifyPluginAsync = async (app) => {
     if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
     const flows = await withDb(async (sql) => createCustomFlowsRepository(sql).listByClinic(clinicId))
     return { flows }
+  })
+
+  // Prebuilt flows (schedule / reschedule / price / surgery / review) the admin
+  // can instantiate into a real, editable flow in one click.
+  app.get<{ Params: { id: string } }>('/clinics/:id/custom-flows/templates', async (request, reply) => {
+    const clinicId = resolveClinicScope(request, request.params.id)
+    if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+    return { templates: FLOW_TEMPLATES }
   })
 
   app.post<{ Params: { id: string } }>(
@@ -56,10 +94,12 @@ const customFlowsRoute: FastifyPluginAsync = async (app) => {
           clinicId,
           name: parsed.data.name,
           triggerKeywords: parsed.data.triggerKeywords,
-          messages: parsed.data.messages,
+          messages: parsed.data.messages ?? [],
           action: parsed.data.action ?? null,
           language: parsed.data.language ?? 'both',
           enabled: parsed.data.enabled ?? true,
+          steps: (parsed.data.steps ?? []) as CustomFlowStep[],
+          startStepId: parsed.data.startStepId ?? null,
         }),
       )
       return reply.code(201).send({ flow })

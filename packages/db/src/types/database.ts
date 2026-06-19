@@ -510,6 +510,25 @@ export interface DevSeedRun {
 
 export type CustomFlowAction   = 'book' | 'handoff' | 'end'
 export type CustomFlowLanguage = 'es' | 'en' | 'both'
+export type CustomFlowBranchOp = 'contains' | 'equals' | 'yes' | 'no' | 'any'
+
+/** A conditional transition out of a waiting flow step. */
+export interface CustomFlowBranch {
+  op: CustomFlowBranchOp
+  keywords?: string[]
+  /** Target step id, or a terminal token: 'book' | 'handoff' | 'end'. */
+  next: string
+}
+
+/** One node of a multi-step custom flow (Rev1 #28). */
+export interface CustomFlowStep {
+  id: string
+  messages: string[]
+  branches?: CustomFlowBranch[]
+  collect?: string | null
+  next?: string | null
+  action?: CustomFlowAction | null
+}
 
 /** A keyword-triggered scripted conversation flow that bypasses intent/LLM. */
 export interface CustomFlow {
@@ -521,6 +540,10 @@ export interface CustomFlow {
   action: CustomFlowAction | null
   language: CustomFlowLanguage
   enabled: boolean
+  // Rev1 #28 — step graph for multi-step / conditional flows. Empty for legacy
+  // single-shot flows (which run from `messages`/`action`).
+  steps: CustomFlowStep[]
+  startStepId: string | null
   createdAt: string
   updatedAt: string
 }

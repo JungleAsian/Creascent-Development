@@ -280,6 +280,22 @@ export interface Doctor {
 
 export type CustomFlowAction = 'book' | 'handoff' | 'end'
 export type CustomFlowLanguage = 'es' | 'en' | 'both'
+export type CustomFlowBranchOp = 'contains' | 'equals' | 'yes' | 'no' | 'any'
+
+export interface CustomFlowBranch {
+  op: CustomFlowBranchOp
+  keywords?: string[]
+  next: string
+}
+
+export interface CustomFlowStep {
+  id: string
+  messages: string[]
+  branches?: CustomFlowBranch[]
+  collect?: string | null
+  next?: string | null
+  action?: CustomFlowAction | null
+}
 
 export interface CustomFlow {
   id: string
@@ -290,8 +306,21 @@ export interface CustomFlow {
   action: CustomFlowAction | null
   language: CustomFlowLanguage
   enabled: boolean
+  steps: CustomFlowStep[]
+  startStepId: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** A prebuilt flow served by GET /clinics/:id/custom-flows/templates. */
+export interface FlowTemplate {
+  key: string
+  name: string
+  triggerKeywords: string[]
+  language: CustomFlowLanguage
+  startStepId: string
+  steps: CustomFlowStep[]
+  action?: CustomFlowAction | null
 }
 
 // ── Notifications (Req 24) ─────────────────────────────────────────────────────

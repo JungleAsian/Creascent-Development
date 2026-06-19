@@ -65,10 +65,13 @@ export type {
   FeatureFlag,
   DevSeedRun,
   SeedRunStatus,
-  // Custom flows (P18)
+  // Custom flows (P18 / Rev1 #28)
   CustomFlow,
   CustomFlowAction,
   CustomFlowLanguage,
+  CustomFlowBranchOp,
+  CustomFlowBranch,
+  CustomFlowStep,
   // Follow-ups (P18)
   FollowUp,
   FollowUpStatus,

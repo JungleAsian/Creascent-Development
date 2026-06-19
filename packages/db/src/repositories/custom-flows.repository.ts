@@ -1,7 +1,13 @@
 // P18 (Gap #34): Custom conversation flows — keyword-triggered scripted replies
 // that bypass intent classification / the LLM. Managed in IA Studio.
 import type { Sql } from '../client.js'
-import type { CustomFlow, CustomFlowAction, CustomFlowLanguage } from '../types/index.js'
+import { toJson } from '../client.js'
+import type {
+  CustomFlow,
+  CustomFlowAction,
+  CustomFlowLanguage,
+  CustomFlowStep,
+} from '../types/index.js'
 
 export interface CreateCustomFlowInput {
   clinicId: string
@@ -11,6 +17,8 @@ export interface CreateCustomFlowInput {
   action?: CustomFlowAction | null
   language?: CustomFlowLanguage
   enabled?: boolean
+  steps?: CustomFlowStep[]
+  startStepId?: string | null
 }
 
 export interface UpdateCustomFlowInput {
@@ -20,6 +28,8 @@ export interface UpdateCustomFlowInput {
   action?: CustomFlowAction | null
   language?: CustomFlowLanguage
   enabled?: boolean
+  steps?: CustomFlowStep[]
+  startStepId?: string | null
 }
 
 export interface CustomFlowsRepository {
@@ -55,15 +65,17 @@ export function createCustomFlowsRepository(sql: Sql): CustomFlowsRepository {
 
     async create(data) {
       const rows = await sql<CustomFlow[]>`
-        INSERT INTO custom_flows (clinic_id, name, trigger_keywords, messages, action, language, enabled)
+        INSERT INTO custom_flows (clinic_id, name, trigger_keywords, messages, action, language, enabled, steps, start_step_id)
         VALUES (
           ${data.clinicId},
           ${data.name},
           ${sql.json(data.triggerKeywords)},
           ${sql.json(data.messages)},
-          ${data.action   ?? null},
-          ${data.language  ?? 'both'},
-          ${data.enabled   ?? true}
+          ${data.action     ?? null},
+          ${data.language    ?? 'both'},
+          ${data.enabled     ?? true},
+          ${sql.json(toJson(data.steps ?? []))},
+          ${data.startStepId ?? null}
         )
         RETURNING *
       `
@@ -78,7 +90,9 @@ export function createCustomFlowsRepository(sql: Sql): CustomFlowsRepository {
           messages         = CASE WHEN ${data.messages !== undefined} THEN ${sql.json(data.messages ?? [])} ELSE messages END,
           action           = CASE WHEN ${data.action !== undefined} THEN ${data.action ?? null} ELSE action END,
           language         = COALESCE(${data.language ?? null}, language),
-          enabled          = COALESCE(${data.enabled  ?? null}, enabled)
+          enabled          = COALESCE(${data.enabled  ?? null}, enabled),
+          steps            = CASE WHEN ${data.steps !== undefined} THEN ${sql.json(toJson(data.steps ?? []))} ELSE steps END,
+          start_step_id    = CASE WHEN ${data.startStepId !== undefined} THEN ${data.startStepId ?? null} ELSE start_step_id END
         WHERE clinic_id = ${clinicId} AND id = ${id}
         RETURNING *
       `

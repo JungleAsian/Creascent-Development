@@ -12,6 +12,9 @@ import {
   isInsideBusinessHours,
   detectLanguage,
   matchCustomFlow,
+  startFlow,
+  advanceFlow,
+  toFlowDef,
   isBotPaused,
   detectHumanRequest,
   isEmergencyMessage,
@@ -26,6 +29,7 @@ import {
   type BusinessHours,
   type ClinicBotConfig,
   type Language,
+  type FlowState,
 } from '@docmee/agents'
 import { sendWhatsAppText, sendMessengerText, sendInstagramText } from '@docmee/channels'
 import { schedulingQueue, notificationQueue, type Job } from '@docmee/queue'
@@ -43,6 +47,7 @@ import {
   type Clinic,
   type Patient,
   type ChannelAccount,
+  type Conversation,
 } from '@docmee/db'
 
 const AgentJobSchema = z.object({
@@ -204,17 +209,64 @@ function outsideHoursMessage(language: Language): string {
     : 'We are outside business hours. Please leave your name and reason for your inquiry and we will contact you tomorrow.'
 }
 
+// Metadata key holding the in-progress flow cursor between turns (Rev1 #28).
+const FLOW_STATE = 'customFlowState'
+
+/** Read a persisted flow cursor off a conversation's metadata, validating shape. */
+function readFlowState(metadata: Record<string, unknown> | undefined): FlowState | null {
+  const raw = metadata?.[FLOW_STATE]
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Record<string, unknown>
+  if (typeof s.flowId !== 'string' || typeof s.stepId !== 'string') return null
+  const variables =
+    s.variables && typeof s.variables === 'object'
+      ? (s.variables as Record<string, string>)
+      : {}
+  return { flowId: s.flowId, stepId: s.stepId, variables }
+}
+
 /**
- * P18 (Gap #34): if an enabled custom flow's trigger matches, run its scripted
- * messages + optional terminal action and return true (caller skips the LLM).
+ * P18 (Gap #34) / Rev1 #28: drive the custom-flow EXECUTION ENGINE.
+ *
+ * Two entry points, in priority order:
+ *  1. RESUME — if the conversation is mid-flow (a cursor is persisted in its
+ *     metadata), advance that flow with this message: collect/branch/auto-advance,
+ *     send the step's messages, persist the new cursor (or clear it when the flow
+ *     ends) and fire any terminal action. A reply that routes nowhere clears the
+ *     cursor and falls through to normal processing.
+ *  2. START — otherwise, if an enabled flow's trigger keyword matches, start that
+ *     flow from its first step.
+ *
+ * Returns true when the flow handled the turn (caller skips the LLM).
  */
 async function runMatchingCustomFlow(
   sql: Sql,
   data: AgentJobData,
   patient: Patient | null,
+  conversation: Conversation | null,
   sendReply: (text: string) => Promise<void>,
 ): Promise<boolean> {
-  const flows = await createCustomFlowsRepository(sql).listEnabled(data.clinicId)
+  const flowsRepo = createCustomFlowsRepository(sql)
+
+  // 1. Resume an in-progress flow.
+  const activeState = conversation ? readFlowState(conversation.metadata) : null
+  if (activeState && conversation) {
+    const flowRow = await flowsRepo.findById(data.clinicId, activeState.flowId)
+    const result =
+      flowRow && flowRow.enabled
+        ? advanceFlow(toFlowDef(flowRow), activeState, data.message)
+        : null
+    if (result) {
+      await emitFlowResult(sql, data, conversation, activeState.flowId, sendReply, result)
+      return true
+    }
+    // Flow gone/disabled, or the reply routed nowhere: clear the stale cursor and
+    // let the trigger match below (or the LLM) handle this turn.
+    await clearFlowState(sql, data, conversation)
+  }
+
+  // 2. Start a new flow on a trigger match.
+  const flows = await flowsRepo.listEnabled(data.clinicId)
   if (flows.length === 0) return false
 
   const language = data.isNewPatient ? detectLanguage(data.message) : getPatientLanguage(patient)
@@ -231,24 +283,50 @@ async function runMatchingCustomFlow(
   )
   if (!matched) return false
 
-  for (const text of matched.messages) await sendReply(text)
+  const flowRow = flows.find((f) => f.id === matched.id)!
+  const result = startFlow(toFlowDef(flowRow))
+  await emitFlowResult(sql, data, conversation, matched.id, sendReply, result)
+  return true
+}
 
-  if (data.conversationId) {
-    const conversations = createConversationsRepository(sql)
-    const existing = await conversations.findById(data.clinicId, data.conversationId)
-    if (existing) {
-      await conversations.update(data.clinicId, data.conversationId, {
-        metadata: { ...existing.metadata, lastIntent: 'custom_flow', customFlowId: matched.id },
-      })
+/** Send a flow run's messages, persist/clear its cursor, and fire its action. */
+async function emitFlowResult(
+  sql: Sql,
+  data: AgentJobData,
+  conversation: Conversation | null,
+  flowId: string,
+  sendReply: (text: string) => Promise<void>,
+  result: { messages: string[]; variables: Record<string, string>; nextStepId: string | null; awaitingInput: boolean; action: 'book' | 'handoff' | 'end' | null },
+): Promise<void> {
+  for (const text of result.messages) await sendReply(text)
+
+  if (data.conversationId && conversation) {
+    const metadata: Record<string, unknown> = {
+      ...conversation.metadata,
+      lastIntent: 'custom_flow',
+      customFlowId: flowId,
     }
+    if (result.awaitingInput && result.nextStepId) {
+      metadata[FLOW_STATE] = { flowId, stepId: result.nextStepId, variables: result.variables }
+    } else {
+      delete metadata[FLOW_STATE]
+    }
+    await createConversationsRepository(sql).update(data.clinicId, data.conversationId, { metadata })
   }
 
-  if (matched.action === 'book') {
+  if (result.action === 'book') {
     await schedulingQueue.add('schedule', { ...data, action: 'book' })
-  } else if (matched.action === 'handoff') {
+  } else if (result.action === 'handoff') {
     await notificationQueue.add('notify', { ...data, reason: 'human_handoff' })
   }
-  return true
+}
+
+/** Remove a stale flow cursor so normal processing resumes on this turn. */
+async function clearFlowState(sql: Sql, data: AgentJobData, conversation: Conversation): Promise<void> {
+  if (!data.conversationId) return
+  const metadata = { ...conversation.metadata }
+  delete metadata[FLOW_STATE]
+  await createConversationsRepository(sql).update(data.clinicId, data.conversationId, { metadata })
 }
 
 /**
@@ -456,7 +534,7 @@ export async function processAgentJob(job: Job): Promise<void> {
     // P18 (Gap #34): custom flows run BEFORE intent classification. A keyword match
     // runs the clinic's scripted message sequence (and optional terminal action)
     // and skips the LLM entirely.
-    if (sendReply && (await runMatchingCustomFlow(sql, data, patient, sendReply))) {
+    if (sendReply && (await runMatchingCustomFlow(sql, data, patient, conversation, sendReply))) {
       return
     }
 
