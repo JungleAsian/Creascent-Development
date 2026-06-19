@@ -26,6 +26,7 @@ import {
   createPatientsRepository,
   createChannelAccountsRepository,
   createAppointmentsRepository,
+  createConversationsRepository,
   createFollowUpsRepository,
   createMessagesRepository,
   createMessageTemplatesRepository,
@@ -85,6 +86,54 @@ function formatWhen(appointment: Appointment | null, language: Language): Follow
     return { when }
   } catch {
     return {}
+  }
+}
+
+/**
+ * Unified Inbox (Req 4/14): persist a delivered proactive follow-up as an
+ * `assistant` row on the patient's WhatsApp thread so a secretary actually SEES
+ * the message the bot sent — otherwise an automated confirmation/reminder is
+ * invisible in the panel and staff risk contacting a patient the bot already
+ * reached. Threads onto the conversation the producer attached (no_response) or
+ * the patient's open WhatsApp thread, opening one if none is active (so a later
+ * reply threads back onto it, exactly like an inbound message would). The wamid
+ * is stored as channel_message_id so the Req 3 delivery indicator tracks it.
+ * Best-effort: a storage failure is logged and never undoes the send.
+ */
+async function threadFollowUpIntoInbox(
+  sql: ReturnType<typeof createServiceDbClient>,
+  clinicId: string,
+  patientId: string,
+  handle: string,
+  text: string,
+  wamid: string | null,
+  type: string,
+  conversationId?: string,
+): Promise<void> {
+  try {
+    const conversations = createConversationsRepository(sql)
+    const existing =
+      (conversationId ? await conversations.findById(clinicId, conversationId) : null) ??
+      (await conversations.findOpenByContact(clinicId, 'whatsapp', handle))
+    const conversation =
+      existing ??
+      (await conversations.create({
+        clinicId,
+        patientId,
+        channel: 'whatsapp',
+        channelContactHandle: handle,
+      }))
+
+    await createMessagesRepository(sql).create({
+      conversationId: conversation.id,
+      clinicId,
+      role: 'assistant',
+      content: text,
+      ...(wamid ? { channelMessageId: wamid } : {}),
+      metadata: { channel: 'whatsapp', followUpType: type },
+    })
+  } catch (err) {
+    console.error('[follow-up] failed to persist outbound message to inbox:', err)
   }
 }
 
@@ -220,8 +269,20 @@ export async function processFollowUpJob(job: Job): Promise<void> {
       return
     }
 
-    await sendWhatsAppText(account.accountId, account.accessTokenEnc ?? '', handle, text)
+    const wamid = await sendWhatsAppText(account.accountId, account.accessTokenEnc ?? '', handle, text)
     await followUps.markSent(data.clinicId, followUp.id)
+
+    // Surface the delivered follow-up in the secretary's inbox thread (Req 4/14).
+    await threadFollowUpIntoInbox(
+      sql,
+      data.clinicId,
+      data.patientId,
+      handle,
+      text,
+      wamid,
+      data.type,
+      data.conversationId,
+    )
   } finally {
     await sql.end()
   }

@@ -14,6 +14,10 @@ const h = vi.hoisted(() => ({
   countSentToPatientSince: vi.fn(),
   findLastInboundAt: vi.fn(),
   findApprovedByCategory: vi.fn(),
+  convFindById: vi.fn(),
+  convFindOpenByContact: vi.fn(),
+  convCreate: vi.fn(),
+  msgCreate: vi.fn(),
   end: vi.fn(),
 }))
 
@@ -35,7 +39,12 @@ vi.mock('@docmee/db', () => ({
     existsRecentByConversation: h.existsRecentByConversation,
     countSentToPatientSince: h.countSentToPatientSince,
   }),
-  createMessagesRepository: () => ({ findLastInboundAt: h.findLastInboundAt }),
+  createMessagesRepository: () => ({ findLastInboundAt: h.findLastInboundAt, create: h.msgCreate }),
+  createConversationsRepository: () => ({
+    findById: h.convFindById,
+    findOpenByContact: h.convFindOpenByContact,
+    create: h.convCreate,
+  }),
   createMessageTemplatesRepository: () => ({ findApprovedByCategory: h.findApprovedByCategory }),
 }))
 
@@ -67,6 +76,12 @@ beforeEach(() => {
   // Within the 24h customer-care window by default (a recent inbound message).
   h.findLastInboundAt.mockResolvedValue(new Date().toISOString())
   h.findApprovedByCategory.mockResolvedValue(null)
+  // The send returns the WhatsApp message id; persist it onto the inbox thread.
+  h.sendWhatsAppText.mockResolvedValue('wamid.HBgL')
+  h.convFindById.mockResolvedValue(null)
+  h.convFindOpenByContact.mockResolvedValue({ id: CONVO })
+  h.convCreate.mockResolvedValue({ id: 'new-convo' })
+  h.msgCreate.mockResolvedValue({ id: 'msg-1' })
 })
 
 describe('processFollowUpJob', () => {
@@ -79,6 +94,55 @@ describe('processFollowUpJob', () => {
     expect(text).toContain('cita') // Spanish default copy
     expect(h.createIfAbsent).toHaveBeenCalledTimes(1)
     expect(h.markSent).toHaveBeenCalledWith(CLINIC, 'fu-1')
+  })
+
+  describe('inbox visibility (Req 4/14)', () => {
+    it('persists the sent follow-up onto the patient open WhatsApp thread', async () => {
+      await processFollowUpJob(makeJob(base))
+      expect(h.convFindOpenByContact).toHaveBeenCalledWith(CLINIC, 'whatsapp', '50299998889')
+      expect(h.msgCreate).toHaveBeenCalledTimes(1)
+      const row = h.msgCreate.mock.calls[0][0]
+      expect(row.conversationId).toBe(CONVO)
+      expect(row.role).toBe('assistant')
+      expect(row.channelMessageId).toBe('wamid.HBgL') // wamid → Req 3 delivery indicator
+      expect(row.metadata).toMatchObject({ channel: 'whatsapp', followUpType: FOLLOW_UP_TYPES.CONFIRMATION })
+      expect(row.content).toContain('cita')
+    })
+
+    it('opens a new conversation when the patient has no open thread', async () => {
+      h.convFindOpenByContact.mockResolvedValue(null)
+      await processFollowUpJob(makeJob(base))
+      expect(h.convCreate).toHaveBeenCalledWith({
+        clinicId: CLINIC,
+        patientId: PATIENT,
+        channel: 'whatsapp',
+        channelContactHandle: '50299998889',
+      })
+      expect(h.msgCreate.mock.calls[0][0].conversationId).toBe('new-convo')
+    })
+
+    it('threads a no_response nudge onto the conversation it belongs to', async () => {
+      h.convFindById.mockResolvedValue({ id: CONVO })
+      await processFollowUpJob(
+        makeJob({
+          clinicId: CLINIC,
+          patientId: PATIENT,
+          type: FOLLOW_UP_TYPES.NO_RESPONSE,
+          conversationId: CONVO,
+          silentSinceIso: new Date(Date.now() + 1000).toISOString(),
+        }),
+      )
+      expect(h.convFindById).toHaveBeenCalledWith(CLINIC, CONVO)
+      expect(h.convFindOpenByContact).not.toHaveBeenCalled()
+      expect(h.msgCreate.mock.calls[0][0].conversationId).toBe(CONVO)
+    })
+
+    it('does not break the send when inbox persistence fails', async () => {
+      h.msgCreate.mockRejectedValue(new Error('db down'))
+      await processFollowUpJob(makeJob(base))
+      expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+      expect(h.markSent).toHaveBeenCalledWith(CLINIC, 'fu-1')
+    })
   })
 
   it('uses the English copy when the patient language is en', async () => {
