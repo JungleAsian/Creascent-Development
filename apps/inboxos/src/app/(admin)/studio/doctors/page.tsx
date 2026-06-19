@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { useI18n } from '@/shared/hooks/useI18n'
-import type { Doctor, DoctorAvailability, Weekday } from '@/shared/types'
+import type { Doctor, DoctorAvailability, Service, Weekday } from '@/shared/types'
 
 const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
@@ -38,6 +38,8 @@ export default function DoctorsPage() {
         <p className="text-sm text-gray-400">{t('studio.doctors.selectClinic')}</p>
       ) : (
         <>
+          <ClinicServicesPanel clinicId={clinicId} />
+
           <NewDoctorForm clinicId={clinicId} />
 
           {query.isLoading ? (
@@ -71,6 +73,7 @@ function DoctorRow({ clinicId, doctor }: { clinicId: string; doctor: Doctor }) {
   const { t } = useI18n()
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
+  const [showServices, setShowServices] = useState(false)
 
   const deleteMutation = useMutation({
     mutationFn: () => api.del(`/clinics/${clinicId}/doctors/${doctor.id}`),
@@ -86,49 +89,206 @@ function DoctorRow({ clinicId, doctor }: { clinicId: string; doctor: Doctor }) {
   }
 
   return (
-    <li className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="min-w-0">
-        <p className="font-medium">
-          {doctor.name}
-          {!doctor.isActive && (
-            <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-              {t('studio.doctors.inactive')}
+    <li className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium">
+            {doctor.name}
+            {!doctor.isActive && (
+              <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                {t('studio.doctors.inactive')}
+              </span>
+            )}
+          </p>
+          {doctor.specialty && <p className="text-xs text-gray-500">{doctor.specialty}</p>}
+          <p className="mt-1 text-xs text-gray-500">
+            {t('studio.doctors.hours')}: {hoursSummary(doctor.availableDays, t)}
+          </p>
+          <p className="mt-1 text-xs">
+            <span
+              className={
+                doctor.calendarConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'
+              }
+            >
+              {doctor.calendarConnected ? t('studio.doctors.connected') : t('studio.doctors.notConnected')}
             </span>
-          )}
-        </p>
-        {doctor.specialty && <p className="text-xs text-gray-500">{doctor.specialty}</p>}
-        <p className="mt-1 text-xs text-gray-500">
-          {t('studio.doctors.hours')}: {hoursSummary(doctor.availableDays, t)}
-        </p>
-        <p className="mt-1 text-xs">
-          <span
-            className={
-              doctor.calendarConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'
-            }
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setShowServices((s) => !s)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
           >
-            {doctor.calendarConnected ? t('studio.doctors.connected') : t('studio.doctors.notConnected')}
-          </span>
-        </p>
+            {t('studio.doctors.manageServices')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            {t('common.edit')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm(t('studio.doctors.deleteConfirm'))) deleteMutation.mutate()
+            }}
+            className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+          >
+            {t('common.delete')}
+          </button>
+        </div>
       </div>
-      <div className="flex shrink-0 flex-col gap-1">
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-        >
-          {t('common.edit')}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (confirm(t('studio.doctors.deleteConfirm'))) deleteMutation.mutate()
-          }}
-          className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-        >
-          {t('common.delete')}
-        </button>
-      </div>
+
+      {showServices && <DoctorServicesEditor clinicId={clinicId} doctorId={doctor.id} />}
     </li>
+  )
+}
+
+/**
+ * Per-doctor service assignment. Lists every clinic service as a checkbox; the
+ * doctor's currently-assigned services are checked. Toggling assigns (POST) or
+ * unassigns (DELETE) against /clinics/:id/doctors/:doctorId/services.
+ */
+function DoctorServicesEditor({ clinicId, doctorId }: { clinicId: string; doctorId: string }) {
+  const { t } = useI18n()
+  const qc = useQueryClient()
+
+  const clinicServices = useQuery({
+    queryKey: ['services', clinicId],
+    queryFn: () => api.get<{ services: Service[] }>(`/clinics/${clinicId}/services`),
+  })
+  const assignedKey = ['doctor-services', clinicId, doctorId]
+  const assigned = useQuery({
+    queryKey: assignedKey,
+    queryFn: () =>
+      api.get<{ services: Service[] }>(`/clinics/${clinicId}/doctors/${doctorId}/services`),
+  })
+
+  const toggle = useMutation({
+    mutationFn: ({ serviceId, on }: { serviceId: string; on: boolean }) =>
+      on
+        ? api.post(`/clinics/${clinicId}/doctors/${doctorId}/services`, { serviceId })
+        : api.del(`/clinics/${clinicId}/doctors/${doctorId}/services/${serviceId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: assignedKey }),
+  })
+
+  const services = clinicServices.data?.services ?? []
+  const assignedIds = new Set((assigned.data?.services ?? []).map((s) => s.id))
+
+  return (
+    <div className="mt-3 rounded-md border border-gray-200 p-3 dark:border-gray-700">
+      <p className="text-xs font-medium text-gray-500">{t('studio.doctors.services')}</p>
+      <p className="mt-0.5 text-xs text-gray-400">{t('studio.doctors.servicesHint')}</p>
+      {clinicServices.isLoading || assigned.isLoading ? (
+        <p className="mt-2 text-xs text-gray-400">{t('common.loading')}</p>
+      ) : services.length === 0 ? (
+        <p className="mt-2 text-xs text-gray-400">{t('studio.doctors.noClinicServices')}</p>
+      ) : (
+        <div className="mt-2 space-y-1">
+          {services.map((s) => (
+            <label key={s.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={assignedIds.has(s.id)}
+                disabled={toggle.isPending}
+                onChange={(e) => toggle.mutate({ serviceId: s.id, on: e.target.checked })}
+              />
+              <span>{s.name}</span>
+              <span className="text-xs text-gray-400">
+                {s.durationMinutes} {t('studio.services.minutes')}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Clinic-wide service catalogue: list existing services and add new ones. */
+function ClinicServicesPanel({ clinicId }: { clinicId: string }) {
+  const { t } = useI18n()
+  const qc = useQueryClient()
+  const [name, setName] = useState('')
+  const [duration, setDuration] = useState('30')
+
+  const query = useQuery({
+    queryKey: ['services', clinicId],
+    queryFn: () => api.get<{ services: Service[] }>(`/clinics/${clinicId}/services`),
+  })
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post(`/clinics/${clinicId}/services`, {
+        name: name.trim(),
+        durationMinutes: Number(duration) || undefined,
+      }),
+    onSuccess: () => {
+      setName('')
+      setDuration('30')
+      qc.invalidateQueries({ queryKey: ['services', clinicId] })
+    },
+  })
+
+  const services = query.data?.services ?? []
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (name.trim()) mutation.mutate()
+  }
+
+  return (
+    <section className="mb-6 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+      <h2 className="text-sm font-semibold">{t('studio.services.title')}</h2>
+      <p className="mt-0.5 text-xs text-gray-400">{t('studio.services.hint')}</p>
+
+      <form onSubmit={onSubmit} className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('studio.services.name')}
+          className={`${field} max-w-xs`}
+        />
+        <input
+          type="number"
+          min={1}
+          max={480}
+          value={duration}
+          onChange={(e) => setDuration(e.target.value)}
+          placeholder={t('studio.services.duration')}
+          className="w-32 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+        />
+        <button
+          type="submit"
+          disabled={mutation.isPending || !name.trim()}
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+        >
+          {t('studio.services.add')}
+        </button>
+      </form>
+
+      {query.isLoading ? (
+        <p className="mt-3 text-xs text-gray-400">{t('common.loading')}</p>
+      ) : services.length === 0 ? (
+        <p className="mt-3 text-xs text-gray-400">{t('studio.services.empty')}</p>
+      ) : (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {services.map((s) => (
+            <li
+              key={s.id}
+              className="rounded-full border border-gray-200 px-2.5 py-1 text-xs dark:border-gray-700"
+            >
+              {s.name}
+              <span className="ml-1 text-gray-400">
+                · {s.durationMinutes} {t('studio.services.minutes')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 

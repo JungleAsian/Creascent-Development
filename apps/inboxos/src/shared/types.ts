@@ -353,6 +353,20 @@ export interface Doctor {
   updatedAt: string
 }
 
+/** Req 30: a clinic service the bot can book (its duration sets the slot length). */
+export interface Service {
+  id: string
+  clinicId: string
+  name: string
+  description: string | null
+  durationMinutes: number
+  price: string | null
+  currency: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export type CustomFlowAction = 'book' | 'handoff' | 'end'
 export type CustomFlowLanguage = 'es' | 'en' | 'both'
 export type CustomFlowBranchOp = 'contains' | 'equals' | 'yes' | 'no' | 'any'
