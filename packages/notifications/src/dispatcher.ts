@@ -2,6 +2,11 @@ import { NOTIFICATION_PRIORITY, type NotificationType, type NotificationPriority
 import { buildNotificationEmail } from './templates.js'
 import { routeNotification } from './routing.js'
 import { sendEmail as defaultSendEmail, type SendEmailFn } from './channels/email.channel.js'
+import {
+  sendWebPush as defaultSendWebPush,
+  type WebPushSubscription,
+  type VapidKeys,
+} from './channels/web-push.channel.js'
 
 export interface DispatchNotificationParams {
   clinicId: string
@@ -39,10 +44,59 @@ export interface NotificationStore {
   updateStatus(id: string, status: 'sent' | 'failed', error?: string | null): Promise<void>
 }
 
+/**
+ * Optional Web Push fan-out (Req 39 — installed-PWA mobile alerts). When the
+ * worker supplies the recipient's device subscriptions + the VAPID keypair, the
+ * dispatcher pushes a compact payload to every device so a secretary is alerted
+ * on their phone even with the panel closed. Independent of email-vs-panel
+ * routing and entirely best-effort: a push failure never affects the alert.
+ */
+export interface PushDispatch {
+  subscriptions: WebPushSubscription[]
+  vapid: VapidKeys
+  /** Defaults to the node:crypto-backed sendWebPush; overridable for tests. */
+  send?: typeof defaultSendWebPush
+  /** Called with an endpoint the push service reported gone (404/410) to prune it. */
+  onExpired?: (endpoint: string) => Promise<void> | void
+}
+
 export interface DispatchNotificationDeps {
   store: NotificationStore
   /** Defaults to the resend-backed sendEmail; overridable for tests. */
   sendEmail?: SendEmailFn
+  push?: PushDispatch
+}
+
+/** Compact JSON the service worker renders as a notification (see sw.js push handler). */
+export function buildPushPayload(
+  type: NotificationType,
+  subject: string,
+  conversationId?: string | null,
+): string {
+  return JSON.stringify({
+    title: subject,
+    body: 'Open Docmee to respond.',
+    tag: type,
+    url: conversationId ? `/inbox?conversation=${conversationId}` : '/inbox',
+  })
+}
+
+/** Fan an alert out to every device the recipient enabled. Never throws. */
+async function deliverPush(
+  push: PushDispatch,
+  payload: string,
+): Promise<void> {
+  const send = push.send ?? defaultSendWebPush
+  await Promise.all(
+    push.subscriptions.map(async (subscription) => {
+      try {
+        const result = await send(subscription, payload, push.vapid)
+        if (result.expired) await push.onExpired?.(subscription.endpoint)
+      } catch {
+        // Best-effort: a single dead device must not affect the alert.
+      }
+    }),
+  )
 }
 
 /**
@@ -73,6 +127,12 @@ export async function dispatchNotification(
     content: html,
     status: 'pending',
   })
+
+  // Mobile push (Req 39) fires on every alert, independent of email-vs-panel
+  // routing, so an away secretary is reached on their phone. Best-effort.
+  if (deps.push && deps.push.subscriptions.length > 0) {
+    await deliverPush(deps.push, buildPushPayload(params.type, subject, params.conversationId))
+  }
 
   // Panel-only (online recipient, non-urgent): the feed entry IS the delivery.
   if (!route.email) {

@@ -67,4 +67,12 @@ describe('service worker', () => {
   it('bumps the cache version so the new shell is picked up', () => {
     expect(sw).toMatch(/docmee-inbox-v\d+/)
   })
+
+  it('handles push + notificationclick for mobile alerts (Req 39)', () => {
+    expect(sw).toContain("addEventListener('push'")
+    expect(sw).toContain('showNotification')
+    expect(sw).toContain("addEventListener('notificationclick'")
+    // Clicking an alert focuses an existing window or opens the panel.
+    expect(sw).toContain('openWindow')
+  })
 })

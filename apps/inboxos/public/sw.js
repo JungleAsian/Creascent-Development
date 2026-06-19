@@ -8,7 +8,7 @@
 //     error page.
 //   - Everything else (static assets) is cache-first.
 
-const CACHE = 'docmee-inbox-v2'
+const CACHE = 'docmee-inbox-v3'
 const OFFLINE_URL = '/offline.html'
 const APP_SHELL = [
   '/',
@@ -99,4 +99,43 @@ self.addEventListener('fetch', (event) => {
     return
   }
   event.respondWith(isApiRequest(request) ? networkFirst(request) : cacheFirst(request))
+})
+
+// ── Web Push (Req 39 — mobile alerts for the installed PWA) ──────────────────
+// A pushed secretary alert carries a small JSON payload (title/body/tag/url, see
+// buildPushPayload in @docmee/notifications). Render it as a system notification
+// even when the panel is closed.
+self.addEventListener('push', (event) => {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch {
+    data = { body: event.data ? event.data.text() : '' }
+  }
+  const title = data.title || 'Docmee'
+  const options = {
+    body: data.body || '',
+    tag: data.tag,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    data: { url: data.url || '/inbox' },
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+// Focus an existing panel window (navigating it to the deep link) or open one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = (event.notification.data && event.notification.data.url) || '/inbox'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) {
+          if ('navigate' in client) client.navigate(target).catch(() => {})
+          return client.focus()
+        }
+      }
+      return self.clients.openWindow(target)
+    }),
+  )
 })

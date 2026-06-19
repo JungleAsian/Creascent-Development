@@ -162,6 +162,73 @@ describe('dispatchNotification', () => {
     expect(created[0]).toMatchObject({ notificationType: 'email', priority: 'p1' })
   })
 
+  it('pushes to every device when push deps are supplied (independent of email routing)', async () => {
+    const { store } = makeStore()
+    const sendEmail = vi.fn(async () => {})
+    const pushed: Array<{ endpoint: string; payload: string }> = []
+    const send = vi.fn(async (sub: { endpoint: string }, payload: string) => {
+      pushed.push({ endpoint: sub.endpoint, payload })
+      return { ok: true, status: 201, expired: false }
+    })
+    const subs = [
+      { endpoint: 'https://push.test/a', keys: { p256dh: 'x', auth: 'y' } },
+      { endpoint: 'https://push.test/b', keys: { p256dh: 'x', auth: 'y' } },
+    ]
+    await dispatchNotification(
+      {
+        clinicId: 'c1',
+        conversationId: 'conv-9',
+        type: NOTIFICATION_TYPES.CONVERSATION_ASSIGNED,
+        recipientEmail: 'a@b.com',
+        recipientOnline: true, // panel-only for email; push still fires
+      },
+      {
+        store,
+        sendEmail,
+        push: { subscriptions: subs, vapid: { publicKey: 'p', privateKey: 'q', subject: 'mailto:x' }, send },
+      },
+    )
+    expect(sendEmail).not.toHaveBeenCalled() // online + standard → no email
+    expect(pushed.map((p) => p.endpoint)).toEqual(['https://push.test/a', 'https://push.test/b'])
+    const payload = JSON.parse(pushed[0]!.payload)
+    expect(payload.url).toBe('/inbox?conversation=conv-9')
+    expect(payload.tag).toBe('conversation_assigned')
+  })
+
+  it('prunes an expired push subscription and never throws on push error', async () => {
+    const { store } = makeStore()
+    const expiredEndpoints: string[] = []
+    const send = vi.fn(async (sub: { endpoint: string }) => {
+      if (sub.endpoint.endsWith('dead')) return { ok: false, status: 410, expired: true }
+      throw new Error('push service 500')
+    })
+    await expect(
+      dispatchNotification(
+        {
+          clinicId: 'c1',
+          type: NOTIFICATION_TYPES.EMERGENCY,
+          recipientEmail: 'a@b.com',
+        },
+        {
+          store,
+          sendEmail: vi.fn(async () => {}),
+          push: {
+            subscriptions: [
+              { endpoint: 'https://push.test/dead', keys: { p256dh: 'x', auth: 'y' } },
+              { endpoint: 'https://push.test/boom', keys: { p256dh: 'x', auth: 'y' } },
+            ],
+            vapid: { publicKey: 'p', privateKey: 'q', subject: 'mailto:x' },
+            send,
+            onExpired: (e) => {
+              expiredEndpoints.push(e)
+            },
+          },
+        },
+      ),
+    ).resolves.toBeUndefined()
+    expect(expiredEndpoints).toEqual(['https://push.test/dead'])
+  })
+
   it('every notification type has a defined, non-empty template', () => {
     for (const type of Object.values(NOTIFICATION_TYPES)) {
       const email = buildNotificationEmail(type, { sample: 1 })

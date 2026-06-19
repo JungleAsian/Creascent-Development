@@ -11,6 +11,7 @@ import { useI18n } from '@/shared/hooks/useI18n'
 import { can } from '@/shared/permissions'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { NotificationBell } from '@/shared/components/NotificationBell'
+import { PushOptIn } from '@/shared/components/PushOptIn'
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { ready, user } = useAuthGuard()
@@ -77,7 +78,8 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
           >
             ☰
           </button>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <PushOptIn />
             <NotificationBell />
           </div>
         </header>

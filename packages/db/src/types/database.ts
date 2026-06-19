@@ -602,3 +602,16 @@ export interface GeneratedReport {
   emailed: boolean
   createdAt: string
 }
+
+/** A per-device Web Push subscription (Req 39 — installed-PWA mobile alerts). */
+export interface PushSubscriptionRow {
+  id: string
+  clinicId: string
+  userId: string
+  userEmail: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  createdAt: string
+  updatedAt: string
+}

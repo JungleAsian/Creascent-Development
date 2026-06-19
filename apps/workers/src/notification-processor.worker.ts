@@ -19,6 +19,7 @@ import {
 } from '@docmee/db'
 import type { Job } from '@docmee/queue'
 import { buildNotificationStore } from './notification-store.js'
+import { buildPushDispatch } from './push-dispatch.js'
 
 interface NotificationJobData {
   clinicId?: string
@@ -97,6 +98,10 @@ export async function processNotificationJob(job: Job): Promise<void> {
     )
     const emailAllowed = isEmailAllowedByPrefs(prefs, type)
 
+    // Mobile push (Req 39): when VAPID is configured and the recipient has
+    // registered devices, the alert is also pushed to their installed PWA.
+    const push = await buildPushDispatch(sql, data.clinicId, recipientEmail)
+
     await dispatchNotification(
       {
         clinicId: data.clinicId,
@@ -112,7 +117,7 @@ export async function processNotificationJob(job: Job): Promise<void> {
         recipientOnline,
         emailAllowed,
       },
-      { store: buildNotificationStore(notifications) },
+      { store: buildNotificationStore(notifications), ...(push ? { push } : {}) },
     )
   } finally {
     await sql.end()

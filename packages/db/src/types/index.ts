@@ -79,4 +79,6 @@ export type {
   // Generated reports (Req 37)
   GeneratedReport,
   ReportType,
+  // Push subscriptions (Req 39)
+  PushSubscriptionRow,
 } from './database.js'

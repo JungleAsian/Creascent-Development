@@ -13,6 +13,17 @@ export {
 
 export { sendEmail, type SendEmailParams, type SendEmailFn } from './channels/email.channel.js'
 
+export {
+  sendWebPush,
+  encryptWebPushPayload,
+  buildVapidAuthHeader,
+  generateVapidKeys,
+  type WebPushSubscription,
+  type PushSubscriptionKeys,
+  type VapidKeys,
+  type SendWebPushResult,
+} from './channels/web-push.channel.js'
+
 export { buildNotificationEmail, type NotificationEmail } from './templates.js'
 
 export {
@@ -32,8 +43,10 @@ export {
 
 export {
   dispatchNotification,
+  buildPushPayload,
   type DispatchNotificationParams,
   type DispatchNotificationDeps,
+  type PushDispatch,
   type NotificationStore,
 } from './dispatcher.js'
 

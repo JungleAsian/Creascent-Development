@@ -99,6 +99,7 @@ export {
   createAnalyticsRepository,
   createQosRepository,
   createReportsRepository,
+  createPushSubscriptionsRepository,
 } from './repositories/index.js'
 
 export type {
@@ -167,4 +168,6 @@ export type {
   QosAttentionItem,
   ReportsRepository,
   CreateGeneratedReportInput,
+  PushSubscriptionsRepository,
+  UpsertPushSubscriptionInput,
 } from './repositories/index.js'
