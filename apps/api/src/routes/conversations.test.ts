@@ -12,7 +12,8 @@ vi.mock('@docmee/shared', () => ({
 }))
 
 const store = vi.hoisted(() => ({
-  // One closed conversation that reopen() should clone into a brand-new row.
+  // A closed conversation reopen() should clone, an open one to assign, and two
+  // already-assigned to different users (for the assigned_to filter test).
   conversations: new Map<string, Record<string, unknown>>([
     [
       'old-1',
@@ -25,6 +26,42 @@ const store = vi.hoisted(() => ({
         status: 'resolved',
         assignedTo: null,
         iaProfileId: 'ia-1',
+      },
+    ],
+    [
+      'open-1',
+      {
+        id: 'open-1',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50211112222',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
+    [
+      'mine-1',
+      {
+        id: 'mine-1',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50233334444',
+        status: 'assigned',
+        assignedTo: 'u-2',
+        metadata: {},
+      },
+    ],
+    [
+      'theirs-1',
+      {
+        id: 'theirs-1',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50255556666',
+        status: 'assigned',
+        assignedTo: 'u-3',
+        metadata: {},
       },
     ],
   ]),
@@ -45,6 +82,13 @@ vi.mock('@docmee/db', () => ({
       store.created.push(row)
       return row
     },
+    update: async (clinicId: string, id: string, patch: Record<string, unknown>) => {
+      const c = store.conversations.get(id)
+      if (!c || c.clinicId !== clinicId) return null
+      const updated = { ...c, ...patch }
+      store.conversations.set(id, updated)
+      return updated
+    },
   }),
   createMessagesRepository: () => ({}),
   createClinicsRepository: () => ({}),
@@ -57,8 +101,12 @@ vi.mock('@docmee/db', () => ({
 import { buildApp } from '../app.js'
 import { signAccessToken } from '../auth/jwt.js'
 
-const token = signAccessToken({ userId: 'u-1', clinicId: 'c-1', role: 'clinic_admin', email: 'a@demo.test' })
-const auth = { authorization: `Bearer ${token}` }
+const tokenFor = (role: 'clinic_admin' | 'secretary' | 'doctor' | 'ia_studio_admin', userId = 'u-1') =>
+  signAccessToken({ userId, clinicId: 'c-1', role, email: `${role}@demo.test` })
+const authHeader = (role: Parameters<typeof tokenFor>[0], userId?: string) => ({
+  authorization: `Bearer ${tokenFor(role, userId)}`,
+})
+const auth = authHeader('clinic_admin')
 
 describe('conversation routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>
@@ -77,12 +125,65 @@ describe('conversation routes', () => {
     expect(res.statusCode).toBe(401)
   })
 
-  it('GET /conversations with auth → 200', async () => {
+  it('GET /conversations with auth → 200 (all clinic conversations)', async () => {
     const res = await app.inject({ method: 'GET', url: '/conversations', headers: auth })
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.body)
+    expect(body.conversations.map((c: { id: string }) => c.id)).toEqual(
+      expect.arrayContaining(['old-1', 'open-1', 'mine-1', 'theirs-1']),
+    )
+  })
+
+  // ── Assigned conversation views (Rev1 #12) ──
+  it('GET /conversations?assigned_to=… returns only that user\'s conversations', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations?assigned_to=u-2',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
     expect(body.conversations).toHaveLength(1)
-    expect(body.conversations[0].id).toBe('old-1')
+    expect(body.conversations[0].id).toBe('mine-1')
+  })
+
+  // ── Assignment role permissions (Rev1 #12) ──
+  // secretary, doctor and clinic_admin may assign; ia_studio_admin (platform
+  // super-admin, not a clinic-inbox role) may not — mirroring /messages, /status
+  // and /resume-bot.
+  it.each(['secretary', 'doctor', 'clinic_admin'] as const)(
+    'POST /conversations/:id/assign as %s → 200 and assigns',
+    async (role) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/conversations/open-1/assign',
+        headers: authHeader(role, `actor-${role}`),
+        payload: { userId: 'u-2' },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = JSON.parse(res.body)
+      expect(body.conversation.assignedTo).toBe('u-2')
+      expect(body.conversation.status).toBe('assigned')
+    },
+  )
+
+  it('POST /conversations/:id/assign as ia_studio_admin → 403', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/open-1/assign',
+      headers: authHeader('ia_studio_admin'),
+      payload: { userId: 'u-2' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('POST /conversations/:id/assign without auth → 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/open-1/assign',
+      payload: { userId: 'u-2' },
+    })
+    expect(res.statusCode).toBe(401)
   })
 
   it('POST /conversations/:id/reopen creates a NEW conversation (Decision 4)', async () => {

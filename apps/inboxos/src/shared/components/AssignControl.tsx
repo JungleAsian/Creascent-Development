@@ -2,8 +2,9 @@
 
 // Gap #24 — compact assignment dropdown shown in the ConversationView header.
 // Mirrors the right-rail AssignPanel but inline; both invalidate the same queries
-// so they stay in sync. Assigning is role-gated (secretary, clinic_admin); other
-// roles see the current assignee as read-only text.
+// so they stay in sync. Assigning is role-gated (secretary, doctor, clinic_admin —
+// matching the assign API and the rest of the clinic-inbox actions); any other role
+// sees the current assignee as read-only text.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
@@ -11,7 +12,7 @@ import { useI18n } from '../hooks/useI18n'
 import { useTeam } from '../hooks/useTeam'
 import type { Conversation } from '../types'
 
-const CAN_ASSIGN = new Set(['secretary', 'clinic_admin'])
+const CAN_ASSIGN = new Set(['secretary', 'doctor', 'clinic_admin'])
 
 export function AssignControl({ conversationId }: { conversationId: string }) {
   const { t } = useI18n()

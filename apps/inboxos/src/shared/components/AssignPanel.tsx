@@ -1,16 +1,16 @@
 'use client'
 
-// Gap #12 — Assignment panel. Shows the current assignee and lets a secretary or
-// clinic_admin assign the conversation to themselves or another team member.
-// The assign endpoint is role-gated (secretary, clinic_admin); other roles see a
-// read-only view.
+// Gap #12 — Assignment panel. Shows the current assignee and lets a secretary,
+// doctor or clinic_admin assign the conversation to themselves or another team
+// member. The assign endpoint is role-gated (secretary, doctor, clinic_admin);
+// any other role sees a read-only view.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { useI18n } from '../hooks/useI18n'
 import type { Conversation, TeamMember } from '../types'
 
-const CAN_ASSIGN = new Set(['secretary', 'clinic_admin'])
+const CAN_ASSIGN = new Set(['secretary', 'doctor', 'clinic_admin'])
 
 export function AssignPanel({ conversationId }: { conversationId: string }) {
   const { t } = useI18n()

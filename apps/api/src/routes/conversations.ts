@@ -2,7 +2,7 @@
 // access is scoped to the caller's clinic (ia_studio_admin may target any).
 //   GET    /conversations                      (filters: clinic_id, status, assigned_to)
 //   GET    /conversations/:id
-//   POST   /conversations/:id/assign           (secretary, clinic_admin)
+//   POST   /conversations/:id/assign           (secretary, doctor, clinic_admin)
 //   POST   /conversations/:id/close
 //   POST   /conversations/:id/status           (Req 11 — set any of the 7 statuses)
 //   POST   /conversations/:id/resume-bot        (secretary, doctor, clinic_admin) — return to bot
@@ -79,7 +79,7 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
   // ── Assign ──
   app.post<{ Params: { id: string } }>(
     '/:id/assign',
-    { preHandler: requireRole('secretary', 'clinic_admin') },
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
     async (request, reply) => {
       const parsed = validate(assignSchema, request.body, reply)
       if (!parsed.ok) return
