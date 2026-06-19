@@ -14,6 +14,7 @@ import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
 import { TemplatePicker } from './TemplatePicker'
 import { InteractivePicker } from './InteractivePicker'
+import { ListPicker } from './ListPicker'
 import { deliveryIndicator, type DeliveryTone } from '../delivery'
 import { isImageMessage, messageMediaPath } from '../media'
 import type {
@@ -118,6 +119,22 @@ export function ConversationView({
   const sendInteractiveMutation = useMutation({
     mutationFn: (vars: { body: string; buttons: string[] }) =>
       api.post(`/conversations/${conversationId}/send-interactive`, vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
+  // Req 3: send an interactive LIST menu (WhatsApp only) — the >3-options surface.
+  // Like a manual reply it delivers immediately and pauses the bot; the server
+  // records its wamid so the delivery indicator tracks it, and a picked row comes
+  // back as text.
+  const sendListMutation = useMutation({
+    mutationFn: (vars: {
+      body: string
+      button: string
+      sections: Array<{ rows: Array<{ title: string; description?: string }> }>
+    }) => api.post(`/conversations/${conversationId}/send-list`, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['messages', conversationId] })
       qc.invalidateQueries({ queryKey: ['conversations'] })
@@ -319,6 +336,7 @@ export function ConversationView({
           {(sendMutation.isError ||
             sendTemplateMutation.isError ||
             sendInteractiveMutation.isError ||
+            sendListMutation.isError ||
             sendMediaMutation.isError) && (
             <p className="px-3 pt-2 text-xs font-medium text-red-600 dark:text-red-400">
               ⚠ {t('view.sendFailed')}
@@ -345,6 +363,15 @@ export function ConversationView({
               <InteractivePicker
                 onSend={(body, buttons) => sendInteractiveMutation.mutate({ body, buttons })}
                 disabled={sendInteractiveMutation.isPending}
+              />
+            )}
+            {/* Req 3: offer a single-select LIST menu for >3 options (WhatsApp only). */}
+            {conversation?.channel === 'whatsapp' && (
+              <ListPicker
+                onSend={(body, button, sections) =>
+                  sendListMutation.mutate({ body, button, sections })
+                }
+                disabled={sendListMutation.isPending}
               />
             )}
             {/* Req 3: attach an image (WhatsApp only — Messenger/Instagram attachment

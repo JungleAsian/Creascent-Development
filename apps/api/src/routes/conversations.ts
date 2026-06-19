@@ -29,6 +29,7 @@ import {
   sendWhatsAppText,
   sendWhatsAppTemplate,
   sendWhatsAppInteractive,
+  sendWhatsAppList,
   sendMessengerText,
   sendInstagramText,
 } from '../lib/channel-send.js'
@@ -65,6 +66,37 @@ const sendInteractiveSchema = z.object({
   body: z.string().min(1).max(1024),
   buttons: z.array(z.string().min(1).max(20)).min(1).max(3),
 })
+// Req 3: an interactive LIST message — a body, the menu button label and 1–10
+// sections each holding 1+ selectable rows. WhatsApp's limits: button ≤ 20 chars,
+// ≤ 10 sections, section title ≤ 24 chars, row title ≤ 24 chars, row description
+// ≤ 72 chars, and at most 10 rows total across all sections (the cross-section
+// cap is enforced with a refinement since zod can't express it per-field).
+const sendListSchema = z
+  .object({
+    body: z.string().min(1).max(1024),
+    button: z.string().min(1).max(20),
+    sections: z
+      .array(
+        z.object({
+          title: z.string().max(24).optional(),
+          rows: z
+            .array(
+              z.object({
+                title: z.string().min(1).max(24),
+                description: z.string().max(72).optional(),
+              }),
+            )
+            .min(1)
+            .max(10),
+        }),
+      )
+      .min(1)
+      .max(10),
+  })
+  .refine((v) => v.sections.reduce((n, s) => n + s.rows.length, 0) <= 10, {
+    message: 'A list message may contain at most 10 rows in total',
+    path: ['sections'],
+  })
 const tagSchema = z.object({ tag: z.string().min(1) })
 const noteSchema = z.object({ content: z.string().min(1) })
 // Req 29: a secretary flags a bad bot reply from the inbox; it surfaces in the
@@ -618,6 +650,111 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
           metadata: {
             authorId: request.user!.userId,
             buttons: parsed.data.buttons,
+          },
+        })
+        // Bot Interruption Rule (Rev1 #6): offering a menu is a human takeover.
+        if (resolved.convo.status === 'open') {
+          await createConversationsRepository(sql).update(clinicId, request.params.id, {
+            status: 'handoff',
+            metadata: {
+              ...resolved.convo.metadata,
+              botPausedAt: new Date().toISOString(),
+              handoffReason: 'human_reply',
+            },
+          })
+        }
+        return created
+      })
+      return reply.code(201).send({ message })
+    },
+  )
+
+  // ── Send an interactive LIST menu to the patient (Req 3) ──
+  // The >3-options counterpart to the reply-button menu: a body plus a menu button
+  // that opens a single-select list of rows (e.g. available time slots, specialties).
+  // Mirrors send-interactive: a real `type:'interactive'` list message goes out, its
+  // wamid is captured so the delivery-status pipeline + the inbox ✓/✓✓/read indicator
+  // track it, the body is persisted as the bubble text (the offered rows in metadata),
+  // and the Bot Interruption Rule pauses the bot. When the patient picks a row the
+  // inbound webhook's interactive parsing feeds the chosen row title back as ordinary
+  // message text, closing the loop. WhatsApp-only (Messenger/Instagram → 400).
+  app.post<{ Params: { id: string } }>(
+    '/:id/send-list',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const parsed = validate(sendListSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const resolved = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return { code: 404 as const }
+        // Interactive list menus are a WhatsApp-only mechanism here.
+        if (convo.channel !== 'whatsapp') return { code: 400 as const }
+        const accounts = await createChannelAccountsRepository(sql).listByClinic(clinicId)
+        const account = accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
+        if (!account?.accessTokenEnc) return { code: 502 as const }
+        return {
+          code: 200 as const,
+          convo,
+          phoneNumberId: account.accountId,
+          token: account.accessTokenEnc,
+          recipient: convo.channelContactHandle,
+        }
+      })
+
+      if (resolved.code === 404) return reply.code(404).send({ error: 'Conversation not found' })
+      if (resolved.code === 400) {
+        return reply.code(400).send({ error: 'List menus are only supported on WhatsApp' })
+      }
+      if (resolved.code === 502) return reply.code(502).send({ error: 'Channel not configured' })
+
+      // Deliver the list. A failed send (expired/invalid token, a send rejected
+      // outside the 24h window, rate limit) is recorded to the Error Review area as
+      // `meta_send_failure` (Req 19/29) and surfaced as a 502 — nothing is persisted.
+      let channelMessageId: string | null = null
+      try {
+        channelMessageId = await sendWhatsAppList(
+          resolved.phoneNumberId,
+          resolved.token,
+          resolved.recipient,
+          parsed.data.body,
+          parsed.data.button,
+          parsed.data.sections,
+        )
+      } catch (err) {
+        request.log.error(`[send-list] channel send failed: ${(err as Error).message}`)
+        await withDb((sql) =>
+          createErrorReviewsRepository(sql).create({
+            clinicId,
+            errorType: 'meta_send_failure',
+            errorMessage: err instanceof Error ? err.message : String(err),
+            context: {
+              conversationId: request.params.id,
+              channel: 'whatsapp',
+              recipient: resolved.recipient,
+              sentBy: request.user!.userId,
+            },
+          }),
+        ).catch((logErr) =>
+          request.log.error(`[send-list] failed to log send error: ${(logErr as Error).message}`),
+        )
+        return reply.code(502).send({ error: 'List send failed' })
+      }
+
+      const message = await withDb(async (sql) => {
+        const created = await createMessagesRepository(sql).create({
+          conversationId: request.params.id,
+          clinicId,
+          role: 'agent',
+          content: parsed.data.body,
+          contentType: 'interactive',
+          channelMessageId: channelMessageId ?? undefined,
+          metadata: {
+            authorId: request.user!.userId,
+            listButton: parsed.data.button,
+            sections: parsed.data.sections,
           },
         })
         // Bot Interruption Rule (Rev1 #6): offering a menu is a human takeover.

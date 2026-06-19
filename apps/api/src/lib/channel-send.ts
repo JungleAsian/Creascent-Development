@@ -226,6 +226,77 @@ export async function sendWhatsAppInteractive(
   }
 }
 
+/** A list-message section: an optional header plus 1+ selectable rows. */
+export interface WhatsAppListSection {
+  title?: string
+  rows: Array<{ title: string; description?: string }>
+}
+
+/**
+ * Send an interactive LIST message (Req 3) — a body of text plus a button that
+ * opens a single-select menu of up to 10 rows grouped into sections. Returns the
+ * wamid (or null). This is the >3-options counterpart to the reply-button menu
+ * (`sendWhatsAppInteractive`, capped at 3 buttons): a clinic offering e.g. a list
+ * of available time slots or specialties uses a list. When the patient picks a row
+ * the inbound webhook parses `interactive.list_reply` (already wired — Req 3 inbound
+ * interactive parsing) and the bot/secretary receives the chosen row title as
+ * ordinary message text, so the round-trip closes. Each row id is opaque
+ * (`row_<section>_<row>`); flows match on the localized title. WhatsApp limits
+ * (enforced by the route): button label ≤ 20 chars, ≤ 10 sections, section title
+ * ≤ 24 chars, row title ≤ 24 chars, row description ≤ 72 chars, ≤ 10 rows total.
+ */
+export async function sendWhatsAppList(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  bodyText: string,
+  buttonLabel: string,
+  sections: WhatsAppListSection[],
+): Promise<string | null> {
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toWaId,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: bodyText },
+          action: {
+            button: buttonLabel,
+            sections: sections.map((section, s) => ({
+              ...(section.title ? { title: section.title } : {}),
+              rows: section.rows.map((row, r) => ({
+                id: `row_${s}_${r}`,
+                title: row.title,
+                ...(row.description ? { description: row.description } : {}),
+              })),
+            })),
+          },
+        },
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`WhatsApp list send failed ${res.status}: ${await res.text()}`)
+  }
+
+  try {
+    const data = (await res.json()) as { messages?: Array<{ id?: string }> }
+    return data.messages?.[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Send a plain-text Messenger Send API message; returns the mid (or null). */
 export async function sendMessengerText(
   pageAccessToken: string,

@@ -16,10 +16,11 @@ const { fetchMedia } = vi.hoisted(() => ({
 vi.mock('../lib/whatsapp-media.js', () => ({ fetchWhatsAppMedia: fetchMedia }))
 // Req 3/33/34 outbound send: stub the inlined channel senders so no real Meta
 // call runs. Each returns the provider message id the route persists.
-const { sendWa, sendWaTpl, sendWaInt, sendMsgr, sendIg, uploadWaMedia, sendWaImage } = vi.hoisted(() => ({
+const { sendWa, sendWaTpl, sendWaInt, sendWaList, sendMsgr, sendIg, uploadWaMedia, sendWaImage } = vi.hoisted(() => ({
   sendWa: vi.fn(async () => 'wamid.OUT1' as string | null),
   sendWaTpl: vi.fn(async () => 'wamid.TPL1' as string | null),
   sendWaInt: vi.fn(async () => 'wamid.INT1' as string | null),
+  sendWaList: vi.fn(async () => 'wamid.LIST1' as string | null),
   sendMsgr: vi.fn(async () => 'mid.OUT1' as string | null),
   sendIg: vi.fn(async () => 'mid.IG1' as string | null),
   uploadWaMedia: vi.fn(async () => 'media-up-1'),
@@ -29,6 +30,7 @@ vi.mock('../lib/channel-send.js', () => ({
   sendWhatsAppText: sendWa,
   sendWhatsAppTemplate: sendWaTpl,
   sendWhatsAppInteractive: sendWaInt,
+  sendWhatsAppList: sendWaList,
   sendMessengerText: sendMsgr,
   sendInstagramText: sendIg,
   uploadWhatsAppMedia: uploadWaMedia,
@@ -172,6 +174,19 @@ const store = vi.hoisted(() => ({
         clinicId: 'c-1',
         channel: 'whatsapp',
         channelContactHandle: '+50214141414',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
+    // Open WhatsApp thread reserved for the interactive LIST send test (Req 3).
+    [
+      'wa-list',
+      {
+        id: 'wa-list',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50215151515',
         status: 'open',
         assignedTo: null,
         metadata: {},
@@ -821,6 +836,92 @@ describe('conversation routes', () => {
       url: '/conversations/wa-fail/send-interactive',
       headers: authHeader('secretary'),
       payload: { body: 'will not send', buttons: ['A', 'B'] },
+    })
+    expect(res.statusCode).toBe(502)
+    expect(store.flagged.length).toBe(before + 1)
+    expect(store.flagged.at(-1)!.errorType).toBe('meta_send_failure')
+    expect(store.sent.length).toBe(sentBefore)
+    expect(store.conversations.get('wa-fail')!.status).toBe('open')
+  })
+
+  // ── Outbound interactive LIST menu (Req 3) — the >3-options surface ──
+  it('POST /conversations/:id/send-list sends the menu, persists the wamid + sections and pauses the bot', async () => {
+    sendWaList.mockClear()
+    const sections = [
+      {
+        title: 'Mañana',
+        rows: [
+          { title: '09:00', description: 'Dr. Pérez' },
+          { title: '10:30', description: 'Dra. Gómez' },
+        ],
+      },
+    ]
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-list/send-list',
+      headers: authHeader('secretary'),
+      payload: { body: 'Elige un horario', button: 'Ver horarios', sections },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    // The list went out on the clinic's WhatsApp number with the body, button label
+    // and sections.
+    expect(sendWaList).toHaveBeenCalledWith(
+      'PHONE',
+      'tok',
+      '+50215151515',
+      'Elige un horario',
+      'Ver horarios',
+      sections,
+    )
+    expect(body.message.channelMessageId).toBe('wamid.LIST1')
+    expect(body.message.contentType).toBe('interactive')
+    expect(body.message.content).toBe('Elige un horario')
+    expect(body.message.metadata).toMatchObject({ listButton: 'Ver horarios', sections })
+    // Bot Interruption Rule: an `open` conversation flips to `handoff`.
+    expect(store.conversations.get('wa-list')!.status).toBe('handoff')
+  })
+
+  it('POST /conversations/:id/send-list → 400 with no rows', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-send/send-list',
+      headers: authHeader('secretary'),
+      payload: { body: 'pick one', button: 'Menu', sections: [{ rows: [] }] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-list → 400 when more than 10 rows in total', async () => {
+    const tooMany = Array.from({ length: 11 }, (_, i) => ({ title: `Row ${i}` }))
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-send/send-list',
+      headers: authHeader('secretary'),
+      payload: { body: 'pick one', button: 'Menu', sections: [{ rows: tooMany }] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-list → 400 on a non-WhatsApp thread', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/msgr-send/send-list',
+      headers: authHeader('secretary'),
+      payload: { body: 'pick one', button: 'Menu', sections: [{ rows: [{ title: 'A' }] }] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-list logs meta_send_failure and returns 502 when the send throws', async () => {
+    sendWaList.mockRejectedValueOnce(new Error('Meta 401: token expired'))
+    const before = store.flagged.length
+    const sentBefore = store.sent.length
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-fail/send-list',
+      headers: authHeader('secretary'),
+      payload: { body: 'will not send', button: 'Menu', sections: [{ rows: [{ title: 'A' }] }] },
     })
     expect(res.statusCode).toBe(502)
     expect(store.flagged.length).toBe(before + 1)
