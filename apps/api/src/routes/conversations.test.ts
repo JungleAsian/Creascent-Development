@@ -16,13 +16,15 @@ const { fetchMedia } = vi.hoisted(() => ({
 vi.mock('../lib/whatsapp-media.js', () => ({ fetchWhatsAppMedia: fetchMedia }))
 // Req 3/33/34 outbound send: stub the inlined channel senders so no real Meta
 // call runs. Each returns the provider message id the route persists.
-const { sendWa, sendMsgr, sendIg } = vi.hoisted(() => ({
+const { sendWa, sendWaTpl, sendMsgr, sendIg } = vi.hoisted(() => ({
   sendWa: vi.fn(async () => 'wamid.OUT1' as string | null),
+  sendWaTpl: vi.fn(async () => 'wamid.TPL1' as string | null),
   sendMsgr: vi.fn(async () => 'mid.OUT1' as string | null),
   sendIg: vi.fn(async () => 'mid.IG1' as string | null),
 }))
 vi.mock('../lib/channel-send.js', () => ({
   sendWhatsAppText: sendWa,
+  sendWhatsAppTemplate: sendWaTpl,
   sendMessengerText: sendMsgr,
   sendInstagramText: sendIg,
 }))
@@ -129,8 +131,28 @@ const store = vi.hoisted(() => ({
         metadata: {},
       },
     ],
+    // Open WhatsApp thread reserved for the HSM template-send test (Req 3) so the
+    // manual-reply tests can't flip it to handoff first.
+    [
+      'wa-tpl',
+      {
+        id: 'wa-tpl',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50212121212',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
   ]),
   created: [] as Record<string, unknown>[],
+  // Approved WhatsApp HSM templates a secretary can send by hand (Req 3). 'tpl-1'
+  // is approved; 'tpl-pending' is not, so findApprovedById must skip it.
+  templates: new Map<string, Record<string, unknown>>([
+    ['tpl-1', { id: 'tpl-1', clinicId: 'c-1', name: 'appt_confirm', category: 'appointment_confirmation', language: 'es', body: 'Tu cita está confirmada.', status: 'approved' }],
+    ['tpl-pending', { id: 'tpl-pending', clinicId: 'c-1', name: 'review', category: 'review_request', language: 'es', body: 'Déjanos tu opinión.', status: 'pending' }],
+  ]),
   // Outbound messages persisted by POST /:id/messages (Req 3).
   sent: [] as Record<string, unknown>[],
   flagged: [] as Record<string, unknown>[],
@@ -225,6 +247,14 @@ vi.mock('@docmee/db', () => ({
   }),
   createClinicsRepository: () => ({
     findById: async (id: string) => (id === 'c-1' ? { id: 'c-1', ...clinicCfg } : null),
+  }),
+  createMessageTemplatesRepository: () => ({
+    listApproved: async (clinicId: string) =>
+      [...store.templates.values()].filter((tpl) => tpl.clinicId === clinicId && tpl.status === 'approved'),
+    findApprovedById: async (clinicId: string, id: string) => {
+      const tpl = store.templates.get(id)
+      return tpl && tpl.clinicId === clinicId && tpl.status === 'approved' ? tpl : null
+    },
   }),
   createPatientsRepository: () => ({}),
   createKnowledgeRepository: () => ({}),
@@ -595,5 +625,83 @@ describe('conversation routes', () => {
       payload: { content: 'hi' },
     })
     expect(res.statusCode).toBe(404)
+  })
+
+  // ── Approved HSM template send from the inbox (Req 3) ──
+  it('GET /conversations/:id/templates lists only approved templates for a WhatsApp thread', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/wa-tpl/templates',
+      headers: authHeader('secretary'),
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.templates.map((tpl: { id: string }) => tpl.id)).toEqual(['tpl-1'])
+  })
+
+  it('GET /conversations/:id/templates is empty for a non-WhatsApp thread', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations/msgr-send/templates',
+      headers: authHeader('secretary'),
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).templates).toEqual([])
+  })
+
+  it('POST /conversations/:id/send-template sends the approved template, persists the wamid and pauses the bot', async () => {
+    sendWaTpl.mockClear()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-tpl/send-template',
+      headers: authHeader('secretary'),
+      payload: { templateId: 'tpl-1' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    // The template went out by name + language on the clinic's WhatsApp number; the
+    // bubble carries the template body and the returned wamid.
+    expect(sendWaTpl).toHaveBeenCalledWith('PHONE', 'tok', '+50212121212', 'appt_confirm', 'es')
+    expect(body.message.channelMessageId).toBe('wamid.TPL1')
+    expect(body.message.content).toBe('Tu cita está confirmada.')
+    expect(body.message.contentType).toBe('template')
+    expect(store.conversations.get('wa-tpl')!.status).toBe('handoff')
+  })
+
+  it('POST /conversations/:id/send-template → 404 for a pending (unapproved) template', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-send/send-template',
+      headers: authHeader('secretary'),
+      payload: { templateId: 'tpl-pending' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('POST /conversations/:id/send-template → 400 on a non-WhatsApp thread', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/msgr-send/send-template',
+      headers: authHeader('secretary'),
+      payload: { templateId: 'tpl-1' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-template logs meta_send_failure and returns 502 when the send throws', async () => {
+    sendWaTpl.mockRejectedValueOnce(new Error('Meta 132001: template not found'))
+    const before = store.flagged.length
+    const sentBefore = store.sent.length
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-fail/send-template',
+      headers: authHeader('secretary'),
+      payload: { templateId: 'tpl-1' },
+    })
+    expect(res.statusCode).toBe(502)
+    expect(store.flagged.length).toBe(before + 1)
+    expect(store.flagged.at(-1)!.errorType).toBe('meta_send_failure')
+    expect(store.sent.length).toBe(sentBefore)
+    expect(store.conversations.get('wa-fail')!.status).toBe('open')
   })
 })

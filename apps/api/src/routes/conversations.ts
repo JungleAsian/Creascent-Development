@@ -20,11 +20,17 @@ import {
   createChannelAccountsRepository,
   createClinicsRepository,
   createErrorReviewsRepository,
+  createMessageTemplatesRepository,
 } from '@docmee/db'
 import type { ConversationStatus } from '@docmee/db'
 import { withDb } from '../lib/db.js'
 import { fetchWhatsAppMedia } from '../lib/whatsapp-media.js'
-import { sendWhatsAppText, sendMessengerText, sendInstagramText } from '../lib/channel-send.js'
+import {
+  sendWhatsAppText,
+  sendWhatsAppTemplate,
+  sendMessengerText,
+  sendInstagramText,
+} from '../lib/channel-send.js'
 import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -51,6 +57,7 @@ const messageSchema = z.object({
   content: z.string().min(1),
   contentType: z.enum(['text', 'audio', 'image', 'template', 'interactive']).optional(),
 })
+const sendTemplateSchema = z.object({ templateId: z.string().min(1) })
 const tagSchema = z.object({ tag: z.string().min(1) })
 const noteSchema = z.object({ content: z.string().min(1) })
 // Req 29: a secretary flags a bad bot reply from the inbox; it surfaces in the
@@ -371,6 +378,139 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
         // conversation over, so pause the bot. Only escalate an `open`
         // conversation — `assigned`/`handoff` are already human-owned, and
         // `resolved` stays closed.
+        if (resolved.convo.status === 'open') {
+          await createConversationsRepository(sql).update(clinicId, request.params.id, {
+            status: 'handoff',
+            metadata: {
+              ...resolved.convo.metadata,
+              botPausedAt: new Date().toISOString(),
+              handoffReason: 'human_reply',
+            },
+          })
+        }
+        return created
+      })
+      return reply.code(201).send({ message })
+    },
+  )
+
+  // ── Approved templates a secretary may send by hand (Req 3) ──
+  // The clinic's APPROVED WhatsApp HSM templates — the only copy that can reach a
+  // patient outside Meta's 24-hour customer-care window. Scoped to the
+  // conversation's clinic so the inbox composer needn't hit the admin /clinics
+  // routes (which a secretary can't). Templates are a WhatsApp concept; for a
+  // Messenger/Instagram thread the picker simply shows nothing.
+  app.get<{ Params: { id: string } }>(
+    '/:id/templates',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+      const result = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return null
+        if (convo.channel !== 'whatsapp') return []
+        return createMessageTemplatesRepository(sql).listApproved(clinicId)
+      })
+      if (result === null) return reply.code(404).send({ error: 'Conversation not found' })
+      return { templates: result }
+    },
+  )
+
+  // ── Send an approved HSM template to the patient (Req 3) ──
+  // A secretary re-engages a patient who is outside the 24h window by sending one
+  // of the clinic's approved WhatsApp templates. Mirrors the manual-reply send: a
+  // real `type:'template'` Meta message goes out, its wamid is captured so the
+  // delivery-status pipeline + the inbox ✓/✓✓/read indicator track it, the
+  // template body is persisted as the bubble text, and the Bot Interruption Rule
+  // pauses the bot. Templates are WhatsApp-only (Messenger/Instagram → 400). A
+  // pending/rejected/unknown template can never be sent (→ 404).
+  app.post<{ Params: { id: string } }>(
+    '/:id/send-template',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const parsed = validate(sendTemplateSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const resolved = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return { code: 404 as const }
+        // HSM templates are a WhatsApp-only mechanism.
+        if (convo.channel !== 'whatsapp') return { code: 400 as const }
+        const template = await createMessageTemplatesRepository(sql).findApprovedById(
+          clinicId,
+          parsed.data.templateId,
+        )
+        if (!template) return { code: 404 as const }
+        const accounts = await createChannelAccountsRepository(sql).listByClinic(clinicId)
+        const account = accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
+        if (!account?.accessTokenEnc) return { code: 502 as const }
+        return {
+          code: 200 as const,
+          convo,
+          template,
+          phoneNumberId: account.accountId,
+          token: account.accessTokenEnc,
+          recipient: convo.channelContactHandle,
+        }
+      })
+
+      if (resolved.code === 404) return reply.code(404).send({ error: 'Not found' })
+      if (resolved.code === 400) {
+        return reply.code(400).send({ error: 'Templates are only supported on WhatsApp' })
+      }
+      if (resolved.code === 502) return reply.code(502).send({ error: 'Channel not configured' })
+
+      // Deliver the template. A failed send (expired/invalid token, an unapproved
+      // template name, a rate limit) is recorded to the Error Review area as
+      // `meta_send_failure` (Req 19/29) and surfaced as a 502 — nothing is persisted.
+      let channelMessageId: string | null = null
+      try {
+        channelMessageId = await sendWhatsAppTemplate(
+          resolved.phoneNumberId,
+          resolved.token,
+          resolved.recipient,
+          resolved.template.name,
+          resolved.template.language,
+        )
+      } catch (err) {
+        request.log.error(`[send-template] channel send failed: ${(err as Error).message}`)
+        await withDb((sql) =>
+          createErrorReviewsRepository(sql).create({
+            clinicId,
+            errorType: 'meta_send_failure',
+            errorMessage: err instanceof Error ? err.message : String(err),
+            context: {
+              conversationId: request.params.id,
+              channel: 'whatsapp',
+              recipient: resolved.recipient,
+              templateName: resolved.template.name,
+              sentBy: request.user!.userId,
+            },
+          }),
+        ).catch((logErr) =>
+          request.log.error(`[send-template] failed to log send error: ${(logErr as Error).message}`),
+        )
+        return reply.code(502).send({ error: 'Template send failed' })
+      }
+
+      const message = await withDb(async (sql) => {
+        const created = await createMessagesRepository(sql).create({
+          conversationId: request.params.id,
+          clinicId,
+          role: 'agent',
+          content: resolved.template.body,
+          contentType: 'template',
+          channelMessageId: channelMessageId ?? undefined,
+          metadata: {
+            authorId: request.user!.userId,
+            templateId: resolved.template.id,
+            templateName: resolved.template.name,
+          },
+        })
+        // Bot Interruption Rule (Rev1 #6): sending a template is a human takeover.
         if (resolved.convo.status === 'open') {
           await createConversationsRepository(sql).update(clinicId, request.params.id, {
             status: 'handoff',

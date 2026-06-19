@@ -46,6 +46,50 @@ export async function sendWhatsAppText(
   }
 }
 
+/**
+ * Send an approved WhatsApp message template (HSM); returns the wamid (or null).
+ * A real `type:'template'` message is the ONLY way to reach a patient outside
+ * Meta's 24-hour customer-care window (Req 3/14/19). `templateName` + `language`
+ * must match a template Meta has approved for the clinic's number; this sends the
+ * base template with no variable parameters (the catalogued bodies are static).
+ */
+export async function sendWhatsAppTemplate(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  templateName: string,
+  languageCode: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toWaId,
+        type: 'template',
+        template: { name: templateName, language: { code: languageCode } },
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`WhatsApp template send failed ${res.status}: ${await res.text()}`)
+  }
+
+  try {
+    const data = (await res.json()) as { messages?: Array<{ id?: string }> }
+    return data.messages?.[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Send a plain-text Messenger Send API message; returns the mid (or null). */
 export async function sendMessengerText(
   pageAccessToken: string,

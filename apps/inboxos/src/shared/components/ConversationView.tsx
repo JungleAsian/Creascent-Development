@@ -12,6 +12,7 @@ import { useI18n } from '../hooks/useI18n'
 import { formatDateTime } from '../format'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
+import { TemplatePicker } from './TemplatePicker'
 import { deliveryIndicator, type DeliveryTone } from '../delivery'
 import { isImageMessage, messageMediaPath } from '../media'
 import type {
@@ -90,6 +91,19 @@ export function ConversationView({
       api.post(`/conversations/${conversationId}/messages`, { content }),
     onSuccess: () => {
       setDraft('')
+      qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
+  // Req 3: send an approved HSM template (WhatsApp only) — the only way to reach a
+  // patient outside the 24h window. Like a manual reply, it delivers immediately
+  // and pauses the bot; the server records its wamid so the delivery indicator
+  // tracks it.
+  const sendTemplateMutation = useMutation({
+    mutationFn: (templateId: string) =>
+      api.post(`/conversations/${conversationId}/send-template`, { templateId }),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['messages', conversationId] })
       qc.invalidateQueries({ queryKey: ['conversations'] })
     },
@@ -255,7 +269,7 @@ export function ConversationView({
           {/* Req 3: the reply is now delivered to the patient over the channel, so a
               failed send (expired token, send outside the 24h window) surfaces here —
               the draft is preserved so the secretary can retry. */}
-          {sendMutation.isError && (
+          {(sendMutation.isError || sendTemplateMutation.isError) && (
             <p className="px-3 pt-2 text-xs font-medium text-red-600 dark:text-red-400">
               ⚠ {t('view.sendFailed')}
             </p>
@@ -264,6 +278,13 @@ export function ConversationView({
             <QuickReplyPicker
               onPick={(content) => setDraft((d) => (d.trim() ? `${d}\n${content}` : content))}
             />
+            {conversation?.channel === 'whatsapp' && (
+              <TemplatePicker
+                conversationId={conversationId}
+                onPick={(templateId) => sendTemplateMutation.mutate(templateId)}
+                disabled={sendTemplateMutation.isPending}
+              />
+            )}
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

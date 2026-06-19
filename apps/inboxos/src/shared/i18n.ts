@@ -347,6 +347,12 @@ const es: Dict = {
   'quickReply.empty': 'No hay plantillas. Créalas en IA Studio.',
   'quickReply.close': 'Cerrar',
 
+  'template.button': 'Enviar plantilla',
+  'template.title': 'Plantillas aprobadas',
+  'template.hint': 'Se envía de inmediato al paciente (incluso fuera de las 24 h).',
+  'template.empty': 'No hay plantillas aprobadas. Envíalas a aprobación en IA Studio.',
+  'template.close': 'Cerrar',
+
   'studio.quickReplies.title': 'Respuestas rápidas',
   'studio.quickReplies.selectClinic': 'Selecciona una clínica',
   'studio.quickReplies.titleField': 'Título',
@@ -1003,6 +1009,12 @@ const en: Dict = {
   'quickReply.title': 'Quick replies',
   'quickReply.empty': 'No templates yet. Create them in IA Studio.',
   'quickReply.close': 'Close',
+
+  'template.button': 'Send template',
+  'template.title': 'Approved templates',
+  'template.hint': 'Sent to the patient immediately (even outside the 24h window).',
+  'template.empty': 'No approved templates. Submit them for approval in IA Studio.',
+  'template.close': 'Close',
 
   'studio.quickReplies.title': 'Quick replies',
   'studio.quickReplies.selectClinic': 'Select a clinic',
