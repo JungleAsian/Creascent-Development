@@ -70,6 +70,11 @@ export interface ConversationsRepository {
 
   listNotes(clinicId: string, conversationId: string): Promise<InternalNote[]>
   addNote(data: CreateNoteInput): Promise<InternalNote>
+  /** A single note scoped to the clinic, or null. Used to authorize edit/delete. */
+  findNoteById(clinicId: string, noteId: string): Promise<InternalNote | null>
+  /** Replace a note's content (the updated_at trigger bumps the timestamp). */
+  updateNote(clinicId: string, noteId: string, content: string): Promise<InternalNote | null>
+  deleteNote(clinicId: string, noteId: string): Promise<void>
 }
 
 export function createConversationsRepository(sql: Sql): ConversationsRepository {
@@ -230,6 +235,32 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         RETURNING *
       `
       return rows[0]!
+    },
+
+    async findNoteById(clinicId, noteId) {
+      const rows = await sql<InternalNote[]>`
+        SELECT * FROM internal_notes
+        WHERE clinic_id = ${clinicId} AND id = ${noteId}
+        LIMIT 1
+      `
+      return rows[0] ?? null
+    },
+
+    async updateNote(clinicId, noteId, content) {
+      const rows = await sql<InternalNote[]>`
+        UPDATE internal_notes
+        SET content = ${content}
+        WHERE clinic_id = ${clinicId} AND id = ${noteId}
+        RETURNING *
+      `
+      return rows[0] ?? null
+    },
+
+    async deleteNote(clinicId, noteId) {
+      await sql`
+        DELETE FROM internal_notes
+        WHERE clinic_id = ${clinicId} AND id = ${noteId}
+      `
     },
   }
 }

@@ -67,6 +67,7 @@ export interface Note {
   authorId: string
   content: string
   createdAt: string
+  updatedAt: string
 }
 
 export interface TeamMember {

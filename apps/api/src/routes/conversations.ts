@@ -10,7 +10,8 @@
 //   GET    /conversations/:id/messages
 //   POST   /conversations/:id/messages         (secretary, doctor, clinic_admin)
 //   GET/POST/DELETE /conversations/:id/tags…   (Gap #13)
-//   GET/POST        /conversations/:id/notes   (Gap #14 — internal, never sent to patient)
+//   GET/POST        /conversations/:id/notes        (Gap #14 — internal, never sent to patient)
+//   PATCH/DELETE    /conversations/:id/notes/:noteId (Req 13 — author-only edit/delete)
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { createConversationsRepository, createMessagesRepository } from '@docmee/db'
@@ -310,6 +311,51 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
     )
     return reply.code(201).send({ note })
   })
+
+  // Edit / delete are restricted to the note's own author — a note belongs to the
+  // person who wrote it. (Still never reaches the patient; internal_notes is wholly
+  // separate from conversation_messages / the WhatsApp send path.)
+  app.patch<{ Params: { id: string; noteId: string } }>(
+    '/:id/notes/:noteId',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const parsed = validate(noteSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const result = await withDb(async (sql) => {
+        const repo = createConversationsRepository(sql)
+        const existing = await repo.findNoteById(clinicId, request.params.noteId)
+        if (!existing) return { code: 404 as const }
+        if (existing.authorId !== request.user!.userId) return { code: 403 as const }
+        const note = await repo.updateNote(clinicId, request.params.noteId, parsed.data.content)
+        return { code: 200 as const, note }
+      })
+      if (result.code !== 200) return reply.code(result.code).send({ error: result.code === 404 ? 'Note not found' : 'Forbidden' })
+      return { note: result.note }
+    },
+  )
+
+  app.delete<{ Params: { id: string; noteId: string } }>(
+    '/:id/notes/:noteId',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const result = await withDb(async (sql) => {
+        const repo = createConversationsRepository(sql)
+        const existing = await repo.findNoteById(clinicId, request.params.noteId)
+        if (!existing) return { code: 404 as const }
+        if (existing.authorId !== request.user!.userId) return { code: 403 as const }
+        await repo.deleteNote(clinicId, request.params.noteId)
+        return { code: 200 as const }
+      })
+      if (result.code !== 200) return reply.code(result.code).send({ error: result.code === 404 ? 'Note not found' : 'Forbidden' })
+      return { deleted: true }
+    },
+  )
 }
 
 export default conversationsRoute

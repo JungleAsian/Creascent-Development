@@ -66,6 +66,21 @@ const store = vi.hoisted(() => ({
     ],
   ]),
   created: [] as Record<string, unknown>[],
+  // Internal notes (Req 13). 'note-1' is authored by u-1; edit/delete is author-only.
+  notes: new Map<string, Record<string, unknown>>([
+    [
+      'note-1',
+      {
+        id: 'note-1',
+        conversationId: 'open-1',
+        clinicId: 'c-1',
+        authorId: 'u-1',
+        content: 'Patient prefers mornings',
+        createdAt: '2026-06-19T10:00:00.000Z',
+        updatedAt: '2026-06-19T10:00:00.000Z',
+      },
+    ],
+  ]),
 }))
 
 vi.mock('@docmee/db', () => ({
@@ -88,6 +103,32 @@ vi.mock('@docmee/db', () => ({
       const updated = { ...c, ...patch }
       store.conversations.set(id, updated)
       return updated
+    },
+    listNotes: async (clinicId: string, conversationId: string) =>
+      [...store.notes.values()].filter((n) => n.clinicId === clinicId && n.conversationId === conversationId),
+    addNote: async (data: Record<string, unknown>) => {
+      const row = {
+        ...data,
+        id: `note-${store.notes.size + 1}`,
+        createdAt: '2026-06-19T11:00:00.000Z',
+        updatedAt: '2026-06-19T11:00:00.000Z',
+      }
+      store.notes.set(row.id as string, row)
+      return row
+    },
+    findNoteById: async (clinicId: string, noteId: string) => {
+      const n = store.notes.get(noteId)
+      return n && n.clinicId === clinicId ? n : null
+    },
+    updateNote: async (clinicId: string, noteId: string, content: string) => {
+      const n = store.notes.get(noteId)
+      if (!n || n.clinicId !== clinicId) return null
+      const updated = { ...n, content, updatedAt: '2026-06-19T12:00:00.000Z' }
+      store.notes.set(noteId, updated)
+      return updated
+    },
+    deleteNote: async (_clinicId: string, noteId: string) => {
+      store.notes.delete(noteId)
     },
   }),
   createMessagesRepository: () => ({}),
@@ -195,5 +236,80 @@ describe('conversation routes', () => {
     expect(body.conversation.channelContactHandle).toBe('+50212345678')
     expect(body.conversation.metadata).toEqual({ reopenedFrom: 'old-1' })
     expect(store.created).toHaveLength(1)
+  })
+
+  // ── Internal notes: author-only edit/delete (Rev1 #13) ──
+  it('POST /conversations/:id/notes creates a note authored by the caller', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/open-1/notes',
+      headers: authHeader('secretary', 'sec-1'),
+      payload: { content: 'Call back tomorrow' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.note.authorId).toBe('sec-1')
+    expect(body.note.content).toBe('Call back tomorrow')
+  })
+
+  it('PATCH /conversations/:id/notes/:noteId by the author → 200 and updates content', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/conversations/open-1/notes/note-1',
+      headers: authHeader('clinic_admin', 'u-1'),
+      payload: { content: 'Patient prefers afternoons' },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.note.content).toBe('Patient prefers afternoons')
+    expect(body.note.updatedAt).not.toBe(body.note.createdAt)
+  })
+
+  it('PATCH a note authored by someone else → 403 (author-only)', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/conversations/open-1/notes/note-1',
+      headers: authHeader('doctor', 'someone-else'),
+      payload: { content: 'I should not be able to edit this' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('PATCH a non-existent note → 404', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/conversations/open-1/notes/does-not-exist',
+      headers: authHeader('clinic_admin', 'u-1'),
+      payload: { content: 'x' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('DELETE a note authored by someone else → 403, then the author → 200', async () => {
+    const forbidden = await app.inject({
+      method: 'DELETE',
+      url: '/conversations/open-1/notes/note-1',
+      headers: authHeader('secretary', 'not-the-author'),
+    })
+    expect(forbidden.statusCode).toBe(403)
+    expect(store.notes.has('note-1')).toBe(true)
+
+    const ok = await app.inject({
+      method: 'DELETE',
+      url: '/conversations/open-1/notes/note-1',
+      headers: authHeader('clinic_admin', 'u-1'),
+    })
+    expect(ok.statusCode).toBe(200)
+    expect(JSON.parse(ok.body).deleted).toBe(true)
+    expect(store.notes.has('note-1')).toBe(false)
+  })
+
+  it('PATCH /conversations/:id/notes/:noteId without auth → 401', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/conversations/open-1/notes/note-1',
+      payload: { content: 'x' },
+    })
+    expect(res.statusCode).toBe(401)
   })
 })
