@@ -93,6 +93,7 @@ export type MessageTemplateCategory =
   | 'appointment_confirmation'
   | 'appointment_reminder'
   | 'human_handoff_notification'
+  | 'review_request'
 
 export interface MessageTemplate {
   id: string

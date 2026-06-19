@@ -229,6 +229,7 @@ export type MessageTemplateCategory =
   | 'appointment_confirmation'
   | 'appointment_reminder'
   | 'human_handoff_notification'
+  | 'review_request'
 
 /** A WhatsApp/Meta message template (Gap #29). Submission to Meta is manual; the
  *  row only tracks the approval status the panel displays. */

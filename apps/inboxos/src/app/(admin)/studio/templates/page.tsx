@@ -14,6 +14,7 @@ const CATEGORIES: MessageTemplateCategory[] = [
   'appointment_confirmation',
   'appointment_reminder',
   'human_handoff_notification',
+  'review_request',
 ]
 const STATUSES: MessageTemplateStatus[] = ['pending', 'approved', 'rejected']
 

@@ -17,6 +17,7 @@ const createSchema = z.object({
     'appointment_confirmation',
     'appointment_reminder',
     'human_handoff_notification',
+    'review_request',
   ]),
   language: z.string().min(2).optional(),
   body: z.string().min(1),

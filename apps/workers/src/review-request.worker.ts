@@ -6,6 +6,14 @@
 // Opted-out patients are never messaged. Each send is recorded in follow_ups (so
 // it fires exactly once) and, when a tracking base URL is configured, the link is
 // a redirector that stamps review_clicked.
+//
+// Meta compliance (Req 19): a review request is an unsolicited, proactive send.
+// Because it goes out 48h–7d after the appointment it is almost always OUTSIDE
+// Meta's 24-hour customer-care window, where only an approved HSM template may be
+// sent. So we re-check the window per patient at send time: inside it we may send
+// the free-text invite; outside it we require the clinic's approved 'review_request'
+// template and skip (without claiming, so a later run can retry once the template is
+// approved) when none exists.
 import { sendWhatsAppText } from '@docmee/channels'
 import { type Job } from '@docmee/queue'
 import {
@@ -16,13 +24,19 @@ import {
   createPatientsRepository,
   createChannelAccountsRepository,
   createFollowUpsRepository,
+  createMessagesRepository,
+  createMessageTemplatesRepository,
   type Clinic,
   type Patient,
   type ChannelAccount,
   type PatientContact,
 } from '@docmee/db'
+import { isWithinCustomerCareWindow } from './follow-up.js'
 
 export const REVIEW_FOLLOW_UP_TYPE = 'review_request'
+
+/** The approved-template category that carries a review request outside the 24h window. */
+export const REVIEW_TEMPLATE_CATEGORY = 'review_request' as const
 
 const REVIEW_DELAY_HOURS = 48
 const REVIEW_WINDOW_DAYS = 7
@@ -76,6 +90,9 @@ export async function processReviewRequestJob(_job: Job): Promise<void> {
     const patients = createPatientsRepository(sql)
     const channelAccounts = createChannelAccountsRepository(sql)
     const followUps = createFollowUpsRepository(sql)
+    const messages = createMessagesRepository(sql)
+    const templates = createMessageTemplatesRepository(sql)
+    const nowIso = now.toISOString()
 
     for (const clinic of await clinics.list()) {
       if (clinic.status !== 'active') continue
@@ -96,7 +113,27 @@ export async function processReviewRequestJob(_job: Job): Promise<void> {
       const doctorList = await doctors.listByClinic(clinic.id)
 
       for (const appt of completed) {
-        // Claim this (appointment, type) exactly once.
+        const patient = await patients.findById(clinic.id, appt.patientId)
+        if (!patient || isPatientOptedOut(patient)) continue
+
+        const handle = primaryWhatsAppHandle(await patients.listContacts(clinic.id, appt.patientId))
+        if (!handle) continue
+
+        const language = getPatientLanguage(patient)
+
+        // 24-hour customer-care window (Req 19 Meta Compliance). A review request is
+        // proactive, so outside the window we may only send the clinic's approved HSM
+        // template; with none approved we skip WITHOUT claiming the follow-up, so a
+        // later tick can deliver it once a template is approved.
+        const lastInbound = await messages.findLastInboundAt(clinic.id, appt.patientId)
+        const inWindow = isWithinCustomerCareWindow(lastInbound, nowIso)
+        let template = null
+        if (!inWindow) {
+          template = await templates.findApprovedByCategory(clinic.id, REVIEW_TEMPLATE_CATEGORY)
+          if (!template) continue
+        }
+
+        // Claim this (appointment, type) exactly once — only now that we can send.
         const followUp = await followUps.createIfAbsent({
           clinicId: clinic.id,
           patientId: appt.patientId,
@@ -105,17 +142,15 @@ export async function processReviewRequestJob(_job: Job): Promise<void> {
         })
         if (!followUp) continue // already handled in a prior run
 
-        const patient = await patients.findById(clinic.id, appt.patientId)
-        if (!patient || isPatientOptedOut(patient)) continue
-
-        const handle = primaryWhatsAppHandle(await patients.listContacts(clinic.id, appt.patientId))
-        if (!handle) continue
-
         const doctorName =
           doctorList.find((d) => d.id === appt.doctorId)?.name ??
-          (getPatientLanguage(patient) === 'en' ? 'your doctor' : 'tu doctor')
+          (language === 'en' ? 'your doctor' : 'tu doctor')
         const link = buildReviewLink(followUp.id, reviewLink)
-        const text = reviewMessage(getPatientLanguage(patient), doctorName, link)
+        // Inside the window: free-text invite. Outside: the approved template body,
+        // with the tracked review link appended so click-through is still recorded.
+        const text = inWindow
+          ? reviewMessage(language, doctorName, link)
+          : `${template!.body} ${link}`
 
         await sendWhatsAppText(account.accountId, account.accessTokenEnc ?? '', handle, text)
         await followUps.markSent(clinic.id, followUp.id)
