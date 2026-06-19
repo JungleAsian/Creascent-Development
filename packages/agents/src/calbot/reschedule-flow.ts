@@ -12,6 +12,12 @@ import {
   isNegative,
   pick,
 } from './shared.js'
+import {
+  type DoctorAvailability,
+  hasAvailability,
+  worksOnDay,
+  filterSlotsByAvailability,
+} from './doctor-availability.js'
 
 export type RescheduleStep = 'confirm_appointment' | 'ask_date' | 'ask_time' | 'confirm_details' | 'done'
 
@@ -27,7 +33,13 @@ export interface RescheduleContext {
   language: Language
   clinic: ClinicInfo
   appointment: UpcomingAppointment | null
+  // Req 30: the duration of the existing appointment's service, so the moved slot
+  // keeps the right length instead of collapsing to the 30-min default.
   serviceDurationMinutes?: number
+  // Req 30: the booked doctor's working hours. When set, the new time must fall on
+  // a day/inside an hour the doctor actually works — mirroring the booking flow so
+  // a reschedule can't move an appointment outside that doctor's availability.
+  availability?: DoctorAvailability
 }
 
 export interface RescheduleDeps {
@@ -47,6 +59,16 @@ export function initialRescheduleState(): RescheduleState {
 
 function slotStart(date: string, time: string): string {
   return `${date}T${time}:00`
+}
+
+// End of a slot starting at `startIso` (zone-less `YYYY-MM-DDTHH:MM:SS`) after
+// `durationMinutes`. Kept zone-less to match the calendar's slot format so the
+// rescheduled appointment row reflects the service's real length (Req 30) rather
+// than the calendar's fixed 30-min grid.
+function slotEnd(startIso: string, durationMinutes: number): string {
+  const d = new Date(`${startIso}Z`)
+  d.setUTCMinutes(d.getUTCMinutes() + durationMinutes)
+  return d.toISOString().slice(0, 19)
 }
 
 export async function advanceRescheduleFlow(
@@ -120,7 +142,25 @@ export async function advanceRescheduleFlow(
           done: false,
         }
       }
-      const slots = await deps.calendar.listSlots(date)
+
+      // Req 30: respect the booked doctor's working hours. A day the doctor is off
+      // sends the patient back to pick another day without even hitting the calendar.
+      const availability = ctx.availability
+      if (availability && hasAvailability(availability) && !worksOnDay(availability, date)) {
+        return {
+          nextState: { ...state, step: 'ask_date', preferredDate: undefined, preferredTime: undefined },
+          reply: pick(
+            L,
+            `${appt.providerName} no atiende ese día. ¿Qué otro día prefiere? (AAAA-MM-DD)`,
+            `${appt.providerName} doesn't work that day. Which other day do you prefer? (YYYY-MM-DD)`,
+          ),
+          done: false,
+        }
+      }
+
+      // Double-booking protection, then keep only slots inside the doctor's hours.
+      const freeSlots = await deps.calendar.listSlots(date)
+      const slots = availability ? filterSlotsByAvailability(freeSlots, date, availability) : freeSlots
       const match = slots.find((s) => s.start === slotStart(date, time))
       if (!match) {
         const alts = slots.slice(0, 4).map((s) => s.start.slice(11, 16))
@@ -182,7 +222,9 @@ export async function advanceRescheduleFlow(
         appointmentId: state.appointmentId,
         eventId: appt.googleEventId,
         startTime: slot.start,
-        endTime: slot.end,
+        // Preserve the service's real length (Req 30); slot.end is the calendar's
+        // fixed 30-min grid, which would shrink a longer appointment.
+        endTime: slotEnd(slot.start, duration),
       })
       return {
         nextState: { ...state, step: 'done' },

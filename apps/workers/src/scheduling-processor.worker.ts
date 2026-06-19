@@ -175,6 +175,16 @@ function isUpcoming(appt: Appointment, nowIso: string): boolean {
   return (appt.status === 'pending' || appt.status === 'confirmed') && appt.startTime > nowIso
 }
 
+// The booked length of an existing appointment, so a reschedule preserves the
+// service duration (Req 30) instead of defaulting to 30 minutes. Returns undefined
+// for malformed/empty rows so the flow falls back to its default.
+function apptDurationMinutes(appt: Appointment): number | undefined {
+  const start = Date.parse(appt.startTime)
+  const end = Date.parse(appt.endTime)
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return undefined
+  return Math.round((end - start) / 60000)
+}
+
 function loadStoredFlow(metadata: Record<string, unknown>, action: Action): StoredFlow | null {
   const stored = metadata['scheduling']
   if (stored && typeof stored === 'object' && (stored as StoredFlow).action === action) {
@@ -303,19 +313,47 @@ export async function processSchedulingJob(job: Job): Promise<void> {
       }
 
       case 'reschedule': {
-        if (!calendar) {
+        const target = upcoming[0]
+        const upcomingRef = target ? toUpcoming(target, providers) : null
+
+        // Req 30: a reschedule must move the appointment on the SAME doctor's
+        // calendar and stay inside that doctor's working hours — not just the
+        // clinic calendar. Resolve the booked doctor (doctor-mode only; legacy
+        // provider appointments fall back to the clinic calendar unchanged).
+        const doctors = await createDoctorsRepository(sql).listByClinic(data.clinicId)
+        const apptDoctor =
+          upcomingRef && doctors.length > 0
+            ? doctors.find((d) => d.id === upcomingRef.providerId)
+            : undefined
+
+        let rescheduleCalendar: CalendarOps | null = calendar
+        if (apptDoctor) {
+          const docCal = getDoctorCalendarConfig(apptDoctor)
+          rescheduleCalendar = docCal
+            ? createGoogleCalendarOps({
+                ...docCal,
+                timezone: clinic.timezone,
+                onTokensRefreshed: persistDoctorTokens(sql, data.clinicId, apptDoctor.id),
+              })
+            : calendar
+        }
+
+        if (!rescheduleCalendar) {
           await reply(calendarUnavailable(language))
           await notificationQueue.add('notify', { ...data, reason: 'human_handoff' })
           break
         }
+
         const stored = loadStoredFlow(metadata, 'reschedule')
         const state = stored?.action === 'reschedule' ? stored.state : initialRescheduleState()
         const result = await advanceRescheduleFlow(state, data.message, {
           language,
           clinic: clinicInfo,
-          appointment: upcoming[0] ? toUpcoming(upcoming[0], providers) : null,
+          appointment: upcomingRef,
+          ...(apptDoctor ? { availability: normalizeAvailability(apptDoctor.availableDays) } : {}),
+          ...(target ? { serviceDurationMinutes: apptDurationMinutes(target) } : {}),
         }, {
-          calendar,
+          calendar: rescheduleCalendar,
           applyReschedule: async ({ appointmentId, startTime, endTime }) => {
             await appointments.update(data.clinicId, appointmentId, { startTime, endTime, status: 'confirmed' })
             await appointments.addEvent(data.clinicId, appointmentId, 'rescheduled')
