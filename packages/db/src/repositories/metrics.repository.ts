@@ -10,8 +10,25 @@ export interface MetricsDashboard {
   avgResponseSeconds: number
   /** Conversations opened per local day for the last 30 days (ascending). */
   conversationsPerDay: Array<{ date: string; count: number }>
-  /** Classified-intent distribution across the last 30 days, highest first. */
+  /** Classified-intent distribution (common questions) across the last 30 days, highest first. */
   topIntents: Array<{ intent: string; count: number }>
+  // --- Req 17: full basic-metrics list (all over the trailing 30 days) ---
+  /** Total conversations opened in the last 30 days (denominator for the rates below). */
+  totalConversations: number
+  /** Conversations opened per channel in the last 30 days, highest first. */
+  conversationsByChannel: Array<{ channel: string; count: number }>
+  /** Distinct patients (leads) who started a conversation in the last 30 days. */
+  leads: number
+  /** Conversations in the last 30 days that produced a confirmed/completed appointment. */
+  bookings: number
+  /** Fraction (0..1) of conversations that booked an appointment (booking conversion / conversion rate). */
+  bookingConversionRate: number
+  /** Fraction (0..1) of conversations transferred to a human (handoff or assigned). */
+  transferRate: number
+  /** Fraction (0..1) of conversations with an inbound patient message but no clinic reply. */
+  noResponseRate: number
+  /** Message volume by weekday (0=Sun) × hour (0–23), clinic-local — the peak-hours grid. */
+  peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
 }
 
 const num = (value: string | number | null | undefined): number => {
@@ -28,7 +45,19 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
     async dashboard(clinicId, timezone) {
       const tz = timezone || 'UTC'
 
-      const [convToday, msgToday, replyRate, response, perDay, intents] = await Promise.all([
+      const [
+        convToday,
+        msgToday,
+        replyRate,
+        response,
+        perDay,
+        intents,
+        conv30,
+        byChannel,
+        bookings,
+        noResp,
+        peak,
+      ] = await Promise.all([
         sql<[{ count: string }]>`
           SELECT COUNT(*) AS count FROM conversations
           WHERE clinic_id = ${clinicId}
@@ -83,10 +112,64 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
           ORDER BY count DESC
           LIMIT 8
         `,
+        sql<[{ total: string; transferred: string; leads: string }]>`
+          SELECT
+            COUNT(*)                                                              AS total,
+            COUNT(*) FILTER (WHERE status = 'handoff' OR assigned_to IS NOT NULL)  AS transferred,
+            COUNT(DISTINCT patient_id) FILTER (WHERE patient_id IS NOT NULL)        AS leads
+          FROM conversations
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+        `,
+        sql<{ channel: string; count: string }[]>`
+          SELECT channel, COUNT(*) AS count
+          FROM conversations
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+          GROUP BY channel
+          ORDER BY count DESC
+        `,
+        sql<[{ count: string }]>`
+          SELECT COUNT(DISTINCT c.id) AS count
+          FROM conversations c
+          JOIN appointments a ON a.conversation_id = c.id AND a.clinic_id = c.clinic_id
+          WHERE c.clinic_id = ${clinicId}
+            AND c.created_at >= NOW() - INTERVAL '30 days'
+            AND a.status IN ('confirmed', 'completed')
+        `,
+        sql<[{ withInbound: string; noResponse: string }]>`
+          WITH per_conversation AS (
+            SELECT
+              conversation_id,
+              COUNT(*) FILTER (WHERE role = 'user')                  AS inbound,
+              COUNT(*) FILTER (WHERE role IN ('assistant', 'agent')) AS replies
+            FROM conversation_messages
+            WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY conversation_id
+          )
+          SELECT
+            COUNT(*) FILTER (WHERE inbound > 0)                  AS with_inbound,
+            COUNT(*) FILTER (WHERE inbound > 0 AND replies = 0)  AS no_response
+          FROM per_conversation
+        `,
+        sql<{ dow: string; hour: string; count: string }[]>`
+          SELECT
+            EXTRACT(DOW  FROM created_at AT TIME ZONE ${tz})::int AS dow,
+            EXTRACT(HOUR FROM created_at AT TIME ZONE ${tz})::int AS hour,
+            COUNT(*) AS count
+          FROM conversation_messages
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+          GROUP BY 1, 2
+          ORDER BY 1, 2
+        `,
       ])
 
       const inbound = num(replyRate[0]?.inbound)
       const replies = num(replyRate[0]?.replies)
+
+      const total = num(conv30[0]?.total)
+      const bookingCount = num(bookings[0]?.count)
+      const transferred = num(conv30[0]?.transferred)
+      const withInbound = num(noResp[0]?.withInbound)
+      const noResponse = num(noResp[0]?.noResponse)
 
       return {
         conversationsToday: num(convToday[0]?.count),
@@ -95,6 +178,14 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
         avgResponseSeconds: Math.round(num(response[0]?.avgSeconds)),
         conversationsPerDay: perDay.map((r) => ({ date: r.date, count: num(r.count) })),
         topIntents: intents.map((r) => ({ intent: r.intent, count: num(r.count) })),
+        totalConversations: total,
+        conversationsByChannel: byChannel.map((r) => ({ channel: r.channel, count: num(r.count) })),
+        leads: num(conv30[0]?.leads),
+        bookings: bookingCount,
+        bookingConversionRate: total > 0 ? bookingCount / total : 0,
+        transferRate: total > 0 ? transferred / total : 0,
+        noResponseRate: withInbound > 0 ? noResponse / withInbound : 0,
+        peakHours: peak.map((r) => ({ dayOfWeek: num(r.dow), hour: num(r.hour), count: num(r.count) })),
       }
     },
   }

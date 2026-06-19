@@ -142,6 +142,14 @@ export interface ClinicMetrics {
   avgResponseSeconds: number
   conversationsPerDay: Array<{ date: string; count: number }>
   topIntents: Array<{ intent: string; count: number }>
+  totalConversations: number
+  conversationsByChannel: Array<{ channel: string; count: number }>
+  leads: number
+  bookings: number
+  bookingConversionRate: number
+  transferRate: number
+  noResponseRate: number
+  peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
 }
 
 export type ClinicPlan = 'starter' | 'pro' | 'enterprise'

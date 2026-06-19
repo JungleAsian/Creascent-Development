@@ -15,6 +15,9 @@ const PIE_COLORS = [
   '#06b6d4', '#a855f7', '#ec4899', '#84cc16',
 ]
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const pct = (n: number) => `${Math.round(n * 100)}%`
+
 export default function MetricsPage() {
   const { t } = useI18n()
   const user = useAuthStore((s) => s.user)
@@ -66,15 +69,129 @@ export default function MetricsPage() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Card label={t('metrics.conversationsToday')} value={String(m.conversationsToday)} />
             <Card label={t('metrics.messagesToday')} value={String(m.messagesToday)} />
-            <Card label={t('metrics.botReplyRate')} value={`${Math.round(m.botReplyRate * 100)}%`} />
+            <Card label={t('metrics.botReplyRate')} value={pct(m.botReplyRate)} />
             <Card label={t('metrics.avgResponse')} value={formatDuration(m.avgResponseSeconds)} />
           </div>
 
+          <p className="-mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+            {t('metrics.last30')}
+          </p>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Card label={t('metrics.totalConversations')} value={String(m.totalConversations)} />
+            <Card label={t('metrics.leads')} value={String(m.leads)} />
+            <Card label={t('metrics.bookings')} value={String(m.bookings)} />
+            <Card label={t('metrics.bookingConversion')} value={pct(m.bookingConversionRate)} />
+            <Card label={t('metrics.transferRate')} value={pct(m.transferRate)} />
+            <Card label={t('metrics.noResponseRate')} value={pct(m.noResponseRate)} />
+          </div>
+
+          <ChannelBars
+            data={m.conversationsByChannel}
+            title={t('metrics.byChannel')}
+            empty={t('metrics.noData')}
+            label={(c) => t(`metrics.channel.${c}` as Parameters<typeof t>[0]) || c}
+          />
           <BarChart data={m.conversationsPerDay} title={t('metrics.perDay')} empty={t('metrics.noData')} />
           <IntentPie data={m.topIntents} title={t('metrics.topIntents')} empty={t('metrics.noData')} />
+          <Heatmap data={m.peakHours} title={t('metrics.peakHours')} empty={t('metrics.noData')} />
         </>
       )}
     </div>
+  )
+}
+
+function ChannelBars({
+  data,
+  title,
+  empty,
+  label,
+}: {
+  data: Array<{ channel: string; count: number }>
+  title: string
+  empty: string
+  label: (channel: string) => string
+}) {
+  const total = data.reduce((sum, d) => sum + d.count, 0)
+  const max = Math.max(1, ...data.map((d) => d.count))
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <h2 className="mb-3 text-sm font-semibold">{title}</h2>
+      {total === 0 ? (
+        <p className="text-sm text-gray-400">{empty}</p>
+      ) : (
+        <ul className="space-y-2">
+          {data.map((d) => (
+            <li key={d.channel} className="flex items-center gap-3 text-sm">
+              <span className="w-24 shrink-0 text-gray-700 dark:text-gray-200">{label(d.channel)}</span>
+              <div className="h-3 flex-1 overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
+                <div className="h-full rounded bg-indigo-500" style={{ width: `${(d.count / max) * 100}%` }} />
+              </div>
+              <span className="w-16 shrink-0 text-right text-xs text-gray-500">
+                {d.count} ({Math.round((d.count / total) * 100)}%)
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function Heatmap({
+  data,
+  title,
+  empty,
+}: {
+  data: Array<{ dayOfWeek: number; hour: number; count: number }>
+  title: string
+  empty: string
+}) {
+  const map = new Map<string, number>()
+  let max = 0
+  for (const cell of data) {
+    map.set(`${cell.dayOfWeek}-${cell.hour}`, cell.count)
+    if (cell.count > max) max = cell.count
+  }
+  max = Math.max(1, max)
+
+  return (
+    <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <h2 className="mb-3 text-sm font-semibold">{title}</h2>
+      {data.length === 0 ? (
+        <p className="text-sm text-gray-400">{empty}</p>
+      ) : (
+        <div className="inline-block">
+          <div className="flex">
+            <div className="w-10" />
+            {Array.from({ length: 24 }, (_, h) => (
+              <div key={h} className="w-4 text-center text-[8px] text-gray-400">
+                {h % 6 === 0 ? h : ''}
+              </div>
+            ))}
+          </div>
+          {WEEKDAYS.map((wlabel, dow) => (
+            <div key={dow} className="flex items-center">
+              <div className="w-10 text-[10px] text-gray-500">{wlabel}</div>
+              {Array.from({ length: 24 }, (_, hour) => {
+                const count = map.get(`${dow}-${hour}`) ?? 0
+                const intensity = count / max
+                return (
+                  <div
+                    key={hour}
+                    title={`${wlabel} ${hour}:00 — ${count}`}
+                    className="m-px h-4 w-4 rounded-sm"
+                    style={{
+                      backgroundColor:
+                        count === 0 ? 'rgba(99,102,241,0.06)' : `rgba(99,102,241,${0.15 + intensity * 0.85})`,
+                    }}
+                  />
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
