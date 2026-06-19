@@ -13,6 +13,7 @@ import { formatDateTime } from '../format'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
 import { TemplatePicker } from './TemplatePicker'
+import { InteractivePicker } from './InteractivePicker'
 import { deliveryIndicator, type DeliveryTone } from '../delivery'
 import { isImageMessage, messageMediaPath } from '../media'
 import type {
@@ -105,6 +106,18 @@ export function ConversationView({
   const sendTemplateMutation = useMutation({
     mutationFn: (templateId: string) =>
       api.post(`/conversations/${conversationId}/send-template`, { templateId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
+  // Req 3: send an interactive reply-button menu (WhatsApp only). Like a manual
+  // reply it delivers immediately and pauses the bot; the server records its wamid
+  // so the delivery indicator tracks it, and a tapped button comes back as text.
+  const sendInteractiveMutation = useMutation({
+    mutationFn: (vars: { body: string; buttons: string[] }) =>
+      api.post(`/conversations/${conversationId}/send-interactive`, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['messages', conversationId] })
       qc.invalidateQueries({ queryKey: ['conversations'] })
@@ -303,7 +316,10 @@ export function ConversationView({
           {/* Req 3: the reply is now delivered to the patient over the channel, so a
               failed send (expired token, send outside the 24h window) surfaces here —
               the draft is preserved so the secretary can retry. */}
-          {(sendMutation.isError || sendTemplateMutation.isError || sendMediaMutation.isError) && (
+          {(sendMutation.isError ||
+            sendTemplateMutation.isError ||
+            sendInteractiveMutation.isError ||
+            sendMediaMutation.isError) && (
             <p className="px-3 pt-2 text-xs font-medium text-red-600 dark:text-red-400">
               ⚠ {t('view.sendFailed')}
             </p>
@@ -322,6 +338,13 @@ export function ConversationView({
                 conversationId={conversationId}
                 onPick={(templateId) => sendTemplateMutation.mutate(templateId)}
                 disabled={sendTemplateMutation.isPending}
+              />
+            )}
+            {/* Req 3: offer the patient a tappable reply-button menu (WhatsApp only). */}
+            {conversation?.channel === 'whatsapp' && (
+              <InteractivePicker
+                onSend={(body, buttons) => sendInteractiveMutation.mutate({ body, buttons })}
+                disabled={sendInteractiveMutation.isPending}
               />
             )}
             {/* Req 3: attach an image (WhatsApp only — Messenger/Instagram attachment

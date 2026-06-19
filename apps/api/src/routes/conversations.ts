@@ -28,6 +28,7 @@ import { fetchWhatsAppMedia } from '../lib/whatsapp-media.js'
 import {
   sendWhatsAppText,
   sendWhatsAppTemplate,
+  sendWhatsAppInteractive,
   sendMessengerText,
   sendInstagramText,
 } from '../lib/channel-send.js'
@@ -58,6 +59,12 @@ const messageSchema = z.object({
   contentType: z.enum(['text', 'audio', 'image', 'template', 'interactive']).optional(),
 })
 const sendTemplateSchema = z.object({ templateId: z.string().min(1) })
+// Req 3: an interactive reply-button menu — a body plus 1–3 buttons (WhatsApp's
+// limit), each title ≤ 20 chars (Meta rejects longer titles).
+const sendInteractiveSchema = z.object({
+  body: z.string().min(1).max(1024),
+  buttons: z.array(z.string().min(1).max(20)).min(1).max(3),
+})
 const tagSchema = z.object({ tag: z.string().min(1) })
 const noteSchema = z.object({ content: z.string().min(1) })
 // Req 29: a secretary flags a bad bot reply from the inbox; it surfaces in the
@@ -511,6 +518,109 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
           },
         })
         // Bot Interruption Rule (Rev1 #6): sending a template is a human takeover.
+        if (resolved.convo.status === 'open') {
+          await createConversationsRepository(sql).update(clinicId, request.params.id, {
+            status: 'handoff',
+            metadata: {
+              ...resolved.convo.metadata,
+              botPausedAt: new Date().toISOString(),
+              handoffReason: 'human_reply',
+            },
+          })
+        }
+        return created
+      })
+      return reply.code(201).send({ message })
+    },
+  )
+
+  // ── Send an interactive reply-button menu to the patient (Req 3) ──
+  // A secretary offers the patient a small set of tappable choices (e.g. "Sí,
+  // confirmar" / "Reprogramar" / "Cancelar"). Mirrors the manual-reply send: a real
+  // `type:'interactive'` WhatsApp message goes out, its wamid is captured so the
+  // delivery-status pipeline + the inbox ✓/✓✓/read indicator track it, the body is
+  // persisted as the bubble text (the offered buttons in metadata), and the Bot
+  // Interruption Rule pauses the bot. When the patient taps a button the inbound
+  // webhook's interactive parsing feeds the tapped title back as ordinary message
+  // text, closing the loop. WhatsApp-only (Messenger/Instagram → 400).
+  app.post<{ Params: { id: string } }>(
+    '/:id/send-interactive',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const parsed = validate(sendInteractiveSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const resolved = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return { code: 404 as const }
+        // Interactive button menus are a WhatsApp-only mechanism here.
+        if (convo.channel !== 'whatsapp') return { code: 400 as const }
+        const accounts = await createChannelAccountsRepository(sql).listByClinic(clinicId)
+        const account = accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
+        if (!account?.accessTokenEnc) return { code: 502 as const }
+        return {
+          code: 200 as const,
+          convo,
+          phoneNumberId: account.accountId,
+          token: account.accessTokenEnc,
+          recipient: convo.channelContactHandle,
+        }
+      })
+
+      if (resolved.code === 404) return reply.code(404).send({ error: 'Conversation not found' })
+      if (resolved.code === 400) {
+        return reply.code(400).send({ error: 'Interactive menus are only supported on WhatsApp' })
+      }
+      if (resolved.code === 502) return reply.code(502).send({ error: 'Channel not configured' })
+
+      // Deliver the menu. A failed send (expired/invalid token, a send rejected
+      // outside the 24h window, rate limit) is recorded to the Error Review area as
+      // `meta_send_failure` (Req 19/29) and surfaced as a 502 — nothing is persisted.
+      let channelMessageId: string | null = null
+      try {
+        channelMessageId = await sendWhatsAppInteractive(
+          resolved.phoneNumberId,
+          resolved.token,
+          resolved.recipient,
+          parsed.data.body,
+          parsed.data.buttons,
+        )
+      } catch (err) {
+        request.log.error(`[send-interactive] channel send failed: ${(err as Error).message}`)
+        await withDb((sql) =>
+          createErrorReviewsRepository(sql).create({
+            clinicId,
+            errorType: 'meta_send_failure',
+            errorMessage: err instanceof Error ? err.message : String(err),
+            context: {
+              conversationId: request.params.id,
+              channel: 'whatsapp',
+              recipient: resolved.recipient,
+              sentBy: request.user!.userId,
+            },
+          }),
+        ).catch((logErr) =>
+          request.log.error(`[send-interactive] failed to log send error: ${(logErr as Error).message}`),
+        )
+        return reply.code(502).send({ error: 'Interactive send failed' })
+      }
+
+      const message = await withDb(async (sql) => {
+        const created = await createMessagesRepository(sql).create({
+          conversationId: request.params.id,
+          clinicId,
+          role: 'agent',
+          content: parsed.data.body,
+          contentType: 'interactive',
+          channelMessageId: channelMessageId ?? undefined,
+          metadata: {
+            authorId: request.user!.userId,
+            buttons: parsed.data.buttons,
+          },
+        })
+        // Bot Interruption Rule (Rev1 #6): offering a menu is a human takeover.
         if (resolved.convo.status === 'open') {
           await createConversationsRepository(sql).update(clinicId, request.params.id, {
             status: 'handoff',

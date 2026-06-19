@@ -171,6 +171,61 @@ export async function sendWhatsAppTemplate(
   }
 }
 
+/**
+ * Send an interactive reply-button message (Req 3) — a body of text plus up to 3
+ * tappable reply buttons. Returns the wamid (or null). When the patient taps a
+ * button the inbound webhook parses the `interactive.button_reply` (already wired
+ * — Req 3 inbound interactive parsing) and the bot/secretary receives the tapped
+ * title as ordinary message text, so the round-trip closes. Each button id is the
+ * button index (`btn_0`…) — opaque; flows match on the localized title. WhatsApp
+ * allows at most 3 reply buttons, titles ≤ 20 chars (enforced by the route).
+ */
+export async function sendWhatsAppInteractive(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  bodyText: string,
+  buttons: string[],
+): Promise<string | null> {
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toWaId,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: bodyText },
+          action: {
+            buttons: buttons.map((title, i) => ({
+              type: 'reply',
+              reply: { id: `btn_${i}`, title },
+            })),
+          },
+        },
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`WhatsApp interactive send failed ${res.status}: ${await res.text()}`)
+  }
+
+  try {
+    const data = (await res.json()) as { messages?: Array<{ id?: string }> }
+    return data.messages?.[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Send a plain-text Messenger Send API message; returns the mid (or null). */
 export async function sendMessengerText(
   pageAccessToken: string,

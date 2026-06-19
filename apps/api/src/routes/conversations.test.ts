@@ -16,9 +16,10 @@ const { fetchMedia } = vi.hoisted(() => ({
 vi.mock('../lib/whatsapp-media.js', () => ({ fetchWhatsAppMedia: fetchMedia }))
 // Req 3/33/34 outbound send: stub the inlined channel senders so no real Meta
 // call runs. Each returns the provider message id the route persists.
-const { sendWa, sendWaTpl, sendMsgr, sendIg, uploadWaMedia, sendWaImage } = vi.hoisted(() => ({
+const { sendWa, sendWaTpl, sendWaInt, sendMsgr, sendIg, uploadWaMedia, sendWaImage } = vi.hoisted(() => ({
   sendWa: vi.fn(async () => 'wamid.OUT1' as string | null),
   sendWaTpl: vi.fn(async () => 'wamid.TPL1' as string | null),
+  sendWaInt: vi.fn(async () => 'wamid.INT1' as string | null),
   sendMsgr: vi.fn(async () => 'mid.OUT1' as string | null),
   sendIg: vi.fn(async () => 'mid.IG1' as string | null),
   uploadWaMedia: vi.fn(async () => 'media-up-1'),
@@ -27,6 +28,7 @@ const { sendWa, sendWaTpl, sendMsgr, sendIg, uploadWaMedia, sendWaImage } = vi.h
 vi.mock('../lib/channel-send.js', () => ({
   sendWhatsAppText: sendWa,
   sendWhatsAppTemplate: sendWaTpl,
+  sendWhatsAppInteractive: sendWaInt,
   sendMessengerText: sendMsgr,
   sendInstagramText: sendIg,
   uploadWhatsAppMedia: uploadWaMedia,
@@ -157,6 +159,19 @@ const store = vi.hoisted(() => ({
         clinicId: 'c-1',
         channel: 'whatsapp',
         channelContactHandle: '+50212121212',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
+    // Open WhatsApp thread reserved for the interactive reply-button send test (Req 3).
+    [
+      'wa-int',
+      {
+        id: 'wa-int',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50214141414',
         status: 'open',
         assignedTo: null,
         metadata: {},
@@ -745,6 +760,67 @@ describe('conversation routes', () => {
       url: '/conversations/wa-fail/send-template',
       headers: authHeader('secretary'),
       payload: { templateId: 'tpl-1' },
+    })
+    expect(res.statusCode).toBe(502)
+    expect(store.flagged.length).toBe(before + 1)
+    expect(store.flagged.at(-1)!.errorType).toBe('meta_send_failure')
+    expect(store.sent.length).toBe(sentBefore)
+    expect(store.conversations.get('wa-fail')!.status).toBe('open')
+  })
+
+  // ── Outbound interactive reply-button menu (Req 3) ──
+  it('POST /conversations/:id/send-interactive sends the menu, persists the wamid + buttons and pauses the bot', async () => {
+    sendWaInt.mockClear()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-int/send-interactive',
+      headers: authHeader('secretary'),
+      payload: { body: '¿Confirmas tu cita?', buttons: ['Sí, confirmar', 'Reprogramar'] },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    // The menu went out on the clinic's WhatsApp number with the body + buttons.
+    expect(sendWaInt).toHaveBeenCalledWith('PHONE', 'tok', '+50214141414', '¿Confirmas tu cita?', [
+      'Sí, confirmar',
+      'Reprogramar',
+    ])
+    expect(body.message.channelMessageId).toBe('wamid.INT1')
+    expect(body.message.contentType).toBe('interactive')
+    expect(body.message.content).toBe('¿Confirmas tu cita?')
+    expect(body.message.metadata).toMatchObject({ buttons: ['Sí, confirmar', 'Reprogramar'] })
+    // Bot Interruption Rule: an `open` conversation flips to `handoff`.
+    expect(store.conversations.get('wa-int')!.status).toBe('handoff')
+  })
+
+  it('POST /conversations/:id/send-interactive → 400 with no buttons', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-send/send-interactive',
+      headers: authHeader('secretary'),
+      payload: { body: 'pick one', buttons: [] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-interactive → 400 on a non-WhatsApp thread', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/msgr-send/send-interactive',
+      headers: authHeader('secretary'),
+      payload: { body: 'pick one', buttons: ['A'] },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-interactive logs meta_send_failure and returns 502 when the send throws', async () => {
+    sendWaInt.mockRejectedValueOnce(new Error('Meta 401: token expired'))
+    const before = store.flagged.length
+    const sentBefore = store.sent.length
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-fail/send-interactive',
+      headers: authHeader('secretary'),
+      payload: { body: 'will not send', buttons: ['A', 'B'] },
     })
     expect(res.statusCode).toBe(502)
     expect(store.flagged.length).toBe(before + 1)
