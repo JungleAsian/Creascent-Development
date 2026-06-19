@@ -18,11 +18,13 @@ import {
   createConversationsRepository,
   createMessagesRepository,
   createChannelAccountsRepository,
+  createClinicsRepository,
   createErrorReviewsRepository,
 } from '@docmee/db'
 import type { ConversationStatus } from '@docmee/db'
 import { withDb } from '../lib/db.js'
 import { fetchWhatsAppMedia } from '../lib/whatsapp-media.js'
+import { sendWhatsAppText, sendMessengerText, sendInstagramText } from '../lib/channel-send.js'
 import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -273,6 +275,12 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
     },
   )
 
+  // A secretary's manual reply is DELIVERED to the patient over the conversation's
+  // channel (Req 3/33/34) — not merely persisted. Mirrors the agent worker's send
+  // transport: resolve the channel credentials, send, capture the provider message
+  // id (wamid / Messenger+Instagram mid) and persist it as channel_message_id so
+  // the delivery-status pipeline + the inbox ✓/✓✓/read indicator track this manual
+  // reply exactly like a bot reply.
   app.post<{ Params: { id: string } }>(
     '/:id/messages',
     { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
@@ -282,27 +290,92 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
       const clinicId = resolveClinicScope(request)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
 
+      // Resolve the conversation and build the channel send transport. The Meta
+      // send itself happens OUTSIDE the db callback so we don't hold a connection
+      // across the network round-trip (mirrors the inbound media proxy). The
+      // closure captures only primitives + a module-level sender, so it is safe to
+      // call after the connection is released.
+      const resolved = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return { code: 404 as const }
+
+        let send: ((text: string) => Promise<string | null>) | null = null
+        const recipient = convo.channelContactHandle
+        if (convo.channel === 'messenger' || convo.channel === 'instagram') {
+          // Messenger/Instagram tokens live on the clinic row (Req 33/34).
+          const clinic = await createClinicsRepository(sql).findById(clinicId)
+          if (convo.channel === 'messenger') {
+            const token = clinic?.messengerEnabled ? clinic.messengerPageAccessTokenEncrypted : null
+            if (token) send = (text) => sendMessengerText(token, recipient, text)
+          } else {
+            const token = clinic?.instagramEnabled ? clinic.instagramPageAccessTokenEncrypted : null
+            if (token) send = (text) => sendInstagramText(token, recipient, text)
+          }
+        } else {
+          // WhatsApp credentials live on the active channel account (Req 3).
+          const accounts = await createChannelAccountsRepository(sql).listByClinic(clinicId)
+          const account = accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
+          if (account?.accessTokenEnc) {
+            const phoneNumberId = account.accountId
+            const token = account.accessTokenEnc
+            send = (text) => sendWhatsAppText(phoneNumberId, token, recipient, text)
+          }
+        }
+        return { code: 200 as const, convo, recipient, send }
+      })
+
+      if (resolved.code === 404) return reply.code(404).send({ error: 'Conversation not found' })
+      // No usable credentials for this channel (WhatsApp account inactive, or
+      // Messenger/Instagram not connected) — there is no way to reach the patient.
+      if (!resolved.send) return reply.code(502).send({ error: 'Channel not configured' })
+
+      // Deliver to the patient. A failed send (expired/invalid token, rate limit,
+      // a send rejected outside the 24-hour window) is recorded to the Error Review
+      // area as `meta_send_failure` (Req 19/29) and surfaced to the secretary as a
+      // 502 — the reply is NOT persisted, so the draft can be retried rather than
+      // leaving a phantom "sent" bubble that never arrived.
+      let channelMessageId: string | null = null
+      try {
+        channelMessageId = await resolved.send(parsed.data.content)
+      } catch (err) {
+        request.log.error(`[messages] channel send failed: ${(err as Error).message}`)
+        await withDb((sql) =>
+          createErrorReviewsRepository(sql).create({
+            clinicId,
+            errorType: 'meta_send_failure',
+            errorMessage: err instanceof Error ? err.message : String(err),
+            context: {
+              conversationId: request.params.id,
+              channel: resolved.convo.channel,
+              recipient: resolved.recipient,
+              sentBy: request.user!.userId,
+            },
+          }),
+        ).catch((logErr) =>
+          request.log.error(`[messages] failed to log send error: ${(logErr as Error).message}`),
+        )
+        return reply.code(502).send({ error: 'Message send failed' })
+      }
+
       const message = await withDb(async (sql) => {
-        const repo = createConversationsRepository(sql)
-        const convo = await repo.findById(clinicId, request.params.id)
-        if (!convo) return null
         const created = await createMessagesRepository(sql).create({
           conversationId: request.params.id,
           clinicId,
           role: 'agent',
           content: parsed.data.content,
           contentType: parsed.data.contentType ?? 'text',
+          channelMessageId: channelMessageId ?? undefined,
           metadata: { authorId: request.user!.userId },
         })
         // Bot Interruption Rule (Rev1 #6): a manual human reply takes the
         // conversation over, so pause the bot. Only escalate an `open`
         // conversation — `assigned`/`handoff` are already human-owned, and
         // `resolved` stays closed.
-        if (convo.status === 'open') {
-          await repo.update(clinicId, request.params.id, {
+        if (resolved.convo.status === 'open') {
+          await createConversationsRepository(sql).update(clinicId, request.params.id, {
             status: 'handoff',
             metadata: {
-              ...convo.metadata,
+              ...resolved.convo.metadata,
               botPausedAt: new Date().toISOString(),
               handoffReason: 'human_reply',
             },
@@ -310,7 +383,6 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
         }
         return created
       })
-      if (!message) return reply.code(404).send({ error: 'Conversation not found' })
       return reply.code(201).send({ message })
     },
   )

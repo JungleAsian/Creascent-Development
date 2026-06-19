@@ -251,31 +251,41 @@ export function ConversationView({
           {t('view.closedNotice')}
         </p>
       ) : (
-        <form onSubmit={onSend} className="flex items-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
-          <QuickReplyPicker
-            onPick={(content) => setDraft((d) => (d.trim() ? `${d}\n${content}` : content))}
-          />
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                onSend(e)
-              }
-            }}
-            rows={2}
-            placeholder={t('view.placeholder')}
-            className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
-          />
-          <button
-            type="submit"
-            disabled={sendMutation.isPending || !draft.trim()}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-          >
-            {sendMutation.isPending ? t('view.sending') : t('view.send')}
-          </button>
-        </form>
+        <div className="border-t border-gray-200 dark:border-gray-800">
+          {/* Req 3: the reply is now delivered to the patient over the channel, so a
+              failed send (expired token, send outside the 24h window) surfaces here —
+              the draft is preserved so the secretary can retry. */}
+          {sendMutation.isError && (
+            <p className="px-3 pt-2 text-xs font-medium text-red-600 dark:text-red-400">
+              ⚠ {t('view.sendFailed')}
+            </p>
+          )}
+          <form onSubmit={onSend} className="flex items-end gap-2 p-3">
+            <QuickReplyPicker
+              onPick={(content) => setDraft((d) => (d.trim() ? `${d}\n${content}` : content))}
+            />
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  onSend(e)
+                }
+              }}
+              rows={2}
+              placeholder={t('view.placeholder')}
+              className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+            />
+            <button
+              type="submit"
+              disabled={sendMutation.isPending || !draft.trim()}
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {sendMutation.isPending ? t('view.sending') : t('view.send')}
+            </button>
+          </form>
+        </div>
       )}
     </div>
   )

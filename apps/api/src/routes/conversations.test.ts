@@ -14,6 +14,25 @@ const { fetchMedia } = vi.hoisted(() => ({
   })),
 }))
 vi.mock('../lib/whatsapp-media.js', () => ({ fetchWhatsAppMedia: fetchMedia }))
+// Req 3/33/34 outbound send: stub the inlined channel senders so no real Meta
+// call runs. Each returns the provider message id the route persists.
+const { sendWa, sendMsgr, sendIg } = vi.hoisted(() => ({
+  sendWa: vi.fn(async () => 'wamid.OUT1' as string | null),
+  sendMsgr: vi.fn(async () => 'mid.OUT1' as string | null),
+  sendIg: vi.fn(async () => 'mid.IG1' as string | null),
+}))
+vi.mock('../lib/channel-send.js', () => ({
+  sendWhatsAppText: sendWa,
+  sendMessengerText: sendMsgr,
+  sendInstagramText: sendIg,
+}))
+// Mutable clinic config so a test can flip a channel's connected state.
+const clinicCfg = vi.hoisted(() => ({
+  messengerEnabled: true,
+  messengerPageAccessTokenEncrypted: 'mtok' as string | null,
+  instagramEnabled: true,
+  instagramPageAccessTokenEncrypted: 'itok' as string | null,
+}))
 vi.mock('@docmee/shared', () => ({
   encryptValue: (v: string) => `enc:${v}`,
   verifyPassword: () => true,
@@ -72,8 +91,48 @@ const store = vi.hoisted(() => ({
         metadata: {},
       },
     ],
+    // Dedicated open conversations for the outbound manual-reply send tests
+    // (Req 3/33/34) — separate from open-1 so the assign tests can't mutate them.
+    [
+      'wa-send',
+      {
+        id: 'wa-send',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50277778888',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
+    [
+      'wa-fail',
+      {
+        id: 'wa-fail',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50299990000',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
+    [
+      'msgr-send',
+      {
+        id: 'msgr-send',
+        clinicId: 'c-1',
+        channel: 'messenger',
+        channelContactHandle: 'PSID-123',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
   ]),
   created: [] as Record<string, unknown>[],
+  // Outbound messages persisted by POST /:id/messages (Req 3).
+  sent: [] as Record<string, unknown>[],
   flagged: [] as Record<string, unknown>[],
   // Conversation messages (Req 3 media proxy). An image with a media id on open-1,
   // an image with no media id, and a text message — to exercise the proxy guards.
@@ -152,6 +211,11 @@ vi.mock('@docmee/db', () => ({
       const m = store.messages.get(id)
       return m && m.clinicId === clinicId ? m : null
     },
+    create: async (data: Record<string, unknown>) => {
+      const row = { ...data, id: `sent-${store.sent.length + 1}`, createdAt: '2026-06-19T13:00:00.000Z' }
+      store.sent.push(row)
+      return row
+    },
   }),
   createChannelAccountsRepository: () => ({
     listByClinic: async (clinicId: string) =>
@@ -159,7 +223,9 @@ vi.mock('@docmee/db', () => ({
         ? [{ channel: 'whatsapp', status: 'active', accountId: 'PHONE', accessTokenEnc: 'tok' }]
         : [],
   }),
-  createClinicsRepository: () => ({}),
+  createClinicsRepository: () => ({
+    findById: async (id: string) => (id === 'c-1' ? { id: 'c-1', ...clinicCfg } : null),
+  }),
   createPatientsRepository: () => ({}),
   createKnowledgeRepository: () => ({}),
   createNotificationsRepository: () => ({}),
@@ -230,9 +296,12 @@ describe('conversation routes', () => {
     })
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.body)
-    const ids = body.conversations.map((c: { id: string }) => c.id).sort()
-    // old-1 and open-1 have assignedTo null; mine-1/theirs-1 are assigned.
-    expect(ids).toEqual(['old-1', 'open-1'])
+    const ids = body.conversations.map((c: { id: string }) => c.id)
+    // old-1/open-1 (and the unassigned send fixtures) have assignedTo null;
+    // mine-1/theirs-1 are assigned and must be excluded.
+    expect(ids).toEqual(expect.arrayContaining(['old-1', 'open-1']))
+    expect(ids).not.toContain('mine-1')
+    expect(ids).not.toContain('theirs-1')
   })
 
   // ── Assignment role permissions (Rev1 #12) ──
@@ -444,6 +513,86 @@ describe('conversation routes', () => {
       method: 'GET',
       url: '/conversations/open-1/messages/ghost/media',
       headers: auth,
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  // ── Outbound manual reply DELIVERY (Req 3/33/34) ──
+  // A secretary's reply must actually reach the patient over the conversation's
+  // channel, persist the provider message id, and pause the bot.
+  it('POST /conversations/:id/messages sends over WhatsApp, persists the wamid and pauses the bot', async () => {
+    sendWa.mockClear()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-send/messages',
+      headers: authHeader('secretary'),
+      payload: { content: 'Hola, ¿en qué puedo ayudarte?' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    // The send went out over WhatsApp with the clinic's phone id + token and the
+    // patient's handle; the returned wamid is persisted as channel_message_id.
+    expect(sendWa).toHaveBeenCalledWith('PHONE', 'tok', '+50277778888', 'Hola, ¿en qué puedo ayudarte?')
+    expect(body.message.channelMessageId).toBe('wamid.OUT1')
+    expect(body.message.role).toBe('agent')
+    // Bot Interruption Rule: an `open` conversation flips to `handoff`.
+    expect(store.conversations.get('wa-send')!.status).toBe('handoff')
+  })
+
+  it('POST /conversations/:id/messages on a Messenger thread sends via the Messenger transport', async () => {
+    sendMsgr.mockClear()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/msgr-send/messages',
+      headers: authHeader('secretary'),
+      payload: { content: 'Hello there' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(sendMsgr).toHaveBeenCalledWith('mtok', 'PSID-123', 'Hello there')
+    expect(body.message.channelMessageId).toBe('mid.OUT1')
+  })
+
+  it('POST /conversations/:id/messages logs meta_send_failure and returns 502 when the send throws', async () => {
+    sendWa.mockRejectedValueOnce(new Error('Meta 401: token expired'))
+    const before = store.flagged.length
+    const sentBefore = store.sent.length
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-fail/messages',
+      headers: authHeader('secretary'),
+      payload: { content: 'will not send' },
+    })
+    expect(res.statusCode).toBe(502)
+    // A failed send is recorded for the Error Review area and nothing is persisted.
+    expect(store.flagged.length).toBe(before + 1)
+    expect(store.flagged.at(-1)!.errorType).toBe('meta_send_failure')
+    expect(store.sent.length).toBe(sentBefore)
+    // The bot is NOT paused on a failed send (the conversation stays `open`).
+    expect(store.conversations.get('wa-fail')!.status).toBe('open')
+  })
+
+  it('POST /conversations/:id/messages → 502 when the channel is not connected', async () => {
+    clinicCfg.messengerEnabled = false
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/conversations/msgr-send/messages',
+        headers: authHeader('secretary'),
+        payload: { content: 'no channel' },
+      })
+      expect(res.statusCode).toBe(502)
+    } finally {
+      clinicCfg.messengerEnabled = true
+    }
+  })
+
+  it('POST /conversations/:id/messages for an unknown conversation → 404', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/ghost/messages',
+      headers: authHeader('secretary'),
+      payload: { content: 'hi' },
     })
     expect(res.statusCode).toBe(404)
   })
