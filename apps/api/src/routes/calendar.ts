@@ -11,6 +11,8 @@ interface GoogleCalendarSettings {
   accessToken: string
   refreshToken: string
   calendarId: string
+  /** Unix epoch ms the access token expires; lets the worker refresh proactively. */
+  expiryDate?: number
 }
 
 function getCalendarSettings(settings: Record<string, unknown>): GoogleCalendarSettings | null {
@@ -66,6 +68,9 @@ const calendarRoute: FastifyPluginAsync = async (app) => {
               accessToken: encryptValue(tokens.access_token),
               refreshToken: encryptValue(tokens.refresh_token),
               calendarId: existing?.calendarId ?? 'primary',
+              // Stored unencrypted (not a secret); lets the scheduling worker know
+              // when to refresh instead of waiting for a 401.
+              ...(typeof tokens.expiry_date === 'number' ? { expiryDate: tokens.expiry_date } : {}),
             },
           },
         })

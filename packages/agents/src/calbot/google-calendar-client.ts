@@ -1,7 +1,7 @@
 // Only file permitted to import googleapis (enforced by the no-direct-googleapis
 // convention). Everything else in the codebase talks to Google Calendar through
 // the CalendarOps interface so the flows stay pure and testable.
-import type { Auth } from 'googleapis'
+import type { Auth, calendar_v3 } from 'googleapis'
 import type { CalendarClient, AppointmentData } from '../index.js'
 
 // googleapis is a heavy module; import it lazily so merely loading the agents
@@ -54,6 +54,65 @@ async function authedCalendar(accessToken: string, refreshToken: string) {
   const auth = await getOAuth2Client('')
   auth.setCredentials({ access_token: accessToken, refresh_token: refreshToken })
   return google.calendar({ version: 'v3', auth })
+}
+
+/** Access token (plus rotation/expiry) emitted by googleapis after a refresh. */
+export interface RefreshedTokens {
+  accessToken: string
+  /** Present only when Google rotates the refresh token. */
+  refreshToken?: string
+  /** Unix epoch ms the new access token expires. */
+  expiryDate?: number
+}
+
+/**
+ * Build a Calendar client whose OAuth2 credentials carry an expiry so googleapis
+ * proactively refreshes the access token before it 401s. When the expiry is
+ * unknown (older connections persisted before we stored it), we set it in the
+ * past to force a refresh on first use — correctness over an extra round-trip.
+ * The `tokens` event forwards any refreshed token to {@link GoogleCalendarConfig.onTokensRefreshed}
+ * so the caller can persist it and avoid refreshing on every job.
+ */
+async function buildAuthedCalendar(config: GoogleCalendarConfig): Promise<calendar_v3.Calendar> {
+  const google = await loadGoogle()
+  const auth = await getOAuth2Client('')
+  auth.setCredentials({
+    access_token: config.accessToken,
+    refresh_token: config.refreshToken,
+    expiry_date: config.expiryDate ?? 1,
+  })
+  const onRefresh = config.onTokensRefreshed
+  if (onRefresh) {
+    auth.on('tokens', (tokens) => {
+      if (!tokens.access_token) return
+      Promise.resolve(
+        onRefresh({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token ?? undefined,
+          expiryDate: tokens.expiry_date ?? undefined,
+        }),
+      ).catch((e) => console.error('[calendar] failed to persist refreshed tokens', e))
+    })
+  }
+  return google.calendar({ version: 'v3', auth })
+}
+
+async function slotsFromClient(
+  calendar: calendar_v3.Calendar,
+  calendarId: string,
+  date: string,
+  timezone: string,
+): Promise<TimeSlot[]> {
+  const dayStart = new Date(`${date}T00:00:00`)
+  const dayEnd = new Date(`${date}T23:59:59`)
+  const { data } = await calendar.events.list({
+    calendarId,
+    timeMin: dayStart.toISOString(),
+    timeMax: dayEnd.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+  })
+  return computeFreeSlots(data.items ?? [], date, timezone)
 }
 
 /** Free 30-min slots between 09:00–18:00 on `date`, minus anything already booked. */
@@ -174,17 +233,57 @@ export interface GoogleCalendarConfig {
   refreshToken: string
   calendarId: string
   timezone: string
+  /** Unix epoch ms the access token expires; enables proactive refresh. */
+  expiryDate?: number
+  /** Persist refreshed tokens (access/expiry, and refresh if rotated). */
+  onTokensRefreshed?: (tokens: RefreshedTokens) => void | Promise<void>
 }
 
-/** Bind {@link CalendarOps} to a clinic's Google credentials. */
+/**
+ * Bind {@link CalendarOps} to a clinic's Google credentials. A single
+ * refresh-aware Calendar client is built once and shared across every op so the
+ * access token is refreshed (and the `tokens` event fires) at most once per
+ * binding rather than per call.
+ */
 export function createGoogleCalendarOps(config: GoogleCalendarConfig): CalendarOps {
+  let clientPromise: Promise<calendar_v3.Calendar> | null = null
+  const client = () => (clientPromise ??= buildAuthedCalendar(config))
+
   return {
-    listSlots: (date) =>
-      listAvailableSlots(config.accessToken, config.refreshToken, config.calendarId, date, config.timezone),
-    createEvent: (p) => createCalendarEvent({ ...config, ...p }),
-    updateEvent: (p) => updateCalendarEvent({ ...config, ...p }),
-    deleteEvent: (eventId) =>
-      deleteCalendarEvent(config.accessToken, config.refreshToken, config.calendarId, eventId),
+    listSlots: async (date) => slotsFromClient(await client(), config.calendarId, date, config.timezone),
+    createEvent: async (p) => {
+      const calendar = await client()
+      const start = new Date(`${p.date}T${p.time}:00`)
+      const end = new Date(start.getTime() + p.durationMinutes * 60_000)
+      const { data } = await calendar.events.insert({
+        calendarId: config.calendarId,
+        requestBody: {
+          summary: p.title,
+          description: p.description,
+          start: { dateTime: start.toISOString(), timeZone: config.timezone },
+          end: { dateTime: end.toISOString(), timeZone: config.timezone },
+        },
+      })
+      if (!data.id) throw new Error('Google Calendar did not return an event id')
+      return data.id
+    },
+    updateEvent: async (p) => {
+      const calendar = await client()
+      const start = new Date(`${p.date}T${p.time}:00`)
+      const end = new Date(start.getTime() + p.durationMinutes * 60_000)
+      await calendar.events.patch({
+        calendarId: config.calendarId,
+        eventId: p.eventId,
+        requestBody: {
+          start: { dateTime: start.toISOString(), timeZone: config.timezone },
+          end: { dateTime: end.toISOString(), timeZone: config.timezone },
+        },
+      })
+    },
+    deleteEvent: async (eventId) => {
+      const calendar = await client()
+      await calendar.events.delete({ calendarId: config.calendarId, eventId })
+    },
   }
 }
 

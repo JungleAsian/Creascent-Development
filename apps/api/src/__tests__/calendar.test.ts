@@ -23,7 +23,9 @@ vi.mock('@docmee/db', () => ({
 vi.mock('@docmee/agents', () => ({
   getOAuth2Client: () => ({
     generateAuthUrl: () => 'https://accounts.google.com/o/oauth2/v2/auth?mock=1',
-    getToken: async (_code: string) => ({ tokens: { access_token: 'at-raw', refresh_token: 'rt-raw' } }),
+    getToken: async (_code: string) => ({
+      tokens: { access_token: 'at-raw', refresh_token: 'rt-raw', expiry_date: 1_900_000_000_000 },
+    }),
   }),
 }))
 
@@ -81,9 +83,11 @@ describe('calendar routes', () => {
     const res = await app.inject({ method: 'GET', url: '/clinic/calendar/callback?code=abc&state=c3' })
     expect(res.statusCode).toBe(302)
     expect(res.headers.location).toBe('/admin/clinics/c3?calendar=connected')
-    const gc = store.clinics.get('c3')!.settings['googleCalendar'] as Record<string, string>
+    const gc = store.clinics.get('c3')!.settings['googleCalendar'] as Record<string, unknown>
     expect(gc.accessToken).toBe('enc:at-raw')
     expect(gc.refreshToken).toBe('enc:rt-raw')
+    // expiry stored unencrypted so the worker can refresh before a 401
+    expect(gc.expiryDate).toBe(1_900_000_000_000)
   })
 
   it('GET /callback without code → 400', async () => {

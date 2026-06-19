@@ -10,7 +10,7 @@
 // next inbound message resumes where the patient left off. Google Calendar access
 // is bound from the clinic's encrypted OAuth tokens (clinics.settings.googleCalendar).
 import { z } from 'zod'
-import { decryptValue } from '@docmee/shared'
+import { decryptValue, encryptValue } from '@docmee/shared'
 import {
   detectLanguage,
   createGoogleCalendarOps,
@@ -28,6 +28,7 @@ import {
   type BookingState,
   type RescheduleState,
   type CancelState,
+  type RefreshedTokens,
 } from '@docmee/agents'
 import { sendWhatsAppText } from '@docmee/channels'
 import { notificationQueue, type Job } from '@docmee/queue'
@@ -65,6 +66,7 @@ interface CalendarConfig {
   accessToken: string
   refreshToken: string
   calendarId: string
+  expiryDate?: number
 }
 
 // Per-action persisted state lives under conversations.metadata.scheduling.
@@ -99,6 +101,26 @@ function getDoctorCalendarConfig(doctor: Doctor): CalendarConfig | null {
   }
 }
 
+// Persist a refreshed Google access token back onto a doctor's row so the next
+// job reuses it instead of refreshing again. Best-effort: a write failure is
+// logged but never breaks the in-flight scheduling reply.
+function persistDoctorTokens(
+  sql: ReturnType<typeof createServiceDbClient>,
+  clinicId: string,
+  doctorId: string,
+): (t: RefreshedTokens) => Promise<void> {
+  return async (t) => {
+    try {
+      await createDoctorsRepository(sql).update(clinicId, doctorId, {
+        googleCalendarAccessTokenEncrypted: encryptValue(t.accessToken),
+        ...(t.refreshToken ? { googleCalendarRefreshTokenEncrypted: encryptValue(t.refreshToken) } : {}),
+      })
+    } catch (e) {
+      console.error(`[scheduling] failed to persist refreshed doctor calendar tokens for ${doctorId}`, e)
+    }
+  }
+}
+
 // Placeholder bound to the booking flow on early turns (doctor not yet chosen) when
 // no clinic calendar exists. The flow never touches the calendar before a doctor is
 // selected, so these throws are unreachable in practice — they guard against misuse.
@@ -112,13 +134,14 @@ const unconfiguredCalendar: CalendarOps = {
 function getCalendarConfig(clinic: Clinic): CalendarConfig | null {
   const gc = (clinic.settings as { googleCalendar?: unknown }).googleCalendar
   if (!gc || typeof gc !== 'object') return null
-  const { accessToken, refreshToken, calendarId } = gc as Record<string, unknown>
+  const { accessToken, refreshToken, calendarId, expiryDate } = gc as Record<string, unknown>
   if (typeof accessToken !== 'string' || typeof refreshToken !== 'string') return null
   try {
     return {
       accessToken: decryptValue(accessToken),
       refreshToken: decryptValue(refreshToken),
       calendarId: typeof calendarId === 'string' ? calendarId : 'primary',
+      ...(typeof expiryDate === 'number' ? { expiryDate } : {}),
     }
   } catch {
     // Tokens unreadable (rotated key / corruption) → treat as not connected.
@@ -198,7 +221,36 @@ export async function processSchedulingJob(job: Job): Promise<void> {
 
     const providers = await appointments.listProviders(data.clinicId)
     const calendarConfig = getCalendarConfig(clinic)
-    const calendar: CalendarOps | null = calendarConfig ? createGoogleCalendarOps({ ...calendarConfig, timezone: clinic.timezone }) : null
+
+    // Persist a refreshed clinic access token back into clinics.settings so the
+    // next job reuses it (best-effort; re-reads the row to merge against the
+    // latest settings rather than the snapshot taken at the top of the job).
+    const persistClinicTokens = async (t: RefreshedTokens): Promise<void> => {
+      try {
+        const fresh = await clinics.findById(data.clinicId)
+        const gc = fresh
+          ? (fresh.settings as { googleCalendar?: Record<string, unknown> }).googleCalendar
+          : null
+        if (!fresh || !gc) return
+        await clinics.update(data.clinicId, {
+          settings: {
+            ...fresh.settings,
+            googleCalendar: {
+              ...gc,
+              accessToken: encryptValue(t.accessToken),
+              ...(t.refreshToken ? { refreshToken: encryptValue(t.refreshToken) } : {}),
+              ...(typeof t.expiryDate === 'number' ? { expiryDate: t.expiryDate } : {}),
+            },
+          },
+        })
+      } catch (e) {
+        console.error(`[scheduling] failed to persist refreshed clinic calendar tokens for ${data.clinicId}`, e)
+      }
+    }
+
+    const calendar: CalendarOps | null = calendarConfig
+      ? createGoogleCalendarOps({ ...calendarConfig, timezone: clinic.timezone, onTokensRefreshed: persistClinicTokens })
+      : null
 
     const patientAppointments = await appointments.listByPatient(data.clinicId, patientId)
     const nowIso = new Date().toISOString()
@@ -272,8 +324,12 @@ export async function processSchedulingJob(job: Job): Promise<void> {
         if (doctorMode && state.providerId) {
           const doctor = doctors.find((d) => d.id === state.providerId)
           const docCal = doctor ? getDoctorCalendarConfig(doctor) : null
-          bookingCalendar = docCal
-            ? createGoogleCalendarOps({ ...docCal, timezone: clinic.timezone })
+          bookingCalendar = docCal && doctor
+            ? createGoogleCalendarOps({
+                ...docCal,
+                timezone: clinic.timezone,
+                onTokensRefreshed: persistDoctorTokens(sql, data.clinicId, doctor.id),
+              })
             : calendar
         }
 

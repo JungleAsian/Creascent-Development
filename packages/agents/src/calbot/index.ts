@@ -14,6 +14,7 @@ export {
   type TimeSlot,
   type CreateEventParams,
   type GoogleCalendarConfig,
+  type RefreshedTokens,
 } from './google-calendar-client.js'
 
 export {
