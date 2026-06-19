@@ -33,7 +33,13 @@ const calendarRoute: FastifyPluginAsync = async (app) => {
     const oauth2Client = await getOAuth2Client(request.params.clinicId)
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      scope: ['https://www.googleapis.com/auth/calendar.events'],
+      // One unified Google connection per clinic: calendar.events powers booking
+      // (Req 9), spreadsheets powers the CRM / Google Sheets export (Req 31) which
+      // reuses these same tokens.
+      scope: [
+        'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/spreadsheets',
+      ],
       state: request.params.clinicId,
       prompt: 'consent',
     })

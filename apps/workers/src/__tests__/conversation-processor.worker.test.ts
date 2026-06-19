@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   notificationAdd: vi.fn(),
   findByAccount: vi.fn(),
   findByMessengerPageId: vi.fn(),
+  findClinicById: vi.fn(),
   findByContact: vi.fn(),
   createPatient: vi.fn(),
   addContact: vi.fn(),
@@ -25,7 +26,10 @@ vi.mock('@docmee/queue', () => ({
 vi.mock('@docmee/db', () => ({
   createServiceDbClient: () => ({ end: h.end }),
   createChannelAccountsRepository: () => ({ findByAccount: h.findByAccount }),
-  createClinicsRepository: () => ({ findByMessengerPageId: h.findByMessengerPageId }),
+  createClinicsRepository: () => ({
+    findByMessengerPageId: h.findByMessengerPageId,
+    findById: h.findClinicById,
+  }),
   createPatientsRepository: () => ({
     findByContact: h.findByContact,
     create: h.createPatient,
@@ -61,6 +65,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.findByAccount.mockResolvedValue(activeAccount)
   h.findByMessengerPageId.mockResolvedValue({ id: CLINIC })
+  // No CRM (googleSheets) configured by default → contact export is skipped cleanly.
+  h.findClinicById.mockResolvedValue({ id: CLINIC, name: 'Clinica', settings: {} })
   h.findByContact.mockResolvedValue({ id: PATIENT, status: 'returning' })
   h.createPatient.mockResolvedValue({ id: PATIENT, status: 'new' })
   h.findOpenByContact.mockResolvedValue(null)

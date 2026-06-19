@@ -35,6 +35,7 @@ import { sendWhatsAppText } from '@docmee/channels'
 import { notificationQueue, type Job } from '@docmee/queue'
 import { patientSource, mergePatientIntake, type BookingIntake } from './intake.js'
 import { scheduleAppointmentFollowUps, scheduleNoResponseFollowUp } from './follow-up.js'
+import { createClinicCrmExporter, patientPhone } from './crm.js'
 import {
   createServiceDbClient,
   createClinicsRepository,
@@ -429,6 +430,46 @@ export async function processSchedulingJob(job: Job): Promise<void> {
               startTime,
               endTime,
             })
+
+            // Req 31 (CRM / Google Sheets): mirror the confirmed appointment as a
+            // row in the clinic's configured Sheet (source, status, scheduled flag,
+            // clinic scoping). Opt-in per clinic. Best-effort — a Sheets failure is
+            // recorded to error_reviews and never breaks the booking confirmation.
+            const crm = createClinicCrmExporter(clinic, persistClinicTokens)
+            if (crm) {
+              try {
+                await crm.appendRow({
+                  recordType: 'appointment',
+                  timestamp: new Date().toISOString(),
+                  clinicId: data.clinicId,
+                  clinicName: clinic.name,
+                  patientName: patient?.fullName ?? '',
+                  phone: patientPhone(patient, data.patientWaId),
+                  source: patientSource(patient) ?? '',
+                  doctorName: doctorName ?? '',
+                  specialty: specialty ?? '',
+                  reason,
+                  appointmentDate: startTime.slice(0, 10),
+                  appointmentTime: startTime.slice(11, 16),
+                  status: 'confirmed',
+                  scheduled: true,
+                })
+              } catch (e) {
+                console.error(`[scheduling] CRM export failed for clinic ${data.clinicId}`, e)
+                await createErrorReviewsRepository(sql)
+                  .create({
+                    clinicId: data.clinicId,
+                    errorType: 'crm_export_failure',
+                    errorMessage: e instanceof Error ? e.message : String(e),
+                    context: {
+                      conversationId: data.conversationId ?? null,
+                      appointmentId: created.id,
+                      patientId,
+                    },
+                  })
+                  .catch((logErr) => console.error('[scheduling] failed to log CRM export failure:', logErr))
+              }
+            }
           },
         })
         await reply(result.reply)

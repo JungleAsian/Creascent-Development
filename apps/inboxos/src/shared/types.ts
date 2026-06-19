@@ -228,6 +228,10 @@ export interface ClinicSettings {
   clinicRules?: string
   businessHours?: BusinessHours
   googleCalendar?: { calendarId?: string } & Record<string, unknown>
+  googleSheets?: { spreadsheetId?: string; sheetName?: string; enabled?: boolean } & Record<
+    string,
+    unknown
+  >
   license_key?: string
   [key: string]: unknown
 }

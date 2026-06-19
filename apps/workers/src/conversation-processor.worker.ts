@@ -16,6 +16,7 @@ import {
   type ContentType,
 } from '@docmee/db'
 import { firstContactMetadata } from './intake.js'
+import { createClinicCrmExporter } from './crm.js'
 
 export const InboundMessageSchema = z.object({
   // Channel the message arrived on. `phoneNumberId` is the provider account id:
@@ -190,6 +191,35 @@ export async function processConversationJob(job: Job): Promise<void> {
         contactHandle: msg.patientWaId,
         isPrimary: true,
       })
+
+      // Req 31 (CRM / Google Sheets): mirror the brand-new contact as a row in
+      // the clinic's configured Sheet (source, status 'new', scheduled=no, clinic
+      // scoping). Opt-in per clinic; best-effort — a Sheets failure is logged and
+      // never blocks message processing.
+      try {
+        const clinic = await createClinicsRepository(sql).findById(clinicId)
+        const crm = clinic ? createClinicCrmExporter(clinic) : null
+        if (clinic && crm) {
+          await crm.appendRow({
+            recordType: 'contact',
+            timestamp: new Date().toISOString(),
+            clinicId,
+            clinicName: clinic.name,
+            patientName: msg.patientName || '',
+            phone: channel === 'whatsapp' ? msg.patientWaId : '',
+            source: channel,
+            doctorName: '',
+            specialty: '',
+            reason: '',
+            appointmentDate: '',
+            appointmentTime: '',
+            status: 'new',
+            scheduled: false,
+          })
+        }
+      } catch (err) {
+        console.error('[conversation] CRM contact export failed:', err)
+      }
     }
 
     if (msg.messageType === 'audio') {

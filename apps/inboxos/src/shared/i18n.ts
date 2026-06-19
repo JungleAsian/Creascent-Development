@@ -173,6 +173,7 @@ const es: Dict = {
   'clinic.section.bot': 'Configuración del bot',
   'clinic.section.hours': 'Horario de atención',
   'clinic.section.calendar': 'Google Calendar',
+  'clinic.section.sheets': 'CRM / Google Sheets',
   'clinic.section.license': 'Licencia',
 
   'bot.tone.title': 'Tono del bot',
@@ -203,6 +204,13 @@ const es: Dict = {
   'calendar.connect': 'Conectar Google Calendar',
   'calendar.reconnect': 'Reconectar',
   'calendar.hint': 'Conecta el calendario para que el bot pueda agendar citas.',
+
+  'sheets.enable': 'Exportar citas y contactos a Google Sheets',
+  'sheets.spreadsheetId': 'ID de la hoja de cálculo',
+  'sheets.sheetName': 'Nombre de la pestaña (por defecto «CRM»)',
+  'sheets.needsGoogle': 'Conecta Google Calendar arriba para autorizar también Sheets.',
+  'sheets.hint':
+    'Cada cita confirmada y cada contacto nuevo se añade como una fila con origen, estado y datos del paciente.',
 
   'clinic.section.messenger': 'Facebook Messenger',
   'messenger.enable': 'Habilitar Messenger',
@@ -715,6 +723,7 @@ const en: Dict = {
   'clinic.section.bot': 'Bot configuration',
   'clinic.section.hours': 'Business hours',
   'clinic.section.calendar': 'Google Calendar',
+  'clinic.section.sheets': 'CRM / Google Sheets',
   'clinic.section.license': 'License',
 
   'bot.tone.title': 'Bot tone',
@@ -745,6 +754,13 @@ const en: Dict = {
   'calendar.connect': 'Connect Google Calendar',
   'calendar.reconnect': 'Reconnect',
   'calendar.hint': 'Connect the calendar so the bot can book appointments.',
+
+  'sheets.enable': 'Export appointments and contacts to Google Sheets',
+  'sheets.spreadsheetId': 'Spreadsheet ID',
+  'sheets.sheetName': 'Tab name (defaults to “CRM”)',
+  'sheets.needsGoogle': 'Connect Google Calendar above to also authorize Sheets.',
+  'sheets.hint':
+    'Every confirmed appointment and new contact is appended as a row with source, status and patient details.',
 
   'clinic.section.messenger': 'Facebook Messenger',
   'messenger.enable': 'Enable Messenger',

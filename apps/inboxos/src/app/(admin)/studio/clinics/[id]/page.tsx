@@ -55,6 +55,7 @@ export default function ClinicDetailPage({ params }: { params: Promise<{ id: str
           <BotConfigSection clinic={clinic} />
           <BusinessHoursSection clinic={clinic} />
           <CalendarSection clinic={clinic} />
+          <SheetsSection clinic={clinic} />
           <MessengerSection clinic={clinic} />
           <InstagramSection clinic={clinic} />
           <LicenseSection clinicId={clinic.id} />
@@ -290,6 +291,71 @@ function CalendarSection({ clinic }: { clinic: Clinic }) {
         </a>
       </div>
       <p className="mt-2 text-xs text-gray-400">{t('calendar.hint')}</p>
+    </Section>
+  )
+}
+
+function SheetsSection({ clinic }: { clinic: Clinic }) {
+  const { t } = useI18n()
+  const settings = clinic.settings as ClinicSettings
+  const sheets = settings.googleSheets ?? {}
+  const calendarConnected = Boolean(settings.googleCalendar)
+  const [enabled, setEnabled] = useState(Boolean(sheets.enabled))
+  const [spreadsheetId, setSpreadsheetId] = useState(sheets.spreadsheetId ?? '')
+  const [sheetName, setSheetName] = useState(sheets.sheetName ?? '')
+  const save = useSaveClinic(clinic.id)
+
+  const dirty =
+    enabled !== Boolean(sheets.enabled) ||
+    spreadsheetId !== (sheets.spreadsheetId ?? '') ||
+    sheetName !== (sheets.sheetName ?? '')
+
+  function onSave() {
+    save.mutate({
+      settings: {
+        ...clinic.settings,
+        googleSheets: {
+          ...sheets,
+          enabled,
+          spreadsheetId: spreadsheetId.trim(),
+          sheetName: sheetName.trim(),
+        },
+      },
+    })
+  }
+
+  return (
+    <Section title={t('clinic.section.sheets')}>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        {t('sheets.enable')}
+      </label>
+      <div className="mt-3 space-y-2">
+        <Field label={t('sheets.spreadsheetId')}>
+          <input
+            value={spreadsheetId}
+            onChange={(e) => setSpreadsheetId(e.target.value)}
+            placeholder="1AbC…xyz"
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
+        <Field label={t('sheets.sheetName')}>
+          <input
+            value={sheetName}
+            onChange={(e) => setSheetName(e.target.value)}
+            placeholder="CRM"
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
+      </div>
+      {!calendarConnected && <p className="mt-2 text-xs text-amber-600">{t('sheets.needsGoogle')}</p>}
+      <p className="mt-2 text-xs text-gray-400">{t('sheets.hint')}</p>
+      <SaveBar
+        dirty={dirty}
+        pending={save.isPending}
+        saved={save.isSuccess && !dirty}
+        onSave={onSave}
+      />
     </Section>
   )
 }
