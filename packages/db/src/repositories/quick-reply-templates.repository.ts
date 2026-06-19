@@ -7,9 +7,19 @@ export interface CreateQuickReplyTemplateInput {
   content: string
 }
 
+export interface UpdateQuickReplyTemplateInput {
+  title: string
+  content: string
+}
+
 export interface QuickReplyTemplatesRepository {
   listByClinic(clinicId: string): Promise<QuickReplyTemplate[]>
   create(data: CreateQuickReplyTemplateInput): Promise<QuickReplyTemplate>
+  update(
+    clinicId: string,
+    id: string,
+    data: UpdateQuickReplyTemplateInput,
+  ): Promise<QuickReplyTemplate | null>
   delete(clinicId: string, id: string): Promise<boolean>
 }
 
@@ -30,6 +40,16 @@ export function createQuickReplyTemplatesRepository(sql: Sql): QuickReplyTemplat
         RETURNING *
       `
       return rows[0]!
+    },
+
+    async update(clinicId, id, data) {
+      const rows = await sql<QuickReplyTemplate[]>`
+        UPDATE quick_reply_templates
+        SET title = ${data.title}, content = ${data.content}, updated_at = NOW()
+        WHERE clinic_id = ${clinicId} AND id = ${id}
+        RETURNING *
+      `
+      return rows[0] ?? null
     },
 
     async delete(clinicId, id) {

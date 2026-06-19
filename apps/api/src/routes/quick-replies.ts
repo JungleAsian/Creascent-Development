@@ -1,6 +1,7 @@
 // Quick reply template routes (P16 — Gap #25).
 //   GET    /clinics/:id/quick-reply-templates  (any authenticated user, own clinic — picker)
 //   POST   /clinics/:id/quick-reply-templates  (clinic_admin, ia_studio_admin — IA Studio)
+//   PATCH  /clinics/:id/quick-reply-templates/:templateId (clinic_admin, ia_studio_admin)
 //   DELETE /clinics/:id/quick-reply-templates/:templateId (clinic_admin, ia_studio_admin)
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
@@ -48,6 +49,26 @@ const quickRepliesRoute: FastifyPluginAsync = async (app) => {
         }),
       )
       return reply.code(201).send({ template })
+    },
+  )
+
+  // ── Update (IA Studio management) ──
+  app.patch<{ Params: { id: string; templateId: string } }>(
+    '/clinics/:id/quick-reply-templates/:templateId',
+    { preHandler: requireRole('clinic_admin', 'ia_studio_admin') },
+    async (request, reply) => {
+      const parsed = validate(createSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request, request.params.id)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+      const template = await withDb(async (sql) =>
+        createQuickReplyTemplatesRepository(sql).update(clinicId, request.params.templateId, {
+          title: parsed.data.title,
+          content: parsed.data.content,
+        }),
+      )
+      if (!template) return reply.code(404).send({ error: 'Template not found' })
+      return { template }
     },
   )
 
