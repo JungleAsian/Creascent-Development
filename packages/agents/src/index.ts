@@ -12,6 +12,8 @@ export {
   HANDOFF_REASON,
 } from './handoff.js'
 
+export { isOptOutMessage, isOptInMessage, optInConfirmation } from './consent.js'
+
 export * from './botbase/index.js'
 
 export interface MessageContext {

@@ -17,6 +17,9 @@ import {
   isEmergencyMessage,
   emergencyNotice,
   handoffNotice,
+  isOptOutMessage,
+  isOptInMessage,
+  optInConfirmation,
   BOT_PAUSED_AT,
   HANDOFF_REASON,
   type BusinessHours,
@@ -78,6 +81,27 @@ function getPatientLanguage(patient: Patient | null): Language {
 
 function isPatientOptedOut(patient: Patient | null): boolean {
   return patient ? (patient.metadata as { optedOut?: unknown }).optedOut === true : false
+}
+
+/**
+ * Meta Compliance (Req 19): persist the patient's STOP/START decision to
+ * patients.metadata so it sticks across turns. Previously a STOP was routed to
+ * silence for that one message but never stored, so the patient was re-engaged on
+ * their next message — breaking the opt-out. Idempotent (skips when unchanged) and
+ * a no-op for an unknown (null) patient. Stamps optedOutAt when opting out.
+ */
+async function setPatientOptedOut(
+  patients: ReturnType<typeof createPatientsRepository>,
+  clinicId: string,
+  patient: Patient | null,
+  optedOut: boolean,
+): Promise<void> {
+  if (!patient) return
+  const current = (patient.metadata as { optedOut?: unknown }).optedOut === true
+  if (current === optedOut) return
+  const metadata: Record<string, unknown> = { ...patient.metadata, optedOut }
+  if (optedOut) metadata['optedOutAt'] = new Date().toISOString()
+  await patients.update(clinicId, patient.id, { metadata })
 }
 
 /**
@@ -254,7 +278,31 @@ export async function processAgentJob(job: Job): Promise<void> {
     const messages = createMessagesRepository(sql)
     const sendReply: ((text: string) => Promise<void>) | null = rawSendReply
       ? async (text: string) => {
-          await rawSendReply(text)
+          // Meta error logs (Req 19/29): a channel send failure (expired/invalid
+          // token, rate limit, malformed request) is recorded to error_reviews as
+          // `meta_send_failure` for the Error Review area, then swallowed so a
+          // single failed send neither crashes the worker nor triggers a full-job
+          // retry that could double-send. The reply is only persisted to the inbox
+          // thread when it actually went out.
+          try {
+            await rawSendReply(text)
+          } catch (err) {
+            console.error('[agent] Meta send failed:', err)
+            await errorReviews
+              .create({
+                clinicId: data.clinicId,
+                errorType: 'meta_send_failure',
+                errorMessage: err instanceof Error ? err.message : String(err),
+                context: {
+                  conversationId: data.conversationId,
+                  channel: data.channel,
+                  recipient: data.patientWaId,
+                  waMessageId: data.waMessageId,
+                },
+              })
+              .catch((logErr) => console.error('[agent] failed to log Meta send error:', logErr))
+            return
+          }
           if (data.conversationId) {
             try {
               await messages.create({
@@ -332,6 +380,35 @@ export async function processAgentJob(job: Job): Promise<void> {
       return
     }
 
+    // Consent / opt-out (Req 19 Meta Compliance). Deterministic keyword detection
+    // runs before custom flows and intent classification so STOP/BAJA is honoured
+    // even when the LLM is stubbed or misclassifies. STOP is absolute: we PERSIST
+    // the opt-out to the patient (so every later turn stays silent via the router's
+    // patientOptedOut gate), tag the conversation, and stay silent now. START
+    // re-subscribes and confirms. Emergency safety still overrides opt-out — the
+    // emergency guard above runs first by design.
+    const optedOutBefore = isPatientOptedOut(patient)
+
+    if (isOptInMessage(data.message)) {
+      if (patient && optedOutBefore) {
+        await setPatientOptedOut(patients, data.clinicId, patient, false)
+        if (sendReply) await sendReply(optInConfirmation(patientLanguage))
+      }
+      return
+    }
+
+    if (isOptOutMessage(data.message) || optedOutBefore) {
+      if (patient && !optedOutBefore) {
+        await setPatientOptedOut(patients, data.clinicId, patient, true)
+        if (data.conversationId && conversation) {
+          const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'opted_out' })
+          await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+        }
+      }
+      console.log(`[agent] opt-out: staying silent for clinic ${data.clinicId}`)
+      return
+    }
+
     // Explicit "connect me with a human" request (Rev1 #5). Cheap keyword check so
     // an unambiguous request hands off reliably without waiting on the LLM: ack the
     // patient, pause the bot (status → handoff), and alert a human.
@@ -405,6 +482,14 @@ export async function processAgentJob(job: Job): Promise<void> {
         // Opt-out silence stays fully silent.
         if (route.reason === 'outside_hours' && sendReply) {
           await sendReply(outsideHoursMessage(patientLanguage))
+        } else if (route.reason === 'opted_out') {
+          // An opt-out the keyword guard missed but the classifier caught — persist
+          // it (Req 19) so it sticks, then stay silent.
+          await setPatientOptedOut(patients, data.clinicId, patient, true)
+          if (data.conversationId && conversation) {
+            const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'opted_out' })
+            await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+          }
         } else {
           console.log('[agent] silence route:', route.reason, data.clinicId)
         }
