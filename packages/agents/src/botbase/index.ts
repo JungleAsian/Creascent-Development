@@ -25,6 +25,13 @@ export {
 } from './doctor-kb.js'
 
 export {
+  screenMedicalSafety,
+  medicalSafetyDeferral,
+  type MedicalSafetyCategory,
+  type MedicalSafetyResult,
+} from './medical-safety.js'
+
+export {
   runClinicBot,
   isEmergencyMessage,
   isLikelyQuestion,

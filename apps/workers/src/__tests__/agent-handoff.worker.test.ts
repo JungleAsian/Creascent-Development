@@ -222,6 +222,50 @@ describe('processAgentJob — outbound reply persistence (Req 4)', () => {
   })
 })
 
+describe('processAgentJob — medical-safety handoff (Req 20)', () => {
+  it('bot reply tripped the safety screen → pauses the bot, tags, alerts a human', async () => {
+    h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })
+    // The bot suppressed the unsafe reply itself and signals a handoff.
+    h.runClinicBot.mockResolvedValue({ replied: true, triggeredHandoff: true, language: 'es' })
+
+    await processAgentJob(makeJob(baseJob))
+
+    // The bot ran (deferral already sent inside runClinicBot via sendText).
+    expect(h.runClinicBot).toHaveBeenCalledTimes(1)
+
+    // Conversation paused (handoff) with the medical_safety reason + tagged.
+    const handoffUpdate = h.updateConversation.mock.calls.find(
+      ([, , u]) => u?.status === 'handoff',
+    )
+    expect(handoffUpdate).toBeDefined()
+    expect(handoffUpdate![2].metadata.handoffReason).toBe('medical_safety')
+    expect(h.createTag).toHaveBeenCalledWith(expect.objectContaining({ name: 'medical_safety' }))
+
+    // A human handoff alert is queued.
+    expect(h.notificationAdd).toHaveBeenCalledWith(
+      'notify',
+      expect.objectContaining({ reason: 'human_handoff', conversationId: CONVO }),
+    )
+  })
+
+  it('a clean bot reply does NOT pause the bot or alert a human', async () => {
+    h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })
+    h.runClinicBot.mockResolvedValue({ replied: true, triggeredHandoff: false, language: 'es' })
+
+    await processAgentJob(makeJob(baseJob))
+
+    expect(h.runClinicBot).toHaveBeenCalledTimes(1)
+    const handoffUpdate = h.updateConversation.mock.calls.find(
+      ([, , u]) => u?.status === 'handoff',
+    )
+    expect(handoffUpdate).toBeUndefined()
+    expect(h.notificationAdd).not.toHaveBeenCalledWith(
+      'notify',
+      expect.objectContaining({ reason: 'human_handoff' }),
+    )
+  })
+})
+
 describe('processAgentJob — explicit human request (#5)', () => {
   it('acks the patient, pauses the bot, and alerts a human', async () => {
     h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })

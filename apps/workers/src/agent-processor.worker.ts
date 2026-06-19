@@ -673,6 +673,33 @@ export async function processAgentJob(job: Job): Promise<void> {
         // subsequent turns stay consistent.
         await persistPatientLanguage(patients, data.clinicId, patient, botResult.language)
 
+        // Medical-safety handoff (Req 20): the output screen inside runClinicBot
+        // tripped — the unsafe LLM reply was suppressed and a safe deferral sent
+        // in its place. Pause the bot for a human, tag the conversation, and raise
+        // a handoff alert so a person takes over (and the safety event is already
+        // logged to the Error Review area by the bot). We re-read the conversation
+        // so the pause merges onto the latest metadata (the sentiment block above
+        // just wrote to it).
+        if (botResult.triggeredHandoff) {
+          if (data.conversationId && conversation) {
+            const latest = await conversations.findById(data.clinicId, data.conversationId)
+            const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'medical_safety' })
+            await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+            await pauseBotForHandoff(
+              conversations,
+              data,
+              latest?.metadata ?? conversation.metadata,
+              'medical_safety',
+            )
+          }
+          await notificationQueue.add('notify', {
+            clinicId: data.clinicId,
+            conversationId: data.conversationId,
+            reason: 'human_handoff',
+          })
+          break
+        }
+
         // Unanswered question (Req 29 Error Review): the bot replied but found NO
         // clinic-KB match, so the answer was ungrounded — exactly the case an
         // operator should review and (via the Add-to-KB path) turn into approved

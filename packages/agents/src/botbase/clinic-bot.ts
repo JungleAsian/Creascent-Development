@@ -7,6 +7,7 @@
 
 import { detectLanguage, type Language } from './language-detector.js'
 import type { KbMatch } from './kb-retriever.js'
+import { screenMedicalSafety, medicalSafetyDeferral } from './medical-safety.js'
 
 export type BotTone = 'professional' | 'friendly' | 'brief'
 // 'auto' → detect on first message, then follow the patient's language.
@@ -178,6 +179,29 @@ export async function runClinicBot(
     const system = buildSystemPrompt(input, language, kbMatches)
 
     let reply = await deps.complete(system, input.message, 512)
+
+    // Output-side medical-safety screen (Req 20, defense-in-depth). The system
+    // prompt forbids diagnosing/prescribing/dosing, but an LLM can still violate
+    // it, so we scan the GENERATED reply before it reaches the patient. On a hit
+    // we drop the unsafe text, send a safe deferral, log it for operator review,
+    // and signal a handoff so the worker pauses the bot and alerts a human.
+    const safety = screenMedicalSafety(reply)
+    if (!safety.safe) {
+      await deps
+        .logError({
+          clinicId: input.clinicId,
+          conversationId: input.conversationId,
+          errorType: 'medical_safety_violation',
+          message: `Blocked ${safety.category} content in bot reply: "${safety.match ?? ''}"`,
+          rawMessage: input.message,
+        })
+        .catch(() => {})
+      let deferral = medicalSafetyDeferral(language)
+      if (input.isFirstMessage) deferral += stopNotice(language)
+      await deps.sendText(deferral)
+      return { replied: true, triggeredHandoff: true, language }
+    }
+
     // Compliance: STOP notice only on the first contact (Decision 3).
     if (input.isFirstMessage) reply += stopNotice(language)
 

@@ -155,6 +155,29 @@ describe('runClinicBot', () => {
     expect(system).toContain('Keep responses short')
   })
 
+  it('unsafe LLM reply (dosage) → suppressed, deferral sent, logged, handoff', async () => {
+    const deps = makeDeps({ complete: vi.fn().mockResolvedValue('Tome ibuprofeno 400 mg cada 8 horas.') })
+    const result = await runClinicBot(baseInput(), deps)
+
+    expect(result).toMatchObject({ replied: true, triggeredHandoff: true, language: 'es' })
+    // The offending reply never went out; the safe deferral did.
+    const sent = (deps.sendText as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(sent).not.toContain('400 mg')
+    expect(sent).toContain('clínica')
+    // The violation is logged to the Error Review area.
+    expect(deps.logError).toHaveBeenCalledTimes(1)
+    expect((deps.logError as ReturnType<typeof vi.fn>).mock.calls[0]![0].errorType).toBe(
+      'medical_safety_violation',
+    )
+  })
+
+  it('unsafe reply on the first message → deferral still carries the STOP notice', async () => {
+    const deps = makeDeps({ complete: vi.fn().mockResolvedValue('Te receto amoxicilina.') })
+    await runClinicBot(baseInput({ isFirstMessage: true }), deps)
+    const sent = (deps.sendText as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(sent).toContain('Responde STOP')
+  })
+
   it('LLM failure → logs the error, sends an apology, still reports replied', async () => {
     const deps = makeDeps({ complete: vi.fn().mockRejectedValue(new Error('boom')) })
     const result = await runClinicBot(baseInput(), deps)
