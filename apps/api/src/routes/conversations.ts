@@ -70,9 +70,13 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
     const conversations = await withDb(async (sql) => {
       const repo = createConversationsRepository(sql)
       const rows = await repo.listByClinic(clinicId, parsed.data.status as ConversationStatus | undefined)
-      return parsed.data.assigned_to
-        ? rows.filter((c) => c.assignedTo === parsed.data.assigned_to)
-        : rows
+      const assignedTo = parsed.data.assigned_to
+      if (!assignedTo) return rows
+      // `unassigned` is a reserved sentinel for "no assignee"; any other value is a
+      // user id (filter assigned work by user — Rev1 #35).
+      return assignedTo === 'unassigned'
+        ? rows.filter((c) => c.assignedTo == null)
+        : rows.filter((c) => c.assignedTo === assignedTo)
     })
     return { conversations }
   })

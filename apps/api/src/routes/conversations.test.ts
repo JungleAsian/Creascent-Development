@@ -196,6 +196,19 @@ describe('conversation routes', () => {
     expect(body.conversations[0].id).toBe('mine-1')
   })
 
+  it('GET /conversations?assigned_to=unassigned returns only unassigned conversations', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations?assigned_to=unassigned',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    const ids = body.conversations.map((c: { id: string }) => c.id).sort()
+    // old-1 and open-1 have assignedTo null; mine-1/theirs-1 are assigned.
+    expect(ids).toEqual(['old-1', 'open-1'])
+  })
+
   // ── Assignment role permissions (Rev1 #12) ──
   // secretary, doctor and clinic_admin may assign; ia_studio_admin (platform
   // super-admin, not a clinic-inbox role) may not — mirroring /messages, /status

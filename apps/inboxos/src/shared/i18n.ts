@@ -58,6 +58,8 @@ const es: Dict = {
   'conv.status.archived': 'Archivada',
   'conv.filter.all': 'Todas',
   'conv.filter.mine': 'Mías',
+  'conv.filter.assignee': 'Responsable',
+  'conv.filter.allAssignees': 'Todos',
 
   'view.empty': 'Selecciona una conversación',
   'view.placeholder': 'Escribe un mensaje…',
@@ -547,6 +549,8 @@ const en: Dict = {
   'conv.status.archived': 'Archived',
   'conv.filter.all': 'All',
   'conv.filter.mine': 'Mine',
+  'conv.filter.assignee': 'Assignee',
+  'conv.filter.allAssignees': 'Anyone',
 
   'view.empty': 'Select a conversation',
   'view.placeholder': 'Type a message…',

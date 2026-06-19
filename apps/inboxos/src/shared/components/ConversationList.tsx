@@ -40,6 +40,11 @@ const STATUS_BADGE: Record<ConversationStatus, string> = {
   archived: 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
 }
 
+// Assignee filter (Rev1 #35 — filter assigned work by user). 'all' = no filter,
+// 'mine' = the current user, 'unassigned' = no assignee, any other value = a team
+// member id. 'mine'/'all'/'unassigned' are reserved and never collide with a uuid.
+type AssigneeFilter = 'all' | 'mine' | 'unassigned' | (string & {})
+
 export function ConversationList({
   selectedId,
   onSelect,
@@ -51,15 +56,18 @@ export function ConversationList({
   const userId = useAuthStore((s) => s.user?.id)
   const members = useTeam()
   const [status, setStatus] = useState<ConversationStatus | 'all'>('all')
-  const [mine, setMine] = useState(false)
+  const [assignee, setAssignee] = useState<AssigneeFilter>('all')
 
   const query = useQuery({
-    queryKey: ['conversations', status, mine, userId],
+    queryKey: ['conversations', status, assignee, userId],
     refetchInterval: 10_000,
     queryFn: () => {
       const params = new URLSearchParams()
       if (status !== 'all') params.set('status', status)
-      if (mine && userId) params.set('assigned_to', userId)
+      // Resolve the assignee filter to the `assigned_to` query param the API expects.
+      const assignedTo =
+        assignee === 'all' ? null : assignee === 'mine' ? (userId ?? null) : assignee
+      if (assignedTo) params.set('assigned_to', assignedTo)
       const qs = params.toString()
       return api.get<{ conversations: Conversation[] }>(`/conversations${qs ? `?${qs}` : ''}`)
     },
@@ -80,10 +88,26 @@ export function ConversationList({
               {t(`conv.status.${s}` as const)}
             </FilterChip>
           ))}
-          <FilterChip active={mine} onClick={() => setMine((m) => !m)}>
-            {t('conv.filter.mine')}
-          </FilterChip>
         </div>
+        <label className="mt-2 flex items-center gap-1.5 text-xs">
+          <span className="text-gray-500">{t('conv.filter.assignee')}:</span>
+          <select
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value as AssigneeFilter)}
+            className="min-w-0 flex-1 truncate rounded-md border border-gray-300 px-2 py-1 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option value="all">{t('conv.filter.allAssignees')}</option>
+            <option value="mine">{t('conv.filter.mine')}</option>
+            <option value="unassigned">{t('conv.unassigned')}</option>
+            {members
+              .filter((m) => m.id !== userId)
+              .map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.fullName ?? m.email}
+                </option>
+              ))}
+          </select>
+        </label>
       </div>
 
       <div className="flex-1 overflow-y-auto">
