@@ -40,6 +40,26 @@ const WhatsAppEntrySchema = z.object({
                   document: z
                     .object({ id: z.string(), mime_type: z.string(), caption: z.string().optional() })
                     .optional(),
+                  // Interactive replies (Req 3): when a patient taps a reply button
+                  // or picks a list row, Meta sends the selection here — the `title`
+                  // is the human-readable text the patient saw, which we treat as the
+                  // message content so intent classification works exactly as for text.
+                  interactive: z
+                    .object({
+                      type: z.string().optional(),
+                      button_reply: z.object({ id: z.string(), title: z.string() }).optional(),
+                      list_reply: z
+                        .object({
+                          id: z.string(),
+                          title: z.string(),
+                          description: z.string().optional(),
+                        })
+                        .optional(),
+                    })
+                    .optional(),
+                  // Legacy template quick-reply button: `text` is what the patient
+                  // tapped (the payload is an opaque developer-defined string).
+                  button: z.object({ text: z.string(), payload: z.string().optional() }).optional(),
                 }),
               )
               .optional(),
@@ -65,6 +85,20 @@ const WhatsAppEntrySchema = z.object({
     }),
   ),
 })
+
+// Req 3: the human-readable text of an interactive reply (button tap or list
+// pick) or a legacy template quick-reply button. Returns undefined for a message
+// that carries none, so the caller's `??` chain falls through.
+function interactiveText(msg: {
+  interactive?: { button_reply?: { title: string }; list_reply?: { title: string } }
+  button?: { text: string }
+}): string | undefined {
+  return (
+    msg.interactive?.button_reply?.title ??
+    msg.interactive?.list_reply?.title ??
+    msg.button?.text
+  )
+}
 
 const webhookRoute: FastifyPluginAsync = async (app) => {
   // Capture the raw body so HMAC validation sees exactly what Meta signed.
@@ -115,7 +149,11 @@ const webhookRoute: FastifyPluginAsync = async (app) => {
               patientWaId: msg.from,
               patientName: contacts?.[0]?.profile.name ?? '',
               messageType: msg.type,
-              content: msg.text?.body ?? msg.image?.caption ?? msg.document?.caption,
+              content:
+                msg.text?.body ??
+                msg.image?.caption ??
+                msg.document?.caption ??
+                interactiveText(msg),
               mediaId: msg.audio?.id ?? msg.image?.id ?? msg.document?.id,
               mimeType: msg.audio?.mime_type ?? msg.image?.mime_type ?? msg.document?.mime_type,
               waMessageId: msg.id,

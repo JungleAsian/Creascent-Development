@@ -167,6 +167,151 @@ describe('webhook routes', () => {
     expect(statusAdd).not.toHaveBeenCalled()
   })
 
+  it('POST with an interactive button reply enqueues the tapped title as content', async () => {
+    const buttonReply = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'WABA',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '15550001111', phone_number_id: 'PHONE_ID' },
+                contacts: [{ profile: { name: 'Ana' }, wa_id: '5215555555555' }],
+                messages: [
+                  {
+                    from: '5215555555555',
+                    id: 'wamid.BTN1',
+                    timestamp: '1700000400',
+                    type: 'interactive',
+                    interactive: {
+                      type: 'button_reply',
+                      button_reply: { id: 'confirm_yes', title: 'Sí, confirmar' },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(buttonReply) },
+      payload: buttonReply,
+    })
+    await flush()
+
+    expect(res.statusCode).toBe(200)
+    expect(add).toHaveBeenCalledTimes(1)
+    const [, job] = add.mock.calls[0] as [string, Record<string, unknown>]
+    expect(job['messageType']).toBe('interactive')
+    expect(job['content']).toBe('Sí, confirmar')
+    expect(statusAdd).not.toHaveBeenCalled()
+  })
+
+  it('POST with an interactive list reply enqueues the chosen row title as content', async () => {
+    const listReply = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'WABA',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '15550001111', phone_number_id: 'PHONE_ID' },
+                contacts: [{ profile: { name: 'Ana' }, wa_id: '5215555555555' }],
+                messages: [
+                  {
+                    from: '5215555555555',
+                    id: 'wamid.LIST1',
+                    timestamp: '1700000500',
+                    type: 'interactive',
+                    interactive: {
+                      type: 'list_reply',
+                      list_reply: {
+                        id: 'slot_0900',
+                        title: '09:00',
+                        description: 'Dr. García',
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(listReply) },
+      payload: listReply,
+    })
+    await flush()
+
+    expect(res.statusCode).toBe(200)
+    expect(add).toHaveBeenCalledTimes(1)
+    const [, job] = add.mock.calls[0] as [string, Record<string, unknown>]
+    expect(job['messageType']).toBe('interactive')
+    expect(job['content']).toBe('09:00')
+    expect(statusAdd).not.toHaveBeenCalled()
+  })
+
+  it('POST with a legacy template quick-reply button enqueues the button text', async () => {
+    const buttonPayload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'WABA',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '15550001111', phone_number_id: 'PHONE_ID' },
+                contacts: [{ profile: { name: 'Ana' }, wa_id: '5215555555555' }],
+                messages: [
+                  {
+                    from: '5215555555555',
+                    id: 'wamid.QR1',
+                    timestamp: '1700000600',
+                    type: 'button',
+                    button: { text: 'Cancelar cita', payload: 'CANCEL_APPT' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(buttonPayload) },
+      payload: buttonPayload,
+    })
+    await flush()
+
+    expect(res.statusCode).toBe(200)
+    expect(add).toHaveBeenCalledTimes(1)
+    const [, job] = add.mock.calls[0] as [string, Record<string, unknown>]
+    expect(job['messageType']).toBe('button')
+    expect(job['content']).toBe('Cancelar cita')
+    expect(statusAdd).not.toHaveBeenCalled()
+  })
+
   it('POST with a delivery-status receipt enqueues to the status queue', async () => {
     const statusPayload = JSON.stringify({
       object: 'whatsapp_business_account',
