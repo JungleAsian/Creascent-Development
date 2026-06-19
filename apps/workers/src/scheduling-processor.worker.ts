@@ -32,6 +32,7 @@ import {
 } from '@docmee/agents'
 import { sendWhatsAppText } from '@docmee/channels'
 import { notificationQueue, type Job } from '@docmee/queue'
+import { patientSource, mergePatientIntake, type BookingIntake } from './intake.js'
 import {
   createServiceDbClient,
   createClinicsRepository,
@@ -150,7 +151,7 @@ function getCalendarConfig(clinic: Clinic): CalendarConfig | null {
 }
 
 function toProviderRef(p: Provider): ProviderRef {
-  return { id: p.id, fullName: p.fullName }
+  return { id: p.id, fullName: p.fullName, specialty: p.specialty }
 }
 
 function toUpcoming(appt: Appointment, providers: Provider[]): UpcomingAppointment {
@@ -342,7 +343,7 @@ export async function processSchedulingJob(job: Job): Promise<void> {
         }
 
         const resourceList: ProviderRef[] = doctorMode
-          ? doctors.map((d) => ({ id: d.id, fullName: d.name }))
+          ? doctors.map((d) => ({ id: d.id, fullName: d.name, specialty: d.specialty }))
           : providers.map(toProviderRef)
 
         const result = await advanceBookingFlow(state, data.message, {
@@ -352,7 +353,19 @@ export async function processSchedulingJob(job: Job): Promise<void> {
           patientName: patient?.fullName ?? null,
         }, {
           calendar: bookingCalendar ?? unconfiguredCalendar,
-          saveAppointment: async ({ providerId, startTime, endTime, reason, googleEventId }) => {
+          saveAppointment: async ({ providerId, doctorName, specialty, startTime, endTime, reason, preferredDate, preferredTime, googleEventId }) => {
+            // Req 10: the full intake captured during the flow (reason, the
+            // patient's preferred date/time, the chosen doctor + specialty and the
+            // originating source channel) is persisted onto the appointment...
+            const intake: BookingIntake = {
+              reason,
+              preferredDate,
+              preferredTime,
+              doctorId: providerId,
+              doctorName,
+              specialty,
+              source: patientSource(patient),
+            }
             const created = await appointments.create({
               clinicId: data.clinicId,
               patientId,
@@ -361,9 +374,22 @@ export async function processSchedulingJob(job: Job): Promise<void> {
               startTime,
               endTime,
               notes: reason,
+              metadata: { intake },
             })
             await appointments.update(data.clinicId, created.id, { status: 'confirmed', googleEventId })
             await appointments.addEvent(data.clinicId, created.id, 'confirmed')
+            // ...and merged onto the patient record so it is queryable from the
+            // patient view, not only buried in the appointment. Best-effort: a
+            // write failure is logged but never breaks the confirmation reply.
+            if (patient) {
+              try {
+                await patients.update(data.clinicId, patient.id, {
+                  metadata: mergePatientIntake(patient.metadata, intake),
+                })
+              } catch (e) {
+                console.error(`[scheduling] failed to persist patient intake for ${patient.id}`, e)
+              }
+            }
             // Auto-tag the conversation as appointment_scheduled (Req 11). Idempotent.
             if (data.conversationId) {
               const tag = await conversations.createTag({

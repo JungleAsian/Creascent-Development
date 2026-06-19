@@ -159,6 +159,37 @@ describe('processConversationJob', () => {
     expect(job.patientId).toBe(PATIENT)
   })
 
+  it('Req 10: new WhatsApp patient captures name, phone and source on first contact', async () => {
+    h.findByContact.mockResolvedValue(null)
+    await processConversationJob(makeJob({ ...base, messageType: 'text', content: 'hola' }))
+    const [createInput] = h.createPatient.mock.calls[0]
+    expect(createInput).toMatchObject({
+      clinicId: CLINIC,
+      fullName: 'Ana',
+      status: 'new',
+      metadata: { source: 'whatsapp', phone: base.patientWaId, contactHandle: base.patientWaId },
+    })
+  })
+
+  it('Req 10: new Messenger patient captures source but not phone (handle is a PSID)', async () => {
+    h.findByContact.mockResolvedValue(null)
+    await processConversationJob(
+      makeJob({
+        channel: 'messenger',
+        phoneNumberId: 'PAGE_ID',
+        patientWaId: 'PSID_123',
+        patientName: 'Bob',
+        waMessageId: 'mid.ABC',
+        timestamp: 1700000000000,
+        messageType: 'text',
+        content: 'hola',
+      }),
+    )
+    const [createInput] = h.createPatient.mock.calls[0]
+    expect(createInput.metadata).toMatchObject({ source: 'messenger', contactHandle: 'PSID_123' })
+    expect(createInput.metadata.phone).toBeUndefined()
+  })
+
   it('expiring Meta token → enqueues a notification', async () => {
     const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
     h.findByAccount.mockResolvedValue({ ...activeAccount, settings: { tokenExpiresAt: soon } })

@@ -13,6 +13,8 @@ export interface ClinicInfo {
 export interface ProviderRef {
   id: string
   fullName: string
+  /** Doctor/provider specialty, captured into the patient intake on booking (Req 10). */
+  specialty?: string | null
 }
 
 /** A patient's existing upcoming appointment, as the flows need to see it. */

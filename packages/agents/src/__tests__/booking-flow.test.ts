@@ -31,7 +31,7 @@ function makeDeps(calendar: CalendarOps): BookingDeps {
 const ctx: BookingContext = {
   language: 'es',
   clinic: { name: 'Clínica Demo', timezone: 'America/Guatemala' },
-  providers: [{ id: 'prov-1', fullName: 'Dra. García' }],
+  providers: [{ id: 'prov-1', fullName: 'Dra. García', specialty: 'Pediatría' }],
   patientName: 'Ana',
 }
 
@@ -77,8 +77,15 @@ describe('advanceBookingFlow (LLM_STUB)', () => {
     expect(r.nextState.googleEventId).toBe('evt_123')
     expect(calendar.createEvent).toHaveBeenCalledTimes(1)
     expect(deps.saveAppointment).toHaveBeenCalledTimes(1)
+    // Req 10: the full intake collected during the flow is handed to the worker —
+    // doctor + specialty, the reason, and the patient's preferred date/time.
     expect((deps.saveAppointment as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
       providerId: 'prov-1',
+      doctorName: 'Dra. García',
+      specialty: 'Pediatría',
+      reason: 'control general',
+      preferredDate: DATE,
+      preferredTime: '10:00',
       startTime: `${DATE}T10:00:00`,
       googleEventId: 'evt_123',
     })

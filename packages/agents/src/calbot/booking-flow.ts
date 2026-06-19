@@ -33,6 +33,7 @@ export interface BookingState {
   step: BookingStep
   providerId?: string
   doctorName?: string
+  specialty?: string | null
   reason?: string
   preferredDate?: string // YYYY-MM-DD
   preferredTime?: string // HH:MM
@@ -50,11 +51,19 @@ export interface BookingContext {
 
 export interface BookingDeps {
   calendar: CalendarOps
+  // Req 10 (Patient Data Capture): the full intake collected during the flow is
+  // handed to the worker so it can persist the doctor/specialty, reason and the
+  // patient's preferred date/time onto the appointment and the patient record —
+  // not just the calendar event.
   saveAppointment(input: {
     providerId: string
+    doctorName: string | null
+    specialty: string | null
     startTime: string
     endTime: string
     reason: string
+    preferredDate: string
+    preferredTime: string
     googleEventId: string
   }): Promise<void>
 }
@@ -115,7 +124,13 @@ export async function advanceBookingFlow(
         }
       }
       return {
-        nextState: { ...state, step: 'ask_reason', providerId: provider.id, doctorName: provider.fullName },
+        nextState: {
+          ...state,
+          step: 'ask_reason',
+          providerId: provider.id,
+          doctorName: provider.fullName,
+          specialty: provider.specialty ?? null,
+        },
         reply: pick(
           L,
           `Perfecto, ${provider.fullName}. ¿Cuál es el motivo de la consulta?`,
@@ -247,9 +262,13 @@ export async function advanceBookingFlow(
       })
       await deps.saveAppointment({
         providerId: state.providerId,
+        doctorName: state.doctorName ?? null,
+        specialty: state.specialty ?? null,
         startTime: slot.start,
         endTime: slot.end,
         reason: state.reason ?? '',
+        preferredDate: state.preferredDate,
+        preferredTime: state.preferredTime,
         googleEventId: eventId,
       })
 

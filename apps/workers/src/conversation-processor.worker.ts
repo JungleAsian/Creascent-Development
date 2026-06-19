@@ -15,6 +15,7 @@ import {
   type ChannelAccount,
   type ContentType,
 } from '@docmee/db'
+import { firstContactMetadata } from './intake.js'
 
 export const InboundMessageSchema = z.object({
   // Channel the message arrived on. `phoneNumberId` is the provider account id:
@@ -173,10 +174,13 @@ export async function processConversationJob(job: Job): Promise<void> {
         await patients.update(clinicId, existing.id, { status: 'returning' })
       }
     } else {
+      // Req 10: capture name, phone (the WhatsApp handle is the phone) and source
+      // (the originating channel) the moment a new patient first contacts us.
       const created = await patients.create({
         clinicId,
         fullName: msg.patientName || undefined,
         status: 'new',
+        metadata: firstContactMetadata(channel, msg.patientWaId),
       })
       patientId = created.id
       await patients.addContact({
