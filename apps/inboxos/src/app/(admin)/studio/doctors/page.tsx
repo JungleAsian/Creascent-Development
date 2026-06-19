@@ -9,10 +9,15 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
+import {
+  WEEKDAYS,
+  addShift,
+  removeShift,
+  setDayEnabled,
+  setShift,
+} from '@/shared/doctorHours'
 import { useI18n } from '@/shared/hooks/useI18n'
-import type { Doctor, DoctorAvailability, Service, Weekday } from '@/shared/types'
-
-const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+import type { Doctor, DoctorAvailability, Service } from '@/shared/types'
 
 export default function DoctorsPage() {
   const { t } = useI18n()
@@ -292,7 +297,11 @@ function ClinicServicesPanel({ clinicId }: { clinicId: string }) {
   )
 }
 
-/** A 7-row weekly hours editor. One start/end range per day; unchecked = day off. */
+/**
+ * A 7-row weekly hours editor supporting SPLIT SHIFTS: each enabled day can hold
+ * one or more start/end ranges (e.g. a morning + an afternoon block around a lunch
+ * break). Unchecked = day off. All edits go through the pure doctorHours helpers.
+ */
 function WeeklyHoursEditor({
   value,
   onChange,
@@ -302,47 +311,65 @@ function WeeklyHoursEditor({
 }) {
   const { t } = useI18n()
 
-  function setDay(day: Weekday, enabled: boolean, start: string, end: string) {
-    const next: DoctorAvailability = { ...value }
-    if (enabled) next[day] = [{ start, end }]
-    else delete next[day]
-    onChange(next)
-  }
-
   return (
     <div className="rounded-md border border-gray-200 p-2 dark:border-gray-700">
       <p className="mb-2 text-xs font-medium text-gray-500">{t('studio.doctors.workingHours')}</p>
-      <div className="space-y-1">
+      <div className="space-y-2">
         {WEEKDAYS.map((day) => {
-          const range = value[day]?.[0]
-          const enabled = Boolean(range)
-          const start = range?.start ?? '09:00'
-          const end = range?.end ?? '17:00'
+          const shifts = value[day] ?? []
+          const enabled = shifts.length > 0
           return (
-            <div key={day} className="flex items-center gap-2 text-sm">
-              <label className="flex w-28 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setDay(day, e.target.checked, start, end)}
-                />
-                {t(`studio.doctors.day.${day}`)}
-              </label>
-              <input
-                type="time"
-                value={start}
-                disabled={!enabled}
-                onChange={(e) => setDay(day, true, e.target.value, end)}
-                className="rounded-md border border-gray-300 px-1.5 py-1 text-sm disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800"
-              />
-              <span className="text-gray-400">–</span>
-              <input
-                type="time"
-                value={end}
-                disabled={!enabled}
-                onChange={(e) => setDay(day, true, start, e.target.value)}
-                className="rounded-md border border-gray-300 px-1.5 py-1 text-sm disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800"
-              />
+            <div
+              key={day}
+              className="flex flex-col gap-1 border-b border-gray-100 pb-2 last:border-0 dark:border-gray-800"
+            >
+              <div className="flex items-center gap-2 text-sm">
+                <label className="flex w-28 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={(e) => onChange(setDayEnabled(value, day, e.target.checked))}
+                  />
+                  {t(`studio.doctors.day.${day}`)}
+                </label>
+                {enabled ? (
+                  <button
+                    type="button"
+                    onClick={() => onChange(addShift(value, day))}
+                    className="rounded-md border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                  >
+                    + {t('studio.doctors.addShift')}
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-400">{t('studio.doctors.dayOff')}</span>
+                )}
+              </div>
+              {shifts.map((range, i) => (
+                <div key={i} className="flex items-center gap-2 pl-28 text-sm">
+                  <input
+                    type="time"
+                    value={range.start}
+                    onChange={(e) => onChange(setShift(value, day, i, { start: e.target.value }))}
+                    className="rounded-md border border-gray-300 px-1.5 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+                  />
+                  <span className="text-gray-400">–</span>
+                  <input
+                    type="time"
+                    value={range.end}
+                    onChange={(e) => onChange(setShift(value, day, i, { end: e.target.value }))}
+                    className="rounded-md border border-gray-300 px-1.5 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onChange(removeShift(value, day, i))}
+                    aria-label={t('studio.doctors.removeShift')}
+                    title={t('studio.doctors.removeShift')}
+                    className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
           )
         })}
