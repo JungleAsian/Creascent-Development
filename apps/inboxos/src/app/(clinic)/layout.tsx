@@ -6,6 +6,7 @@
 import { useMemo, useState } from 'react'
 import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
 import { useHeartbeat } from '@/shared/hooks/useHeartbeat'
+import { useFeatures } from '@/shared/hooks/useFeatures'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { NotificationBell } from '@/shared/components/NotificationBell'
@@ -13,6 +14,7 @@ import { NotificationBell } from '@/shared/components/NotificationBell'
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { ready, user } = useAuthGuard()
   const { t } = useI18n()
+  const { features } = useFeatures()
   const [drawerOpen, setDrawerOpen] = useState(false)
   useHeartbeat()
 
@@ -20,13 +22,14 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
     const base: NavLink[] = [{ href: '/inbox', label: t('nav.inbox') }]
     if (user?.role === 'clinic_admin' || user?.role === 'ia_studio_admin') {
       base.push({ href: '/metrics', label: t('nav.metrics') })
-      base.push({ href: '/analytics', label: t('nav.analytics') })
+      // Req 40: the advanced analytics dashboard is gated behind a server feature flag.
+      if (features.advancedAnalytics) base.push({ href: '/analytics', label: t('nav.analytics') })
       base.push({ href: '/qos', label: t('nav.qos') })
       base.push({ href: '/reports', label: t('nav.reports') })
     }
     if (user?.role === 'ia_studio_admin') base.push({ href: '/studio', label: t('nav.studio') })
     return base
-  }, [t, user?.role])
+  }, [t, user?.role, features.advancedAnalytics])
 
   if (!ready) {
     return (

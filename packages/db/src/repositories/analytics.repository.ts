@@ -18,6 +18,8 @@ export interface AdvancedAnalytics {
   avgConversationLength: number
   /** Fraction (0..1) of conversations that were handed off to a human. */
   handoffRate: number
+  /** Fraction (0..1) of conversations resolved by the bot with NO human handoff (bot effectiveness). */
+  automationRate: number
   /** Fraction (0..1) of conversations where the bot answered from the knowledge base. */
   kbHitRate: number
   newPatients: number
@@ -45,11 +47,14 @@ export function createAnalyticsRepository(sql: Sql): AnalyticsRepository {
       const tz = timezone || 'UTC'
 
       const [conv, length, retention, peak] = await Promise.all([
-        sql<[{ total: string; resolved: string; handoff: string; kbHit: string }]>`
+        sql<[{ total: string; resolved: string; handoff: string; automated: string; kbHit: string }]>`
           SELECT
             COUNT(*)                                                            AS total,
             COUNT(*) FILTER (WHERE status = 'resolved')                          AS resolved,
             COUNT(*) FILTER (WHERE status = 'handoff' OR assigned_to IS NOT NULL) AS handoff,
+            COUNT(*) FILTER (
+              WHERE status = 'resolved' AND status <> 'handoff' AND assigned_to IS NULL
+            )                                                                    AS automated,
             COUNT(*) FILTER (WHERE metadata->>'kbHit' = 'true')                  AS kb_hit
           FROM conversations
           WHERE clinic_id = ${clinicId}
@@ -100,6 +105,7 @@ export function createAnalyticsRepository(sql: Sql): AnalyticsRepository {
         resolutionRate: total > 0 ? num(conv[0]?.resolved) / total : 0,
         avgConversationLength: Math.round(num(length[0]?.avgLength) * 10) / 10,
         handoffRate: total > 0 ? num(conv[0]?.handoff) / total : 0,
+        automationRate: total > 0 ? num(conv[0]?.automated) / total : 0,
         kbHitRate: total > 0 ? num(conv[0]?.kbHit) / total : 0,
         newPatients: num(retention[0]?.newPatients),
         returningPatients: num(retention[0]?.returningPatients),

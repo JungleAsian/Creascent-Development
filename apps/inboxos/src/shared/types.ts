@@ -433,8 +433,16 @@ export interface AdvancedAnalytics {
   resolutionRate: number
   avgConversationLength: number
   handoffRate: number
+  /** Fraction (0..1) of conversations resolved by the bot with no human handoff. */
+  automationRate: number
   kbHitRate: number
   newPatients: number
   returningPatients: number
   peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
+}
+
+// Req 40: server feature flags, surfaced via GET /config so the panel can gate
+// optional surfaces (e.g. the advanced analytics dashboard).
+export interface Features {
+  advancedAnalytics: boolean
 }

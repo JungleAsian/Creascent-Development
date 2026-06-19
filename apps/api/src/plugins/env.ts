@@ -13,6 +13,12 @@ const schema = z.object({
   // Auth (P08). Dev defaults keep local boot working; production must override.
   JWT_SECRET: z.string().default('dev-access-secret-change-me'),
   JWT_REFRESH_SECRET: z.string().default('dev-refresh-secret-change-me'),
+  // Feature flags (Req 40). Off by default; opt in with 1/true/yes/on (case-insensitive).
+  // NOTE: do NOT use z.coerce.boolean() here — it treats the string 'false' as true.
+  FEATURE_ADVANCED_ANALYTICS: z
+    .string()
+    .default('false')
+    .transform((v) => /^(1|true|yes|on)$/i.test(v.trim())),
 })
 
 export type Env = z.infer<typeof schema>

@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import { parseEnv } from './plugins/env.js'
 import { errorHandler, notFoundHandler } from './plugins/errors.js'
 import healthRoute from './routes/health.js'
+import configRoute from './routes/config.js'
 import webhookRoute from './routes/webhook.js'
 import messengerRoute from './routes/messenger.js'
 import instagramRoute from './routes/instagram.js'
@@ -55,6 +56,7 @@ export async function buildApp() {
   app.setNotFoundHandler(notFoundHandler)
 
   await app.register(healthRoute)
+  await app.register(configRoute)
   await app.register(authRoute, { prefix: '/auth' })
   await app.register(webhookRoute, { prefix: '/webhook' })
   await app.register(messengerRoute, { prefix: '/webhook' })

@@ -6,6 +6,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { createClinicsRepository, createAnalyticsRepository } from '@docmee/db'
 import { withDb } from '../lib/db.js'
 import { resolveClinicScope } from '../lib/scope.js'
+import { getFeatures } from '../lib/features.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -24,6 +25,12 @@ const analyticsRoute: FastifyPluginAsync = async (app) => {
     '/clinics/:id/analytics',
     { preHandler: requireRole('clinic_admin', 'ia_studio_admin') },
     async (request, reply) => {
+      // Req 40: the advanced analytics surface is gated behind a feature flag. When
+      // disabled the route is invisible (404) regardless of role/clinic.
+      if (!getFeatures().advancedAnalytics) {
+        return reply.code(404).send({ error: 'Not found' })
+      }
+
       const clinicId = resolveClinicScope(request, request.params.id)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
 

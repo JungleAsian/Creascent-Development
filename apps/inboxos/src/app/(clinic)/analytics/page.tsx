@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/auth'
 import { useI18n } from '@/shared/hooks/useI18n'
+import { useFeatures } from '@/shared/hooks/useFeatures'
 import type { Clinic, AdvancedAnalytics } from '@/shared/types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -17,6 +18,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export default function AnalyticsPage() {
   const { t } = useI18n()
   const user = useAuthStore((s) => s.user)
+  const { features, ready: featuresReady } = useFeatures()
   const isAdmin = user?.role === 'ia_studio_admin'
   const [clinicId, setClinicId] = useState<string>(user?.clinicId ?? '')
   const [from, setFrom] = useState(isoDate(new Date(Date.now() - 30 * DAY_MS)))
@@ -24,13 +26,13 @@ export default function AnalyticsPage() {
 
   const clinicsQuery = useQuery({
     queryKey: ['clinics'],
-    enabled: isAdmin,
+    enabled: isAdmin && features.advancedAnalytics,
     queryFn: () => api.get<{ clinics: Clinic[] }>('/clinics'),
   })
 
   const analyticsQuery = useQuery({
     queryKey: ['analytics', clinicId, from, to],
-    enabled: Boolean(clinicId),
+    enabled: Boolean(clinicId) && features.advancedAnalytics,
     queryFn: () =>
       api.get<{ analytics: AdvancedAnalytics }>(
         `/clinics/${clinicId}/analytics?from=${from}&to=${to}`,
@@ -46,6 +48,7 @@ export default function AnalyticsPage() {
       ['Resolution rate', `${Math.round(a.resolutionRate * 100)}%`],
       ['Messages per conversation', String(a.avgConversationLength)],
       ['Handoff rate', `${Math.round(a.handoffRate * 100)}%`],
+      ['Automation rate', `${Math.round(a.automationRate * 100)}%`],
       ['KB hit rate', `${Math.round(a.kbHitRate * 100)}%`],
       ['New patients', String(a.newPatients)],
       ['Returning patients', String(a.returningPatients)],
@@ -58,6 +61,16 @@ export default function AnalyticsPage() {
     link.download = `analytics-${clinicId}-${from}_${to}.csv`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  // Req 40: the dashboard is gated behind the FEATURE_ADVANCED_ANALYTICS server flag.
+  if (featuresReady && !features.advancedAnalytics) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-6 p-6">
+        <h1 className="text-xl font-bold">{t('analytics.title')}</h1>
+        <p className="text-sm text-gray-400">{t('analytics.disabled')}</p>
+      </div>
+    )
   }
 
   return (
@@ -124,6 +137,7 @@ export default function AnalyticsPage() {
             <Card label={t('analytics.resolutionRate')} value={`${Math.round(a.resolutionRate * 100)}%`} />
             <Card label={t('analytics.avgLength')} value={String(a.avgConversationLength)} />
             <Card label={t('analytics.handoffRate')} value={`${Math.round(a.handoffRate * 100)}%`} />
+            <Card label={t('analytics.automationRate')} value={`${Math.round(a.automationRate * 100)}%`} />
             <Card label={t('analytics.kbHitRate')} value={`${Math.round(a.kbHitRate * 100)}%`} />
             <Card label={t('analytics.newPatients')} value={String(a.newPatients)} />
             <Card label={t('analytics.returningPatients')} value={String(a.returningPatients)} />
