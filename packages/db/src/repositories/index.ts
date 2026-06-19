@@ -38,7 +38,7 @@ export type { KnowledgeRepository, CreateDocumentInput, CreateChunkInput,
 export type { ErrorReviewsRepository, CreateErrorReviewInput, ErrorReviewFilters }               from './error-reviews.repository.js'
 export type { AiUsageRepository, ClinicUsageSummary, ClinicUsageRow }                            from './ai-usage.repository.js'
 export type { NotificationsRepository, CreateNotificationInput }                                 from './notifications.repository.js'
-export type { UsersRepository }                                                                  from './users.repository.js'
+export type { UsersRepository, CreateClinicUserInput, UpdateClinicUserInput }                    from './users.repository.js'
 export type { AuditRepository, CreateAuditEventInput, AuditEventFilter }                         from './audit.repository.js'
 export type { QuickReplyTemplatesRepository, CreateQuickReplyTemplateInput }                     from './quick-reply-templates.repository.js'
 export type { MessageTemplatesRepository, CreateMessageTemplateInput }                           from './message-templates.repository.js'

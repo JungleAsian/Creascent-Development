@@ -6,6 +6,7 @@ export type {
   // Tenant
   Clinic,
   ClinicUser,
+  ClinicUserWithRole,
   ClinicUserStatus,
   ClinicUserAuth,
   PanelLanguage,

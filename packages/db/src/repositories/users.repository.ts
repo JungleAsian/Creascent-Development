@@ -3,14 +3,51 @@ import { toJson } from '../client.js'
 import type {
   ClinicUser,
   ClinicUserAuth,
+  ClinicUserStatus,
+  ClinicUserWithRole,
   NotificationPrefsRow,
   PanelLanguage,
   PanelRole,
 } from '../types/index.js'
 
+/** Fields for creating a clinic user (Req 1 — IA Studio user management). */
+export interface CreateClinicUserInput {
+  clinicId: string
+  email: string
+  fullName?: string | null
+  status?: ClinicUserStatus
+  /** Already-hashed password (use @docmee/shared hashPassword). Null = invited, no login yet. */
+  passwordHash?: string | null
+  panelLanguage?: PanelLanguage
+}
+
+/** Editable fields for an existing clinic user. Omitted fields are left unchanged. */
+export interface UpdateClinicUserInput {
+  email?: string
+  fullName?: string | null
+  status?: ClinicUserStatus
+  passwordHash?: string | null
+  panelLanguage?: PanelLanguage
+}
+
 export interface UsersRepository {
   findById(clinicId: string, id: string): Promise<ClinicUser | null>
   listByClinic(clinicId: string): Promise<ClinicUser[]>
+  /** Clinic users with their resolved highest-privilege role (user-management list). */
+  listWithRoles(clinicId: string): Promise<ClinicUserWithRole[]>
+  /** A clinic user whose email matches (case-insensitive) — duplicate-email guard. Null if none. */
+  findByEmail(clinicId: string, email: string): Promise<ClinicUser | null>
+  /** Create a clinic user. The internal user_id is generated server-side. */
+  create(input: CreateClinicUserInput): Promise<ClinicUser>
+  /** Update a clinic user's editable fields. Null when the user is absent/foreign. */
+  update(clinicId: string, id: string, input: UpdateClinicUserInput): Promise<ClinicUser | null>
+  /** Delete a clinic user (assignments are SET NULL by FK). Returns false if absent/foreign. */
+  delete(clinicId: string, id: string): Promise<boolean>
+  /**
+   * Set the user's single panel role: ensures a clinic-scoped role row for the
+   * name exists, then replaces every user_roles link with the one role.
+   */
+  setRole(clinicId: string, clinicUserId: string, role: PanelRole): Promise<void>
   /** Email of the clinic's primary active user — the default alert recipient. */
   findPrimaryEmail(clinicId: string): Promise<string | null>
   /**
@@ -76,6 +113,99 @@ export function createUsersRepository(sql: Sql): UsersRepository {
     async listByClinic(clinicId) {
       return sql<ClinicUser[]>`
         SELECT * FROM clinic_users WHERE clinic_id = ${clinicId} ORDER BY created_at
+      `
+    },
+
+    async listWithRoles(clinicId) {
+      const rows = await sql<(ClinicUser & { roleNames: string[] })[]>`
+        SELECT u.*,
+               COALESCE(
+                 ARRAY_AGG(r.name) FILTER (WHERE r.name IS NOT NULL),
+                 '{}'
+               ) AS role_names
+        FROM clinic_users u
+        LEFT JOIN user_roles ur ON ur.clinic_user_id = u.id
+        LEFT JOIN roles r       ON r.id = ur.role_id
+        WHERE u.clinic_id = ${clinicId}
+        GROUP BY u.id
+        ORDER BY u.created_at
+      `
+      return rows.map(({ roleNames, ...user }) => ({
+        ...(user as ClinicUser),
+        role: resolveRole(roleNames ?? []),
+      }))
+    },
+
+    async findByEmail(clinicId, email) {
+      const rows = await sql<ClinicUser[]>`
+        SELECT * FROM clinic_users
+        WHERE clinic_id = ${clinicId} AND LOWER(email) = LOWER(${email})
+        LIMIT 1
+      `
+      return rows[0] ?? null
+    },
+
+    async create(input) {
+      const rows = await sql<ClinicUser[]>`
+        INSERT INTO clinic_users (
+          clinic_id, user_id, email, full_name, status, password_hash, panel_language
+        )
+        VALUES (
+          ${input.clinicId},
+          gen_random_uuid(),
+          ${input.email},
+          ${input.fullName ?? null},
+          ${input.status ?? 'active'},
+          ${input.passwordHash ?? null},
+          ${input.panelLanguage ?? 'es'}
+        )
+        RETURNING *
+      `
+      return rows[0]!
+    },
+
+    async update(clinicId, id, input) {
+      const rows = await sql<ClinicUser[]>`
+        UPDATE clinic_users SET
+          email          = COALESCE(${input.email        ?? null}, email),
+          full_name      = CASE WHEN ${input.fullName !== undefined} THEN ${input.fullName ?? null} ELSE full_name END,
+          status         = COALESCE(${input.status       ?? null}, status),
+          password_hash  = COALESCE(${input.passwordHash ?? null}, password_hash),
+          panel_language = COALESCE(${input.panelLanguage ?? null}, panel_language)
+        WHERE clinic_id = ${clinicId} AND id = ${id}
+        RETURNING *
+      `
+      return rows[0] ?? null
+    },
+
+    async delete(clinicId, id) {
+      const rows = await sql<[{ id: string }]>`
+        DELETE FROM clinic_users WHERE clinic_id = ${clinicId} AND id = ${id} RETURNING id
+      `
+      return rows.length > 0
+    },
+
+    async setRole(clinicId, clinicUserId, role) {
+      // Ensure a clinic-scoped role row exists for this name (roles has no unique
+      // (clinic_id, name) constraint, so select-then-insert rather than upsert).
+      const existing = await sql<[{ id: string }]>`
+        SELECT id FROM roles WHERE clinic_id = ${clinicId} AND name = ${role} LIMIT 1
+      `
+      let roleId = existing[0]?.id
+      if (!roleId) {
+        const created = await sql<[{ id: string }]>`
+          INSERT INTO roles (clinic_id, name, description)
+          VALUES (${clinicId}, ${role}, ${`${role} (panel)`})
+          RETURNING id
+        `
+        roleId = created[0]!.id
+      }
+      // Single panel role per user: clear existing links, then add the one role.
+      await sql`DELETE FROM user_roles WHERE clinic_user_id = ${clinicUserId}`
+      await sql`
+        INSERT INTO user_roles (clinic_user_id, role_id)
+        VALUES (${clinicUserId}, ${roleId})
+        ON CONFLICT DO NOTHING
       `
     },
 

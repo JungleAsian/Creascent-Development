@@ -19,6 +19,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const links = useMemo<NavLink[]>(
     () => [
       { href: '/studio/clinics', label: t('nav.clinics') },
+      { href: '/studio/users', label: t('nav.users') },
       { href: '/studio/doctors', label: t('nav.doctors') },
       { href: '/studio/kb', label: t('nav.kb') },
       { href: '/studio/custom-flows', label: t('nav.customFlows') },

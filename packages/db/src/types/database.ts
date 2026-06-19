@@ -49,6 +49,11 @@ export interface ClinicUser {
   updatedAt: string
 }
 
+/** A clinic user with their resolved highest-privilege panel role (Req 1 — user management). */
+export interface ClinicUserWithRole extends ClinicUser {
+  role: PanelRole
+}
+
 export type PanelLanguage = 'es' | 'en'
 
 /**

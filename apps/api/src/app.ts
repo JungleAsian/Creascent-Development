@@ -13,6 +13,7 @@ import kbRoute from './routes/kb.js'
 import notificationsRoute from './routes/notifications.js'
 import calendarRoute from './routes/calendar.js'
 import userRoute from './routes/user.js'
+import usersRoute from './routes/users.js'
 import errorsRoute from './routes/errors.js'
 import usageRoute from './routes/usage.js'
 import licenseRoute from './routes/license.js'
@@ -84,6 +85,7 @@ export async function buildApp() {
   await app.register(notificationsRoute, { prefix: '/notifications' })
   await app.register(calendarRoute)
   await app.register(userRoute, { prefix: '/user' })
+  await app.register(usersRoute)
 
   return app
 }

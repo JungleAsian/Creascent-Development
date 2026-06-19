@@ -77,6 +77,24 @@ export interface TeamMember {
   status: string
 }
 
+// ── Clinic users (Req 1 — IA Studio user management) ───────────────────────────
+export type ClinicUserStatus = 'active' | 'inactive' | 'invited'
+/** Roles assignable through per-clinic user management (ia_studio_admin excluded). */
+export type AssignableRole = 'secretary' | 'doctor' | 'clinic_admin'
+
+export interface ClinicUser {
+  id: string
+  clinicId: string
+  email: string
+  fullName: string | null
+  status: ClinicUserStatus
+  role: PanelRole
+  panelLanguage: PanelLanguage
+  lastSeen: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 // ── Quick reply templates (P16 — Gap #25) ──────────────────────────────────────
 export interface QuickReplyTemplate {
   id: string
