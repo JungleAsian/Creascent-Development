@@ -7,6 +7,9 @@ import { loadConfig, requiredEnvVars } from '../lib/config.js'
 import { writeJson } from '../lib/json-store.js'
 import { log } from '../lib/logger.js'
 import { phaseDefinitions, phaseFileName } from '../lib/phases.js'
+import { loadConfig as loadSentinelConfig } from '../../../sentinel/config/index.js'
+import { activeUrls } from '../../../sentinel/tunnel/index.js'
+import { readJson as readLogJson } from '../lib/json-store.js'
 
 type Severity = 'pass' | 'info' | 'warning' | 'critical'
 type Check = { name: string; status: Severity; message: string; fix?: string; fixable?: boolean }
@@ -165,7 +168,26 @@ function buildCategories(quick: boolean): Category[] {
     )
   }
 
+  categories.push(buildTunnelCategory())
   return categories
+}
+
+function buildTunnelCategory(): Category {
+  const { config } = loadSentinelConfig()
+  const mode = config.tunnel.activeMode
+  const urls = activeUrls(config)
+  const external = mode === 'cloudflare' || mode === 'permanent'
+  const issues = readLogJson<Array<{ source?: string; checkName?: string; status?: string; severity?: string }>>('sentinel-issues.json', [])
+  const beaconStale = (target: string) => issues.some((i) => i.source === 'heartbeat' && i.checkName === target && !['resolved', 'ignored'].includes(i.status ?? ''))
+  const checks: Check[] = [
+    { name: 'Active tunnel mode', status: 'info', message: `Tunnel mode is ${mode}.` },
+    { name: 'App URL configured', status: external && !urls.appUrl ? 'critical' : 'pass', message: urls.appUrl || 'not set', fix: 'Set the App URL in Sentinel Settings → Tunnel & Access.' },
+    { name: 'API URL configured', status: external && !urls.apiUrl ? 'critical' : 'pass', message: urls.apiUrl || 'not set' },
+    { name: 'API URL reachable (Beacon)', status: beaconStale('docmee-api') ? 'critical' : 'pass', message: beaconStale('docmee-api') ? 'Beacon reports the API unreachable.' : 'Beacon last reading OK.' },
+    { name: 'Cloudflare tunnel reachable (Beacon)', status: mode === 'cloudflare' && beaconStale('cloudflare-tunnel') ? 'warning' : 'pass', message: beaconStale('cloudflare-tunnel') ? 'Beacon reports the tunnel unreachable.' : 'OK or not applicable.' },
+    { name: 'Pending webhook reminder', status: config.tunnel.webhookReminderPending ? 'warning' : 'pass', message: config.tunnel.webhookReminderPending ? `Update the WhatsApp webhook to ${urls.webhookUrl}.` : 'No pending reminder.', fix: 'Update the webhook in the Meta dashboard, then dismiss the reminder.' }
+  ]
+  return { id: 'tunnel', label: 'Tunnel & Access', checks }
 }
 
 function summarize(categories: Category[]) {

@@ -14,6 +14,9 @@ type HeartbeatState = {
   live?: boolean
   run?: { phase?: string; heartbeatAt?: string; heartbeatAgeMs?: number; message?: string }
   heartbeat?: { status?: string }
+  featureLive?: boolean
+  featureRun?: { phase?: string; heartbeatAt?: string; heartbeatAgeMs?: number; message?: string }
+  featureHeartbeat?: { status?: string }
 }
 type ProjectMetrics = {
   generatedAt?: string
@@ -24,12 +27,22 @@ type ProjectMetrics = {
 
 const spanishLabels: Record<string, string> = {
   Backlog: 'Pendientes',
+  'Features Development': 'Features',
+  'Docmee Deployment': 'Despliegue',
+  'Frontend Build Control': 'Frontend',
+  Enhancements: 'Mejoras',
+  'Codex Switch': 'Codex',
   'Build Control': 'Control',
   'Six Gates': 'Controles',
   'Phase Progress': 'Fases',
   'Development Cost': 'Costo',
   'Stack Intelligence': 'Stack',
+  'Docmee Update': 'Actualizar',
   Sentinel: 'Sentinel',
+  Forge: 'Forge',
+  Guardian: 'Guardian',
+  Aegis: 'Aegis',
+  Cortex: 'Cortex',
   Diagnostics: 'Diagnostico',
   Ready: 'Listo',
   Agents: 'Agentes',
@@ -37,34 +50,44 @@ const spanishLabels: Record<string, string> = {
   'Webhook Console': 'Webhooks',
   'Seed Generator': 'Datos',
   'Discord Status': 'Discord',
+  'Pre-deployment': 'Pre-Deploy',
   'Post-Deployment Log': 'Post-Deploy',
   Deploy: 'Despliegue',
   Settings: 'Configuracion'
 }
 
 const navIcons: Record<string, ReactNode> = {
-  Backlog: '/lineicons/clipboard.svg',
   Ready: '/lineicons/check-circle-1.svg',
-  'Build Control': '/lineicons/dashboard-square-1.svg',
-  'Install Monitor': '/lineicons/heart.svg',
-  'Claude Switch': '/lineicons/claude.svg',
-  'Six Gates': '/lineicons/shield-2-check.svg',
+  Backlog: '/lineicons/backlog-list.svg',
+  'Features Development': '/lineicons/coverage-grid.svg',
+  'Docmee Deployment': '/lineicons/deployment-guide.svg',
+  'Frontend Build Control': '/lineicons/verify-report.svg',
+  Enhancements: '/lineicons/update-cycle.svg',
+  'Codex Switch': '/lineicons/codex-spark.svg',
+  'Claude Switch': '/lineicons/account-switch.svg',
+  'Build Control': '/lineicons/build-play.svg',
   'Phase Progress': '/lineicons/bar-chart-4.svg',
+  'Six Gates': '/lineicons/shield-2-check.svg',
+  'Post-Deployment Log': '/lineicons/verify-report.svg',
+  'Pre-deployment': '/lineicons/preflight.svg',
+  'Docmee Update': '/lineicons/update-cycle.svg',
+  Deploy: '/lineicons/deployment-guide.svg',
+  'Install Monitor': '/lineicons/heart.svg',
+  Sentinel: '/lineicons/shield-2-check.svg',
+  Forge: '/lineicons/build-play.svg',
+  Guardian: '/lineicons/shield-2-check.svg',
+  Aegis: '/lineicons/preflight.svg',
+  Cortex: '/lineicons/gears-3.svg',
+  Diagnostics: '/lineicons/bug-1.svg',
+  Logs: '/lineicons/file-multiple.svg',
+  'Discord Status': '/lineicons/discord-chat.svg',
   'Development Cost': '/lineicons/dollar-circle.svg',
   'Stack Intelligence': '/lineicons/layers-1.svg',
-  Sentinel: '/lineicons/shield-2-check.svg',
-  Diagnostics: '/lineicons/bug-1.svg',
   Agents: '/lineicons/gears-3.svg',
-  Logs: '/lineicons/file-multiple.svg',
   'Webhook Console': '/lineicons/webhooks.svg',
   'Seed Generator': '/lineicons/database-2.svg',
-  'Discord Status': '/lineicons/discord-chat.svg',
-  'Post-Deployment Log': '/lineicons/file-multiple.svg',
-  Deploy: '/lineicons/cloud-upload.svg',
   Settings: '/lineicons/gear-1.svg'
 }
-
-const primaryMobile = ['Ready', 'Build Control', 'Phase Progress', 'Six Gates', 'Deploy']
 
 export function DashboardShell({ children, nav }: DashboardShellProps) {
   const pathname = usePathname()
@@ -72,7 +95,6 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [language, setLanguage] = useState<'en' | 'es'>('en')
-  const [moreOpen, setMoreOpen] = useState(false)
   const [readyCritical, setReadyCritical] = useState(0)
   const [heartbeat, setHeartbeat] = useState<HeartbeatState | null>(null)
   const [metrics, setMetrics] = useState<ProjectMetrics | null>(null)
@@ -259,8 +281,6 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
     )
   }
 
-  const primaryLinks = nav.filter(([label]) => primaryMobile.includes(label))
-  const moreLinks = nav.filter(([label]) => !primaryMobile.includes(label))
   const currentLabel = nav.find(([, href]) => pathname === href || (href !== '/' && pathname.startsWith(href)))?.[0] ?? 'Overview'
   const readyText = readyCritical > 0 ? `${readyCritical} blockers` : 'Ready'
 
@@ -322,6 +342,18 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
             </span>
             <span className="hidden sm:inline">{heartbeatLabel(heartbeat?.heartbeat?.status)}</span>
             {heartbeat?.run?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs md:inline">{heartbeat.run.phase}</span>}
+          </Link>
+          <Link
+            href="/rev1-coverage"
+            className={`heartbeat-pill flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${heartbeatTone(heartbeat?.featureHeartbeat?.status)}`}
+            title={heartbeat?.featureRun?.message ?? 'Feature development heartbeat status'}
+          >
+            <span className={`heartbeat-heart ${heartbeat?.featureHeartbeat?.status === 'normal' ? 'heartbeat-heart-live' : ''}`} aria-hidden="true">
+              {maskIcon('/lineicons/coverage-grid.svg', 'h-5 w-5')}
+            </span>
+            <span className="hidden sm:inline">{language === 'es' ? 'Features' : 'Features'}</span>
+            <span className="hidden md:inline">{heartbeatLabel(heartbeat?.featureHeartbeat?.status)}</span>
+            {heartbeat?.featureRun?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs lg:inline">{heartbeat.featureRun.phase}</span>}
           </Link>
           <button
             type="button"
@@ -400,41 +432,23 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
       </main>
 
       <nav className="app-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 md:hidden">
-        <div className="grid grid-cols-6 gap-1">
-          {primaryLinks.map(([label, href]) => (
-            <Link key={href} href={href} className={`grid min-h-11 place-items-center rounded-md px-1 py-1 text-center text-[11px] ${pathname === href || pathname.startsWith(href) ? 'bg-cyan-500/10 text-cyan-100' : 'text-slate-300 hover:bg-slate-800'}`}>
-              <span className="scale-75">{navIconFor(label, pathname === href || pathname.startsWith(href))}</span>
-              <span className="truncate">{labelFor(label)}</span>
-            </Link>
-          ))}
-          <button type="button" onClick={() => setMoreOpen(true)} className="relative grid min-h-11 place-items-center rounded-md px-1 py-1 text-[11px] text-slate-300 hover:bg-slate-800">
-            {readyCritical > 0 && <span className="absolute right-3 top-1 h-2 w-2 rounded-full bg-red-500" />}
-            <span className="text-sm">...</span>
-            <span>{language === 'es' ? 'Mas' : 'More'}</span>
-          </button>
+        <div className="mobile-nav-scroll flex snap-x gap-2 overflow-x-auto pb-1">
+          {nav.map(([label, href]) => {
+            const active = pathname === href || (href !== '/' && pathname.startsWith(href))
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`relative grid min-h-14 min-w-[4.75rem] snap-start place-items-center rounded-md px-2 py-1 text-center text-[11px] ${active ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30' : 'text-slate-300 hover:bg-slate-800'}`}
+              >
+                {label === 'Ready' && readyCritical > 0 && <span className="absolute right-2 top-1 h-2 w-2 rounded-full bg-red-500" />}
+                <span className="scale-75">{navIconFor(label, active)}</span>
+                <span className="w-full truncate">{labelFor(label)}</span>
+              </Link>
+            )
+          })}
         </div>
       </nav>
-
-      {moreOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 md:hidden" onClick={() => setMoreOpen(false)}>
-          <div className="app-more-sheet absolute inset-x-0 bottom-0 max-h-[85vh] rounded-t-xl border p-4 pb-[max(env(safe-area-inset-bottom),1rem)]" onClick={(event) => event.stopPropagation()}>
-            <div className="mx-auto mb-4 h-1 w-12 rounded bg-slate-700" />
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">{language === 'es' ? 'Mas opciones' : 'More options'}</h2>
-              <button type="button" onClick={() => setMoreOpen(false)} className="ui-action min-h-11 rounded-md border px-3 py-2 text-sm">Close</button>
-            </div>
-            <div className="grid gap-2">
-              {moreLinks.map(([label, href]) => (
-                <Link key={href} href={href} onClick={() => setMoreOpen(false)} className="flex min-h-11 items-center gap-3 rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-300">
-                  {navIconFor(label, pathname === href || pathname.startsWith(href))}
-                  {labelFor(label)}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
-

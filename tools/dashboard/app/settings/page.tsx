@@ -1,5 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import Link from 'next/link'
+import { getUsdToCad } from '../lib/currency'
+import { readTunnel } from '../lib/sentinel-platform'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -116,6 +119,7 @@ const groups = [
     rows: [
       ['GATES_STRICT', 'Docmee gate strictness', 'Keep false during early setup.'],
       ['COST_ALERT_THRESHOLD_USD', 'Docmee cost alert threshold', 'Daily local cost alert threshold.'],
+      ['COST_DISPLAY_CURRENCY', 'Docmee cost display currency', 'Choose usd, cad, or both. Default is both.'],
       ['WEBHOOK_TARGET', 'Docmee local webhook URL', 'Local API webhook route.'],
       ['DEV_LICENSE_SIGNING_KEY', 'Docmee dev signing key', 'Local-only signing secret.']
     ]
@@ -142,7 +146,7 @@ const plainLanguageGroups = [
   {
     title: 'Local setup',
     body: 'Required for the desktop tool to run on this computer.',
-    names: ['TOOLS_DB_URL', 'TOOLS_DB_SERVICE_KEY', 'MONOREPO_ROOT', 'NEXT_PUBLIC_DASHBOARD_PORT', 'WEBHOOK_TARGET', 'DEV_LICENSE_SIGNING_KEY']
+    names: ['TOOLS_DB_URL', 'TOOLS_DB_SERVICE_KEY', 'MONOREPO_ROOT', 'NEXT_PUBLIC_DASHBOARD_PORT', 'WEBHOOK_TARGET', 'DEV_LICENSE_SIGNING_KEY', 'COST_DISPLAY_CURRENCY']
   },
   {
     title: 'Discord messages',
@@ -186,17 +190,43 @@ function parseEnv(content: string) {
 
 type SettingsPageProps = { searchParams?: { message?: string; error?: string } }
 
-export default function SettingsPage({ searchParams }: SettingsPageProps) {
+export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const envExists = fs.existsSync(envFile)
   const exampleExists = fs.existsSync(envExampleFile)
   const env = envExists ? parseEnv(fs.readFileSync(envFile, 'utf8')) : {}
+  const exchange = await getUsdToCad()
   const backlogCount = fs.existsSync(backlogFile) ? JSON.parse(fs.readFileSync(backlogFile, 'utf8')).length as number : 0
   const allRows = groups.flatMap((group) => group.rows.map(([name]) => name))
   const missingRequired = requiredVars.filter((name) => !env[name])
   const rowByName = new Map(groups.flatMap((group) => group.rows.map((row) => [row[0], row])))
+  const publicUrlMode = env.PUBLIC_URL_MODE === 'domain' ? 'domain' : 'ngrok'
+  const ngrokUrl = env.NGROK_URL || 'https://wife-grumpily-chrome.ngrok-free.dev'
+  const permanentDomainUrl = env.PERMANENT_DOMAIN_URL || (env.VPS_DOMAIN && env.VPS_DOMAIN !== 'yourdomain.com'
+    ? /^https?:\/\//i.test(env.VPS_DOMAIN) ? env.VPS_DOMAIN : `https://${env.VPS_DOMAIN}`
+    : '')
+
+  const tunnelView = readTunnel()
 
   return (
     <section className="w-full">
+      <div className="mb-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Tunnel &amp; Access</h2>
+          <span className="rounded bg-slate-800 px-2 py-1 text-xs capitalize text-slate-200">{tunnelView.activeMode}</span>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Sentinel owns this config (sentinel-config.local.json); DevTools mirrors it. Switch modes with <code className="text-slate-300">pnpm tool deploy tunnel switch &lt;mode&gt;</code>.
+        </p>
+        <dl className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+          <div className="truncate"><span className="text-slate-500">App:</span> <span className="text-slate-300">{tunnelView.appUrl || '—'}</span></div>
+          <div className="truncate"><span className="text-slate-500">API:</span> <span className="text-slate-300">{tunnelView.apiUrl || '—'}</span></div>
+          <div className="truncate"><span className="text-slate-500">DevTools:</span> <span className="text-slate-300">{tunnelView.devtoolsUrl || '—'}</span></div>
+          <div className="truncate"><span className="text-slate-500">Webhook:</span> <span className="text-slate-300">{tunnelView.webhookUrl || '—'}</span></div>
+        </dl>
+        <div className="mt-2 text-xs text-slate-500">Last verified: {tunnelView.lastVerified ? new Date(tunnelView.lastVerified).toLocaleString() : 'never'}</div>
+        {tunnelView.webhookReminderPending && <p className="mt-2 text-xs text-amber-300">⚠️ WhatsApp webhook changed — update it in the Meta dashboard.</p>}
+        <Link href="/sentinel" className="mt-3 inline-block text-xs text-cyan-300 hover:underline">Open Sentinel →</Link>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup</h1>
@@ -227,6 +257,36 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
+            <h2 className="text-sm font-semibold">Cost Currency</h2>
+            <p className="mt-1 text-sm text-slate-400">AI providers bill in USD. DevTools can show CAD beside USD using a weekly exchange-rate cache.</p>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-300">
+            1 USD = {exchange.rate.toFixed(4)} CAD
+            <span className="ml-2 text-xs text-slate-500">Updated {new Date(exchange.updatedAt).toLocaleDateString()}</span>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(['both', 'usd', 'cad'] as const).map((mode) => (
+            <form key={mode} action="/api/settings/env" method="post">
+              <input type="hidden" name="action" value="cost-currency" />
+              <input type="hidden" name="currency" value={mode} />
+              <button className={((env.COST_DISPLAY_CURRENCY || 'both').toLowerCase() === mode)
+                ? 'rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950'
+                : 'rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800'}>
+                {mode === 'both' ? 'Both USD + CAD' : mode.toUpperCase()}
+              </button>
+            </form>
+          ))}
+          <form action="/api/settings/env" method="post">
+            <input type="hidden" name="action" value="refresh-exchange-rate" />
+            <button className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Refresh Rate</button>
+          </form>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
             <h2 className="text-sm font-semibold">No-Configuration Setup</h2>
             <p className="mt-1 text-sm text-slate-400">Use this first. The tool prepares everything it can locally without asking you to edit files.</p>
           </div>
@@ -251,6 +311,45 @@ export default function SettingsPage({ searchParams }: SettingsPageProps) {
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Required settings</h2><p className={missingRequired.length === 0 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-red-300'}>{missingRequired.length === 0 ? 'Ready' : `${missingRequired.length} missing`}</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Backlog</h2><p className={backlogCount >= 45 ? 'mt-2 text-sm text-emerald-300' : 'mt-2 text-sm text-amber-300'}>{backlogCount}/45 tasks</p></div>
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Credential fields</h2><p className="mt-2 text-sm text-slate-300">{allRows.length} tracked</p></div>
+      </div>
+
+      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold">Public App URL</h2>
+            <p className="mt-1 text-sm text-slate-400">Switch between temporary ngrok access and the permanent domain. This updates APP_URL only.</p>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm">
+            <span className="text-slate-500">Current APP_URL: </span>
+            <span className="text-slate-200">{env.APP_URL || 'not set'}</span>
+          </div>
+        </div>
+        <form action="/api/settings/env" method="post" className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1fr_1fr_auto]">
+          <input type="hidden" name="action" value="public-url-switch" />
+          <label className="grid gap-1 text-sm">
+            <span className="text-slate-400">Use</span>
+            <select name="mode" defaultValue={publicUrlMode} className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+              <option value="ngrok">Temporary ngrok</option>
+              <option value="domain">Permanent domain</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-slate-400">ngrok URL</span>
+            <input name="ngrokUrl" defaultValue={ngrokUrl} placeholder="https://example.ngrok-free.dev" className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-slate-400">Permanent domain URL</span>
+            <input name="domainUrl" defaultValue={permanentDomainUrl} placeholder="https://app.yourdomain.com" className="min-h-11 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+          </label>
+          <button type="submit" className="self-end rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+            Apply URL
+          </button>
+        </form>
+        <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-2">ngrok is temporary while DNS/domain setup is pending.</div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Permanent domain should be used before production launch.</div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-2">After switching, update Meta/Google callback URLs if those services are enabled.</div>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">

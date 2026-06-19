@@ -10,6 +10,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["cli/src/**/*", "eslint/src/**/*", "discord/src/**/*"],
+  "include": ["cli/src/**/*", "eslint/src/**/*", "discord/src/**/*", "sentinel/**/*.ts"],
   "exclude": ["node_modules", "dist", "dashboard", "app"]
 }
