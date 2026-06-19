@@ -169,22 +169,33 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
  * Resolve the outbound reply transport for the message's channel. Returns null
  * when the clinic has no usable credentials (WhatsApp account inactive, or
  * Messenger/Instagram not connected) — the caller then stays silent.
+ *
+ * The transport resolves to the provider message id (the WhatsApp wamid) when the
+ * channel surfaces one, so the caller can store it on the persisted reply and
+ * later match delivery-status receipts to it (Req 3). Messenger/Instagram delivery
+ * tracking is not wired yet (Req 33/34), so they resolve to null.
  */
 function resolveSendReply(
   channel: 'whatsapp' | 'messenger' | 'instagram',
   clinic: Clinic,
   account: ChannelAccount | undefined,
   recipient: string,
-): ((text: string) => Promise<void>) | null {
+): ((text: string) => Promise<string | null>) | null {
   if (channel === 'messenger') {
     const token = clinic.messengerEnabled ? clinic.messengerPageAccessTokenEncrypted : null
     if (!token) return null
-    return (text) => sendMessengerText(token, recipient, text)
+    return async (text) => {
+      await sendMessengerText(token, recipient, text)
+      return null
+    }
   }
   if (channel === 'instagram') {
     const token = clinic.instagramEnabled ? clinic.instagramPageAccessTokenEncrypted : null
     if (!token) return null
-    return (text) => sendInstagramText(token, recipient, text)
+    return async (text) => {
+      await sendInstagramText(token, recipient, text)
+      return null
+    }
   }
   if (!account) return null
   const phoneNumberId = account.accountId
@@ -393,8 +404,9 @@ export async function processAgentJob(job: Job): Promise<void> {
           // single failed send neither crashes the worker nor triggers a full-job
           // retry that could double-send. The reply is only persisted to the inbox
           // thread when it actually went out.
+          let channelMessageId: string | null = null
           try {
-            await rawSendReply(text)
+            channelMessageId = await rawSendReply(text)
           } catch (err) {
             console.error('[agent] Meta send failed:', err)
             await errorReviews
@@ -414,11 +426,15 @@ export async function processAgentJob(job: Job): Promise<void> {
           }
           if (data.conversationId) {
             try {
+              // Store the outbound wamid as channel_message_id so the delivery-status
+              // worker can match Meta's sent/delivered/read/failed receipts back to
+              // this reply (Req 3). Undefined for channels without a returned id.
               await messages.create({
                 conversationId: data.conversationId,
                 clinicId: data.clinicId,
                 role: 'assistant',
                 content: text,
+                channelMessageId: channelMessageId ?? undefined,
               })
             } catch (err) {
               console.error('[agent] failed to persist outbound reply:', err)

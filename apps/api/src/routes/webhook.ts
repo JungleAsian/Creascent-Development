@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { whatsappInboundQueue } from '@docmee/queue'
+import { whatsappInboundQueue, whatsappStatusQueue } from '@docmee/queue'
 import { validateHmacSignature } from '../lib/hmac.js'
 
 type RawBodyRequest = FastifyRequest & { rawBody?: Buffer }
@@ -32,6 +32,22 @@ const WhatsAppEntrySchema = z.object({
                   type: z.enum(['text', 'audio', 'image', 'document', 'button', 'interactive']),
                   text: z.object({ body: z.string() }).optional(),
                   audio: z.object({ id: z.string(), mime_type: z.string() }).optional(),
+                }),
+              )
+              .optional(),
+            // Delivery-status receipts (Req 3). Meta posts these under the same
+            // `messages` field — id is the outbound wamid we sent, status is the
+            // lifecycle state, errors carries the failure reason on status='failed'.
+            statuses: z
+              .array(
+                z.object({
+                  id: z.string(),
+                  status: z.enum(['sent', 'delivered', 'read', 'failed']),
+                  timestamp: z.string(),
+                  recipient_id: z.string(),
+                  errors: z
+                    .array(z.object({ code: z.number().optional(), title: z.string().optional() }))
+                    .optional(),
                 }),
               )
               .optional(),
@@ -84,9 +100,8 @@ const webhookRoute: FastifyPluginAsync = async (app) => {
 
       for (const entry of parsed.data.entry) {
         for (const change of entry.changes) {
-          const { metadata, messages, contacts } = change.value
-          if (!messages?.length) continue
-          for (const msg of messages) {
+          const { metadata, messages, contacts, statuses } = change.value
+          for (const msg of messages ?? []) {
             await whatsappInboundQueue.add('inbound', {
               phoneNumberId: metadata.phone_number_id,
               patientWaId: msg.from,
@@ -97,6 +112,20 @@ const webhookRoute: FastifyPluginAsync = async (app) => {
               mimeType: msg.audio?.mime_type,
               waMessageId: msg.id,
               timestamp: Number.parseInt(msg.timestamp, 10),
+            })
+          }
+          // Delivery-status receipts (Req 3): fan out to the status worker, which
+          // matches the wamid back to the persisted outbound message and records
+          // the event (logging an error review on a failed delivery).
+          for (const st of statuses ?? []) {
+            await whatsappStatusQueue.add('status', {
+              phoneNumberId: metadata.phone_number_id,
+              channelMessageId: st.id,
+              status: st.status,
+              recipientId: st.recipient_id,
+              timestamp: Number.parseInt(st.timestamp, 10),
+              errorTitle: st.errors?.[0]?.title,
+              errorCode: st.errors?.[0]?.code,
             })
           }
         }

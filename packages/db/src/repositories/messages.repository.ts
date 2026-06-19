@@ -1,6 +1,6 @@
 import type { Sql } from '../client.js'
 import { toJson } from '../client.js'
-import type { ConversationMessage, MessageRole, ContentType } from '../types/index.js'
+import type { ConversationMessage, MessageRole, ContentType, DeliveryStatus } from '../types/index.js'
 
 export interface CreateMessageInput {
   conversationId: string
@@ -27,6 +27,20 @@ export interface MessagesRepository {
   listByConversationSince(clinicId: string, conversationId: string, since: string): Promise<ConversationMessage[]>
   create(data: CreateMessageInput): Promise<ConversationMessage>
   markDelivered(clinicId: string, id: string, channelMessageId: string): Promise<void>
+  /**
+   * Record a delivery-lifecycle event (Req 3) for the outbound message whose
+   * channel_message_id (the WhatsApp wamid) matches `channelMessageId`. Meta posts
+   * these via the `statuses` webhook (sent → delivered → read, or failed). Returns
+   * true when a matching message was found and the event recorded, false when no
+   * outbound message carries that wamid (e.g. a status for a message we never
+   * persisted) so the caller can decide whether to log it.
+   */
+  recordDeliveryStatus(
+    clinicId: string,
+    channelMessageId: string,
+    status: DeliveryStatus,
+    error?: string | null,
+  ): Promise<boolean>
 }
 
 export function createMessagesRepository(sql: Sql): MessagesRepository {
@@ -108,6 +122,23 @@ export function createMessagesRepository(sql: Sql): MessagesRepository {
         INSERT INTO message_delivery_events (message_id, clinic_id, channel_message_id, status)
         VALUES (${id}, ${clinicId}, ${channelMessageId}, 'sent')
       `
+    },
+
+    async recordDeliveryStatus(clinicId, channelMessageId, status, error) {
+      const rows = await sql<{ id: string }[]>`
+        SELECT id FROM conversation_messages
+        WHERE clinic_id = ${clinicId} AND channel_message_id = ${channelMessageId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+      const message = rows[0]
+      if (!message) return false
+
+      await sql`
+        INSERT INTO message_delivery_events (message_id, clinic_id, channel_message_id, status, error)
+        VALUES (${message.id}, ${clinicId}, ${channelMessageId}, ${status}, ${error ?? null})
+      `
+      return true
     },
   }
 }

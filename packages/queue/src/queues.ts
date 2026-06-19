@@ -1,6 +1,10 @@
 import { createQueue } from './providers/bullmq.js'
 
 export const whatsappInboundQueue = createQueue('whatsapp.inbound')
+// Delivery-status receipts (sent/delivered/read/failed) from Meta's `statuses`
+// webhook (Req 3). Separate from inbound messages so a status backlog never
+// blocks patient messages and vice-versa.
+export const whatsappStatusQueue = createQueue('whatsapp.status')
 export const transcriptionQueue = createQueue('transcription')
 export const agentQueue = createQueue('agent')
 export const schedulingQueue = createQueue('scheduling')

@@ -9,6 +9,7 @@ import {
 } from '@docmee/queue'
 import { RATE_LIMITS } from '@docmee/config'
 import { processConversationJob } from './conversation-processor.worker.js'
+import { processDeliveryStatusJob } from './delivery-status.worker.js'
 import { processTranscriptionJob } from './transcription-processor.worker.js'
 import { processAgentJob } from './agent-processor.worker.js'
 import { processSchedulingJob } from './scheduling-processor.worker.js'
@@ -24,6 +25,12 @@ import { runTimeoutChecks } from './timeout-monitor.js'
 export const conversationWorker = createWorker(
   'whatsapp.inbound',
   processConversationJob,
+  RATE_LIMITS.WORKER_CONCURRENCY_CONVERSATION,
+)
+// WhatsApp delivery-status receipts (Req 3): record sent/delivered/read/failed.
+export const deliveryStatusWorker = createWorker(
+  'whatsapp.status',
+  processDeliveryStatusJob,
   RATE_LIMITS.WORKER_CONCURRENCY_CONVERSATION,
 )
 export const transcriptionWorker = createWorker(
@@ -88,4 +95,4 @@ export const phase3Scheduler = setInterval(() => {
 }, HOURLY_MS)
 if (typeof phase3Scheduler.unref === 'function') phase3Scheduler.unref()
 
-console.log('[workers] all 11 workers registered and listening')
+console.log('[workers] all 12 workers registered and listening')

@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 
-const { add } = vi.hoisted(() => ({ add: vi.fn() }))
-vi.mock('@docmee/queue', () => ({ whatsappInboundQueue: { add } }))
+const { add, statusAdd } = vi.hoisted(() => ({ add: vi.fn(), statusAdd: vi.fn() }))
+vi.mock('@docmee/queue', () => ({
+  whatsappInboundQueue: { add },
+  whatsappStatusQueue: { add: statusAdd },
+}))
 
 import { buildApp } from '../app.js'
 
@@ -51,6 +54,7 @@ describe('webhook routes', () => {
 
   beforeEach(() => {
     add.mockClear()
+    statusAdd.mockClear()
   })
 
   it('GET verification with the correct token returns 200 + challenge', async () => {
@@ -112,5 +116,68 @@ describe('webhook routes', () => {
     expect(job['patientName']).toBe('Ana')
     expect(job['messageType']).toBe('text')
     expect(job['content']).toBe('hola')
+    // A message-only change does not enqueue a delivery status.
+    expect(statusAdd).not.toHaveBeenCalled()
+  })
+
+  it('POST with a delivery-status receipt enqueues to the status queue', async () => {
+    const statusPayload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'WABA',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '15550001111', phone_number_id: 'PHONE_ID' },
+                statuses: [
+                  {
+                    id: 'wamid.OUT1',
+                    status: 'delivered',
+                    timestamp: '1700000100',
+                    recipient_id: '5215555555555',
+                  },
+                  {
+                    id: 'wamid.OUT2',
+                    status: 'failed',
+                    timestamp: '1700000200',
+                    recipient_id: '5215555555555',
+                    errors: [{ code: 131047, title: 'Re-engagement message' }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/webhook/whatsapp',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(statusPayload) },
+      payload: statusPayload,
+    })
+    await flush()
+
+    expect(res.statusCode).toBe(200)
+    // No inbound message in this payload.
+    expect(add).not.toHaveBeenCalled()
+    expect(statusAdd).toHaveBeenCalledTimes(2)
+
+    const [name, delivered] = statusAdd.mock.calls[0] as [string, Record<string, unknown>]
+    expect(name).toBe('status')
+    expect(delivered['phoneNumberId']).toBe('PHONE_ID')
+    expect(delivered['channelMessageId']).toBe('wamid.OUT1')
+    expect(delivered['status']).toBe('delivered')
+    expect(delivered['recipientId']).toBe('5215555555555')
+
+    const [, failed] = statusAdd.mock.calls[1] as [string, Record<string, unknown>]
+    expect(failed['channelMessageId']).toBe('wamid.OUT2')
+    expect(failed['status']).toBe('failed')
+    expect(failed['errorTitle']).toBe('Re-engagement message')
+    expect(failed['errorCode']).toBe(131047)
   })
 })
