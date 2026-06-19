@@ -8,6 +8,7 @@ import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
 import { useHeartbeat } from '@/shared/hooks/useHeartbeat'
 import { useFeatures } from '@/shared/hooks/useFeatures'
 import { useI18n } from '@/shared/hooks/useI18n'
+import { can } from '@/shared/permissions'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { NotificationBell } from '@/shared/components/NotificationBell'
 
@@ -18,16 +19,21 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
   const [drawerOpen, setDrawerOpen] = useState(false)
   useHeartbeat()
 
+  // Req 2: nav links derive from the shared RBAC matrix (mirrors the API's
+  // requireRole gating) so a role only ever sees surfaces it can actually use.
   const links = useMemo<NavLink[]>(() => {
-    const base: NavLink[] = [{ href: '/inbox', label: t('nav.inbox') }]
-    if (user?.role === 'clinic_admin' || user?.role === 'ia_studio_admin') {
-      base.push({ href: '/metrics', label: t('nav.metrics') })
-      // Req 40: the advanced analytics dashboard is gated behind a server feature flag.
-      if (features.advancedAnalytics) base.push({ href: '/analytics', label: t('nav.analytics') })
-      base.push({ href: '/qos', label: t('nav.qos') })
-      base.push({ href: '/reports', label: t('nav.reports') })
+    const role = user?.role
+    const base: NavLink[] = []
+    if (can(role, 'inbox')) base.push({ href: '/inbox', label: t('nav.inbox') })
+    if (can(role, 'metrics')) base.push({ href: '/metrics', label: t('nav.metrics') })
+    // Req 40: the advanced analytics dashboard is additionally gated behind a
+    // server feature flag (capability is necessary but not sufficient).
+    if (can(role, 'analytics') && features.advancedAnalytics) {
+      base.push({ href: '/analytics', label: t('nav.analytics') })
     }
-    if (user?.role === 'ia_studio_admin') base.push({ href: '/studio', label: t('nav.studio') })
+    if (can(role, 'qos')) base.push({ href: '/qos', label: t('nav.qos') })
+    if (can(role, 'reports')) base.push({ href: '/reports', label: t('nav.reports') })
+    if (can(role, 'studio')) base.push({ href: '/studio', label: t('nav.studio') })
     return base
   }, [t, user?.role, features.advancedAnalytics])
 

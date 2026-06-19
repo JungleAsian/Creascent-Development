@@ -54,9 +54,14 @@ export function ConversationList({
 }) {
   const { t } = useI18n()
   const userId = useAuthStore((s) => s.user?.id)
+  const role = useAuthStore((s) => s.user?.role)
   const members = useTeam()
   const [status, setStatus] = useState<ConversationStatus | 'all'>('all')
-  const [assignee, setAssignee] = useState<AssigneeFilter>('all')
+  // Req 2 — role-specific default view: a doctor lands on the threads assigned to
+  // them (their own escalations), while secretaries/admins see the full queue.
+  // Reserved values never collide with a uuid, so this is a pure UI default the
+  // user can still change with the assignee picker.
+  const [assignee, setAssignee] = useState<AssigneeFilter>(role === 'doctor' ? 'mine' : 'all')
 
   const query = useQuery({
     queryKey: ['conversations', status, assignee, userId],

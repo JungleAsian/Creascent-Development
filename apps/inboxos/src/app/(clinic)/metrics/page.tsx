@@ -7,6 +7,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/auth'
+import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
+import { rolesWith } from '@/shared/permissions'
 import { useI18n } from '@/shared/hooks/useI18n'
 import type { Clinic, ClinicMetrics } from '@/shared/types'
 
@@ -20,6 +22,9 @@ const pct = (n: number) => `${Math.round(n * 100)}%`
 
 export default function MetricsPage() {
   const { t } = useI18n()
+  // Req 2: enforce the same role boundary the API does — a non-admin who deep-links
+  // here is redirected to /inbox rather than shown a page that 403s.
+  const { ready } = useAuthGuard(rolesWith('metrics'))
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'ia_studio_admin'
   const [clinicId, setClinicId] = useState<string>(user?.clinicId ?? '')
@@ -37,6 +42,14 @@ export default function MetricsPage() {
     queryFn: () => api.get<{ metrics: ClinicMetrics }>(`/clinics/${clinicId}/metrics`),
   })
   const m = metricsQuery.data?.metrics
+
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-gray-400">{t('common.loading')}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">

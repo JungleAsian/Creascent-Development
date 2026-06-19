@@ -7,6 +7,8 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/auth'
+import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
+import { rolesWith } from '@/shared/permissions'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { useFeatures } from '@/shared/hooks/useFeatures'
 import type { Clinic, AdvancedAnalytics } from '@/shared/types'
@@ -17,6 +19,8 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function AnalyticsPage() {
   const { t } = useI18n()
+  // Req 2: mirror the API's clinic_admin/ia_studio_admin gate at the page level.
+  const { ready } = useAuthGuard(rolesWith('analytics'))
   const user = useAuthStore((s) => s.user)
   const { features, ready: featuresReady } = useFeatures()
   const isAdmin = user?.role === 'ia_studio_admin'
@@ -61,6 +65,14 @@ export default function AnalyticsPage() {
     link.download = `analytics-${clinicId}-${from}_${to}.csv`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-gray-400">{t('common.loading')}</p>
+      </div>
+    )
   }
 
   // Req 40: the dashboard is gated behind the FEATURE_ADVANCED_ANALYTICS server flag.

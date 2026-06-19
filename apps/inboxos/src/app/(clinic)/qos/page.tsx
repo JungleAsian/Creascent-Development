@@ -10,6 +10,8 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/auth'
+import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
+import { rolesWith } from '@/shared/permissions'
 import { useI18n } from '@/shared/hooks/useI18n'
 import type { Clinic, ClinicQos, QosAttentionItem } from '@/shared/types'
 
@@ -23,6 +25,8 @@ const REASON_STYLES: Record<QosAttentionItem['reason'], string> = {
 
 export default function QosPage() {
   const { t } = useI18n()
+  // Req 2: mirror the API's clinic_admin/ia_studio_admin gate at the page level.
+  const { ready } = useAuthGuard(rolesWith('qos'))
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'ia_studio_admin'
   const [clinicId, setClinicId] = useState<string>(user?.clinicId ?? '')
@@ -40,6 +44,14 @@ export default function QosPage() {
     queryFn: () => api.get<{ qos: ClinicQos }>(`/clinics/${clinicId}/qos?staleHours=${staleHours}`),
   })
   const q = qosQuery.data?.qos
+
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-gray-400">{t('common.loading')}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 overflow-y-auto p-6">

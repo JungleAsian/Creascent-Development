@@ -8,11 +8,15 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/auth'
+import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
+import { rolesWith } from '@/shared/permissions'
 import { useI18n } from '@/shared/hooks/useI18n'
 import type { Clinic, GeneratedReport, ReportSummary } from '@/shared/types'
 
 export default function ReportsPage() {
   const { t } = useI18n()
+  // Req 2: mirror the API's clinic_admin/ia_studio_admin gate at the page level.
+  const { ready } = useAuthGuard(rolesWith('reports'))
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'ia_studio_admin'
   const [clinicId, setClinicId] = useState<string>(user?.clinicId ?? '')
@@ -30,6 +34,14 @@ export default function ReportsPage() {
     queryFn: () => api.get<{ reports: ReportSummary[] }>(`/clinics/${clinicId}/reports`),
   })
   const reports = reportsQuery.data?.reports ?? []
+
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-gray-400">{t('common.loading')}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 overflow-y-auto p-6">

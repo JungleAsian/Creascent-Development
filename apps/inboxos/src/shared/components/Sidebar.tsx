@@ -49,7 +49,16 @@ export function Sidebar({ links, title }: { links: NavLink[]; title: string }) {
 
       <div className="space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
         <LanguageToggle />
-        {user && <p className="truncate text-xs text-gray-400">{user.email}</p>}
+        {user && (
+          <div className="space-y-1">
+            <p className="truncate text-xs text-gray-400">{user.email}</p>
+            {/* Req 2: surface the active role so it is clear from the UI which
+                role-specific view the user is in. */}
+            <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+              {t(`studio.users.role.${user.role}` as Parameters<typeof t>[0])}
+            </span>
+          </div>
+        )}
         <button
           type="button"
           onClick={() => void logout()}
