@@ -3,7 +3,7 @@
 // Clinic shell (secretary, doctor, clinic_admin — and admins passing through).
 // Guards authentication, runs the presence heartbeat, and frames the page with
 // the shared sidebar.
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
 import { useHeartbeat } from '@/shared/hooks/useHeartbeat'
 import { useI18n } from '@/shared/hooks/useI18n'
@@ -13,6 +13,7 @@ import { NotificationBell } from '@/shared/components/NotificationBell'
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { ready, user } = useAuthGuard()
   const { t } = useI18n()
+  const [drawerOpen, setDrawerOpen] = useState(false)
   useHeartbeat()
 
   const links = useMemo<NavLink[]>(() => {
@@ -35,10 +36,39 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar links={links} title={t('nav.inbox')} />
+      {/* Desktop sidebar */}
+      <div className="hidden md:flex">
+        <Sidebar links={links} title={t('nav.inbox')} />
+      </div>
+
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-40 flex md:hidden">
+          <button
+            type="button"
+            aria-label={t('common.closeMenu')}
+            onClick={() => setDrawerOpen(false)}
+            className="absolute inset-0 bg-black/40"
+          />
+          <div className="relative z-10" onClick={() => setDrawerOpen(false)}>
+            <Sidebar links={links} title={t('nav.inbox')} />
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center justify-end border-b border-gray-200 px-4 py-2 dark:border-gray-800">
-          <NotificationBell />
+        <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-2 dark:border-gray-800">
+          <button
+            type="button"
+            aria-label={t('common.openMenu')}
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm md:hidden dark:border-gray-700"
+          >
+            ☰
+          </button>
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </header>
         <main className="flex-1 overflow-hidden">{children}</main>
       </div>
