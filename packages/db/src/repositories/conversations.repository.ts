@@ -40,6 +40,12 @@ export interface CreateNoteInput {
 
 export interface ConversationsRepository {
   findById(clinicId: string, id: string): Promise<Conversation | null>
+  /**
+   * The most recent still-active (not resolved) conversation for a contact on a
+   * channel, or null. Lets ingest workers thread a new inbound message onto the
+   * patient's open thread instead of opening a duplicate.
+   */
+  findOpenByContact(clinicId: string, channel: Channel, contactHandle: string): Promise<Conversation | null>
   listByClinic(clinicId: string, status?: ConversationStatus): Promise<Conversation[]>
   /** Every conversation for one patient, newest first (patient history view). */
   listByPatient(clinicId: string, patientId: string): Promise<Conversation[]>
@@ -71,6 +77,19 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
     async findById(clinicId, id) {
       const rows = await sql<Conversation[]>`
         SELECT * FROM conversations WHERE clinic_id = ${clinicId} AND id = ${id} LIMIT 1
+      `
+      return rows[0] ?? null
+    },
+
+    async findOpenByContact(clinicId, channel, contactHandle) {
+      const rows = await sql<Conversation[]>`
+        SELECT * FROM conversations
+        WHERE clinic_id = ${clinicId}
+          AND channel = ${channel}
+          AND channel_contact_handle = ${contactHandle}
+          AND status <> 'resolved'
+        ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
       `
       return rows[0] ?? null
     },

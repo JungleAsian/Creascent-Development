@@ -73,6 +73,7 @@ const es: Dict = {
   'view.role.agent': 'Agente',
   'view.role.assistant': 'Bot',
   'view.role.system': 'Sistema',
+  'view.voiceNote': 'Nota de voz',
 
   'tags.title': 'Etiquetas',
   'tags.placeholder': 'Nueva etiqueta…',
@@ -476,6 +477,7 @@ const en: Dict = {
   'view.role.agent': 'Agent',
   'view.role.assistant': 'Bot',
   'view.role.system': 'System',
+  'view.voiceNote': 'Voice note',
 
   'tags.title': 'Tags',
   'tags.placeholder': 'New tag…',

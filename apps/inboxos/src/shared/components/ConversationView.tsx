@@ -149,7 +149,15 @@ export function ConversationView({
         ) : messages.length === 0 ? (
           <p className="text-sm text-gray-400">{t('view.noMessages')}</p>
         ) : (
-          messages.map((m) => <MessageBubble key={m.id} message={m} roleLabel={t(ROLE_LABEL[m.role])} language={language} />)
+          messages.map((m) => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              roleLabel={t(ROLE_LABEL[m.role])}
+              voiceLabel={t('view.voiceNote')}
+              language={language}
+            />
+          ))
         )}
       </div>
 
@@ -192,14 +200,20 @@ export function ConversationView({
 function MessageBubble({
   message,
   roleLabel,
+  voiceLabel,
   language,
 }: {
   message: Message
   roleLabel: string
+  voiceLabel: string
   language: 'es' | 'en'
 }) {
   // Patient messages on the left; clinic (agent/bot/system) on the right.
   const fromPatient = message.role === 'user'
+  // Voice note (Req 8): a transcribed audio message shows a 🎤 marker above its
+  // transcript so the secretary knows the patient spoke rather than typed.
+  const isVoiceNote = message.contentType === 'audio'
+  const transcript = message.transcription ?? message.content
   return (
     <div className={`flex ${fromPatient ? 'justify-start' : 'justify-end'}`}>
       <div
@@ -215,7 +229,13 @@ function MessageBubble({
           <span>{roleLabel}</span>
           <span>{formatDateTime(message.createdAt, language)}</span>
         </div>
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {isVoiceNote && (
+          <div className="mb-1 flex items-center gap-1 text-[11px] font-medium opacity-80">
+            <span aria-hidden>🎤</span>
+            <span>{voiceLabel}</span>
+          </div>
+        )}
+        <p className="whitespace-pre-wrap break-words">{transcript}</p>
       </div>
     </div>
   )
