@@ -282,6 +282,12 @@ export interface ClinicStats {
 // ── Bot configuration (stored in clinic.settings) ──────────────────────────────
 export type BotTone = 'professional' | 'friendly' | 'brief'
 
+// Bilingual bot (Req 22): the clinic-forced reply language. 'auto' detects the
+// patient's language on the first message then follows it; 'es'/'en' force every
+// reply into that language. Mirrors @docmee/agents BotLanguage / the worker's
+// getClinicBotConfig, which reads this off the flat settings.botLanguage key.
+export type BotLanguage = 'auto' | 'es' | 'en'
+
 export interface DayHours {
   open: string // 'HH:mm'
   close: string // 'HH:mm'
@@ -294,6 +300,7 @@ export type BusinessHours = Record<string, DayHours>
 /** The subset of clinic.settings the IA Studio reads/writes. All keys optional. */
 export interface ClinicSettings {
   botTone?: BotTone
+  botLanguage?: BotLanguage
   clinicRules?: string
   businessHours?: BusinessHours
   googleCalendar?: { calendarId?: string } & Record<string, unknown>

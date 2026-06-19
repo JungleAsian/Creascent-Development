@@ -13,6 +13,7 @@ import { LicenseBadge } from '@/shared/components/LicenseBadge'
 import { WEEKDAYS, toBusinessHours } from '@/shared/businessHours'
 import { formatDateTime } from '@/shared/format'
 import type {
+  BotLanguage,
   BotTone,
   BusinessHours,
   Clinic,
@@ -25,6 +26,7 @@ import type {
 const PLANS: ClinicPlan[] = ['starter', 'pro', 'enterprise']
 const STATUSES: ClinicStatus[] = ['active', 'suspended', 'cancelled']
 const TONES: BotTone[] = ['professional', 'friendly', 'brief']
+const BOT_LANGUAGES: BotLanguage[] = ['auto', 'es', 'en']
 
 export default function ClinicDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -151,13 +153,19 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
   const { t } = useI18n()
   const settings = clinic.settings as ClinicSettings
   const [tone, setTone] = useState<BotTone>(settings.botTone ?? 'professional')
+  const [language, setLanguage] = useState<BotLanguage>(settings.botLanguage ?? 'auto')
   const [rules, setRules] = useState(settings.clinicRules ?? '')
   const save = useSaveClinic(clinic.id)
 
-  const dirty = tone !== (settings.botTone ?? 'professional') || rules !== (settings.clinicRules ?? '')
+  const dirty =
+    tone !== (settings.botTone ?? 'professional') ||
+    language !== (settings.botLanguage ?? 'auto') ||
+    rules !== (settings.clinicRules ?? '')
 
   function onSave() {
-    save.mutate({ settings: { ...clinic.settings, botTone: tone, clinicRules: rules } })
+    save.mutate({
+      settings: { ...clinic.settings, botTone: tone, botLanguage: language, clinicRules: rules },
+    })
   }
 
   return (
@@ -182,6 +190,22 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
             </button>
           )
         })}
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-1 text-xs font-medium text-gray-500">{t('bot.language.title')}</p>
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value as BotLanguage)}
+          className={inputCls}
+        >
+          {BOT_LANGUAGES.map((value) => (
+            <option key={value} value={value}>
+              {t(`bot.language.${value}` as const)}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-400">{t('bot.language.hint')}</p>
       </div>
 
       <div className="mt-4">
