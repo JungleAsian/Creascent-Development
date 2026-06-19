@@ -17,6 +17,7 @@ export { createQuickReplyTemplatesRepository } from './quick-reply-templates.rep
 export { createMessageTemplatesRepository }    from './message-templates.repository.js'
 export { createMetricsRepository }             from './metrics.repository.js'
 export { createAnalyticsRepository }           from './analytics.repository.js'
+export { createQosRepository }                 from './qos.repository.js'
 
 export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput }                          from './clinics.repository.js'
 export type { ChannelAccountsRepository, CreateChannelAccountInput }                             from './channel-accounts.repository.js'
@@ -42,3 +43,4 @@ export type { QuickReplyTemplatesRepository, CreateQuickReplyTemplateInput }    
 export type { MessageTemplatesRepository, CreateMessageTemplateInput }                           from './message-templates.repository.js'
 export type { MetricsRepository, MetricsDashboard }                                              from './metrics.repository.js'
 export type { AnalyticsRepository, AdvancedAnalytics, ConversationExportRow }                    from './analytics.repository.js'
+export type { QosRepository, QosDashboard, QosAttentionItem }                                    from './qos.repository.js'

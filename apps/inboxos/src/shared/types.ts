@@ -152,6 +152,30 @@ export interface ClinicMetrics {
   peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
 }
 
+// ── Quality of Service monitoring (Req 32) ─────────────────────────────────────
+export interface QosAttentionItem {
+  conversationId: string
+  patientName: string
+  status: string
+  channel: string
+  reason: 'upset' | 'abandoned' | 'unclosed'
+  lastMessageAt: string | null
+}
+
+export interface ClinicQos {
+  upsetPatients: number
+  upsetUnresolved: number
+  abandonedConversations: number
+  avgBotResponseSeconds: number
+  avgSecretaryResponseSeconds: number
+  unclosedConversations: number
+  unclosedAged: number
+  followUpOpportunities: number
+  pendingFollowUps: number
+  staleHours: number
+  attention: QosAttentionItem[]
+}
+
 export type ClinicPlan = 'starter' | 'pro' | 'enterprise'
 export type ClinicStatus = 'active' | 'suspended' | 'cancelled'
 

@@ -93,6 +93,7 @@ export {
   createMessageTemplatesRepository,
   createMetricsRepository,
   createAnalyticsRepository,
+  createQosRepository,
 } from './repositories/index.js'
 
 export type {
@@ -153,4 +154,7 @@ export type {
   AnalyticsRepository,
   AdvancedAnalytics,
   ConversationExportRow,
+  QosRepository,
+  QosDashboard,
+  QosAttentionItem,
 } from './repositories/index.js'

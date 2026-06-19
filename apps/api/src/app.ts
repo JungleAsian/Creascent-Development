@@ -23,6 +23,7 @@ import doctorsRoute from './routes/doctors.js'
 import customFlowsRoute from './routes/custom-flows.js'
 import kbUploadRoute from './routes/kb-upload.js'
 import analyticsRoute from './routes/analytics.js'
+import qosRoute from './routes/qos.js'
 import reviewsRoute from './routes/reviews.js'
 
 export async function buildApp() {
@@ -30,6 +31,22 @@ export async function buildApp() {
 
   const app = Fastify({
     logger: env.NODE_ENV === 'test' ? false : { level: 'info' },
+  })
+
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin
+    const allowedOrigins = (process.env['CORS_ORIGINS'] ?? 'http://localhost:3000,http://127.0.0.1:3000')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const isAllowed = origin && (allowedOrigins.includes(origin) || /^http:\/\/100\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/.test(origin))
+    if (isAllowed) reply.header('access-control-allow-origin', origin)
+    reply.header('vary', 'Origin')
+    reply.header('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS')
+    reply.header('access-control-allow-headers', 'content-type,authorization')
+    if (request.method === 'OPTIONS') {
+      reply.status(204).send()
+    }
   })
 
   app.setErrorHandler(errorHandler)
@@ -60,6 +77,7 @@ export async function buildApp() {
   await app.register(customFlowsRoute)
   await app.register(kbUploadRoute)
   await app.register(analyticsRoute)
+  await app.register(qosRoute)
   await app.register(reviewsRoute)
   await app.register(notificationsRoute, { prefix: '/notifications' })
   await app.register(calendarRoute)

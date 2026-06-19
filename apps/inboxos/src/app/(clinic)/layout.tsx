@@ -21,6 +21,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
     if (user?.role === 'clinic_admin' || user?.role === 'ia_studio_admin') {
       base.push({ href: '/metrics', label: t('nav.metrics') })
       base.push({ href: '/analytics', label: t('nav.analytics') })
+      base.push({ href: '/qos', label: t('nav.qos') })
     }
     if (user?.role === 'ia_studio_admin') base.push({ href: '/studio', label: t('nav.studio') })
     return base
