@@ -119,6 +119,74 @@ describe('processAgentJob — bot interruption rule', () => {
   })
 })
 
+describe('processAgentJob — medical emergency (Req 20)', () => {
+  it('keyword emergency: reassures, pauses the bot, tags, alerts — no LLM', async () => {
+    h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })
+    await processAgentJob(makeJob({ ...baseJob, message: 'no puedo respirar, ayuda' }))
+
+    // Patient gets the emergency reassurance; the bot/LLM is never invoked.
+    expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+    expect(h.runClinicBot).not.toHaveBeenCalled()
+    expect(h.classifyIntent).not.toHaveBeenCalled()
+
+    // Conversation paused (handoff) with the emergency reason + tagged.
+    expect(h.updateConversation).toHaveBeenCalledWith(
+      CLINIC,
+      CONVO,
+      expect.objectContaining({ status: 'handoff' }),
+    )
+    const [, , update] = h.updateConversation.mock.calls[0]
+    expect(update.metadata.handoffReason).toBe('emergency')
+    expect(h.createTag).toHaveBeenCalledWith(expect.objectContaining({ name: 'emergency' }))
+    expect(h.addTag).toHaveBeenCalledTimes(1)
+
+    // Highest-priority emergency alert is queued.
+    expect(h.notificationAdd).toHaveBeenCalledWith(
+      'notify',
+      expect.objectContaining({ reason: 'emergency', conversationId: CONVO }),
+    )
+  })
+
+  it('emergency outside business hours is NOT silenced by the hours rule', async () => {
+    const { isInsideBusinessHours } = await import('@docmee/agents')
+    const hoursMock = isInsideBusinessHours as ReturnType<typeof vi.fn>
+    hoursMock.mockReturnValue(false)
+    try {
+      h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })
+      await processAgentJob(makeJob({ ...baseJob, message: 'tengo dolor de pecho' }))
+
+      // Keyword emergency fires before the hours gate is even consulted, so a
+      // closed clinic still reassures the patient and raises the alert.
+      expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+      expect(h.runClinicBot).not.toHaveBeenCalled()
+      expect(h.notificationAdd).toHaveBeenCalledWith(
+        'notify',
+        expect.objectContaining({ reason: 'emergency' }),
+      )
+    } finally {
+      hoursMock.mockReturnValue(true)
+    }
+  })
+
+  it('classifier-detected emergency (no keyword) still reassures and pauses', async () => {
+    h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })
+    h.classifyIntent.mockResolvedValueOnce('emergency')
+    await processAgentJob(makeJob({ ...baseJob, message: 'me siento muy mal y mareado' }))
+
+    expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+    expect(h.runClinicBot).not.toHaveBeenCalled()
+    expect(h.updateConversation).toHaveBeenCalledWith(
+      CLINIC,
+      CONVO,
+      expect.objectContaining({ status: 'handoff' }),
+    )
+    expect(h.notificationAdd).toHaveBeenCalledWith(
+      'notify',
+      expect.objectContaining({ reason: 'emergency' }),
+    )
+  })
+})
+
 describe('processAgentJob — explicit human request (#5)', () => {
   it('acks the patient, pauses the bot, and alerts a human', async () => {
     h.findConversation.mockResolvedValue({ id: CONVO, status: 'open', metadata: {} })

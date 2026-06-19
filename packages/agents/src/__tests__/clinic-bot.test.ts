@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   runClinicBot,
   isEmergencyMessage,
+  emergencyNotice,
   resolveLanguage,
   type ClinicBotConfig,
   type ClinicBotInput,
@@ -44,6 +45,14 @@ describe('isEmergencyMessage', () => {
 
   it('does not flag a normal booking request', () => {
     expect(isEmergencyMessage('hola quiero una cita')).toBe(false)
+  })
+})
+
+describe('emergencyNotice', () => {
+  it('points the patient at emergency services in their language', () => {
+    expect(emergencyNotice('es')).toContain('emergencia')
+    expect(emergencyNotice('es')).toContain('número de emergencias')
+    expect(emergencyNotice('en')).toContain('emergency number')
   })
 })
 

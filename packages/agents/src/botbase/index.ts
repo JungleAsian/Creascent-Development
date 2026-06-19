@@ -18,6 +18,7 @@ export {
 export {
   runClinicBot,
   isEmergencyMessage,
+  emergencyNotice,
   resolveLanguage,
   type BotTone,
   type BotLanguage,

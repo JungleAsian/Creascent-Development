@@ -117,6 +117,18 @@ function apologyMessage(language: Language): string {
 }
 
 /**
+ * Patient-facing reply for a detected medical emergency. The bot must never try to
+ * handle an emergency itself: it points the patient at local emergency services
+ * (it is not an emergency line) and tells them the clinic team is being alerted.
+ * Used by the agent worker, which also pauses the bot and notifies a human.
+ */
+export function emergencyNotice(language: Language): string {
+  return language === 'es'
+    ? 'Si esto es una emergencia médica, llama de inmediato al número de emergencias de tu zona. Estoy avisando al equipo de la clínica para que te contacte lo antes posible.'
+    : 'If this is a medical emergency, call your local emergency number immediately. I am alerting the clinic team to contact you as soon as possible.'
+}
+
+/**
  * Run the clinic bot for one inbound message. Never throws: an LLM/send failure
  * is logged and a localized apology is attempted, so a single bad turn can never
  * crash the conversation worker.

@@ -14,6 +14,8 @@ import {
   matchCustomFlow,
   isBotPaused,
   detectHumanRequest,
+  isEmergencyMessage,
+  emergencyNotice,
   handoffNotice,
   BOT_PAUSED_AT,
   HANDOFF_REASON,
@@ -239,6 +241,28 @@ export async function processAgentJob(job: Job): Promise<void> {
       ? detectLanguage(data.message)
       : getPatientLanguage(patient)
 
+    // Medical emergency (Req 20: emergency routing). A cheap pre-LLM keyword check
+    // runs FIRST — before business hours, opt-out, custom flows and intent
+    // classification — so a true emergency (chest pain, can't breathe, bleeding,
+    // suicide…) is never silenced by the outside-hours rule, never waits on the
+    // model, and is never answered by the bot. We reassure the patient and point
+    // them at local emergency services, pause the bot, tag the conversation, and
+    // raise the highest-priority alert. Safety overrides opt-out here by design.
+    if (sendReply && isEmergencyMessage(data.message)) {
+      await sendReply(emergencyNotice(patientLanguage))
+      if (data.conversationId && conversation) {
+        const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'emergency' })
+        await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+        await pauseBotForHandoff(conversations, data, conversation.metadata, 'emergency')
+      }
+      await notificationQueue.add('notify', {
+        clinicId: data.clinicId,
+        conversationId: data.conversationId,
+        reason: 'emergency',
+      })
+      return
+    }
+
     // Explicit "connect me with a human" request (Rev1 #5). Cheap keyword check so
     // an unambiguous request hands off reliably without waiting on the LLM: ack the
     // patient, pause the bot (status → handoff), and alert a human.
@@ -295,6 +319,15 @@ export async function processAgentJob(job: Job): Promise<void> {
         break
 
       case 'alertflow':
+        // An emergency the keyword guard missed but the classifier caught still
+        // needs the same patient-facing reassurance + bot pause as the keyword path
+        // (the keyword check only fires on a fixed phrase list).
+        if (route.reason === 'emergency') {
+          if (sendReply) await sendReply(emergencyNotice(patientLanguage))
+          if (conversation) {
+            await pauseBotForHandoff(conversations, data, conversation.metadata, 'emergency')
+          }
+        }
         await notificationQueue.add('notify', { ...data, reason: route.reason })
         break
 
