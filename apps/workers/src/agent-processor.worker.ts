@@ -171,9 +171,9 @@ function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | und
  * Messenger/Instagram not connected) — the caller then stays silent.
  *
  * The transport resolves to the provider message id (the WhatsApp wamid, or the
- * Messenger `mid`) when the channel surfaces one, so the caller can store it on the
- * persisted reply and later match delivery-status receipts to it (Req 3/33).
- * Instagram delivery tracking is not wired yet (Req 34), so it resolves to null.
+ * Messenger / Instagram `mid`) when the channel surfaces one, so the caller can
+ * store it on the persisted reply and later match delivery-status receipts to it
+ * (Req 3/33/34).
  */
 function resolveSendReply(
   channel: 'whatsapp' | 'messenger' | 'instagram',
@@ -190,10 +190,8 @@ function resolveSendReply(
   if (channel === 'instagram') {
     const token = clinic.instagramEnabled ? clinic.instagramPageAccessTokenEncrypted : null
     if (!token) return null
-    return async (text) => {
-      await sendInstagramText(token, recipient, text)
-      return null
-    }
+    // Returns the Instagram mid so delivery/read receipts can be matched back (Req 34).
+    return (text) => sendInstagramText(token, recipient, text)
   }
   if (!account) return null
   const phoneNumberId = account.accountId

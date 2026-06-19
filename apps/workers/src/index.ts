@@ -39,6 +39,12 @@ export const messengerStatusWorker = createWorker(
   processDeliveryStatusJob,
   RATE_LIMITS.WORKER_CONCURRENCY_CONVERSATION,
 )
+// Instagram delivery/read receipts (Req 34): same processor, resolved by IG account id.
+export const instagramStatusWorker = createWorker(
+  'instagram.status',
+  processDeliveryStatusJob,
+  RATE_LIMITS.WORKER_CONCURRENCY_CONVERSATION,
+)
 export const transcriptionWorker = createWorker(
   'transcription',
   processTranscriptionJob,
@@ -101,4 +107,4 @@ export const phase3Scheduler = setInterval(() => {
 }, HOURLY_MS)
 if (typeof phase3Scheduler.unref === 'function') phase3Scheduler.unref()
 
-console.log('[workers] all 13 workers registered and listening')
+console.log('[workers] all 14 workers registered and listening')

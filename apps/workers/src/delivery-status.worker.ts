@@ -1,15 +1,17 @@
-// Consumes: whatsapp.status + messenger.status queues.
-// Records channel delivery-status receipts (Req 3 WhatsApp, Req 33 Messenger).
+// Consumes: whatsapp.status + messenger.status + instagram.status queues.
+// Records channel delivery-status receipts (Req 3 WhatsApp, Req 33 Messenger,
+// Req 34 Instagram).
 //
 // WhatsApp: Meta posts a `statuses` webhook for every outbound message as it moves
 // through its lifecycle (sent → delivered → read) or fails, each keyed by the
 // outbound wamid. The clinic is resolved from the phone_number_id.
 //
-// Messenger: Meta posts `delivery` events (carrying the outbound mids) and `read`
-// events (a watermark timestamp — every message sent at/before it has been read,
-// with no per-message ids). The clinic is resolved from the Page id. Messenger
-// send failures are synchronous (the Send API throws) and are already captured as
-// a `meta_send_failure` error review (Req 19), so there is no async failed receipt.
+// Messenger / Instagram: Meta posts `delivery` events (carrying the outbound mids)
+// and `read` events (a watermark timestamp — every message sent at/before it has
+// been read, with no per-message ids). The clinic is resolved from the Page id
+// (Messenger) or the Instagram account id (Instagram). Send failures on both are
+// synchronous (the Send API throws) and are already captured as a `meta_send_failure`
+// error review (Req 19), so there is no async failed receipt.
 //
 // In all cases the matched outbound (assistant) message gets a message_delivery_events
 // row, surfacing the sent/delivered/read/failed indicator in the inbox.
@@ -28,8 +30,9 @@ import {
 export const DeliveryStatusSchema = z.object({
   // The originating channel. Defaults to whatsapp for back-compat with the
   // whatsapp.status queue payloads, which predate the channel tag.
-  channel: z.enum(['whatsapp', 'messenger']).default('whatsapp'),
-  // WhatsApp phone_number_id or Messenger Page id — resolves the owning clinic.
+  channel: z.enum(['whatsapp', 'messenger', 'instagram']).default('whatsapp'),
+  // WhatsApp phone_number_id, Messenger Page id or Instagram account id —
+  // resolves the owning clinic.
   phoneNumberId: z.string(),
   // The outbound provider id (wamid / Messenger mid). Absent on a Messenger read,
   // which is reported as a watermark instead.
@@ -49,11 +52,15 @@ export type DeliveryStatusJob = z.infer<typeof DeliveryStatusSchema>
 /** Resolve the owning clinic id from the channel's account identifier. */
 async function resolveClinicId(
   sql: Sql,
-  channel: 'whatsapp' | 'messenger',
+  channel: 'whatsapp' | 'messenger' | 'instagram',
   accountId: string,
 ): Promise<string | null> {
   if (channel === 'messenger') {
     const clinic = await createClinicsRepository(sql).findByMessengerPageId(accountId)
+    return clinic?.id ?? null
+  }
+  if (channel === 'instagram') {
+    const clinic = await createClinicsRepository(sql).findByInstagramAccountId(accountId)
     return clinic?.id ?? null
   }
   const account = await createChannelAccountsRepository(sql).findByAccount('whatsapp', accountId)

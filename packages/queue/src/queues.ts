@@ -9,6 +9,11 @@ export const whatsappStatusQueue = createQueue('whatsapp.status')
 // outbound mids) and `read` (a watermark) events on the Page webhook; the route
 // fans them here so they never block inbound patient messages.
 export const messengerStatusQueue = createQueue('messenger.status')
+// Instagram delivery/read receipts (Req 34). Instagram DM rides the Messenger
+// Send API; Meta posts `read` (a watermark) and — where available — `delivery`
+// events on the instagram webhook. The route fans them here so they never block
+// inbound patient DMs.
+export const instagramStatusQueue = createQueue('instagram.status')
 export const transcriptionQueue = createQueue('transcription')
 export const agentQueue = createQueue('agent')
 export const schedulingQueue = createQueue('scheduling')

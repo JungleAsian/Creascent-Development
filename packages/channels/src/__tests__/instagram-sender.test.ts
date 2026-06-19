@@ -16,11 +16,13 @@ afterEach(() => {
 })
 
 describe('sendInstagramText', () => {
-  it('POSTs a text message to the Send API with auth + body', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '' })
+  it('POSTs a text message to the Send API with auth + body and returns the mid', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ recipient_id: 'IGSID_123', message_id: 'mid.OUT1' }) })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await sendInstagramText('PAGE_TOKEN', 'IGSID_123', 'hola')
+    const mid = await sendInstagramText('PAGE_TOKEN', 'IGSID_123', 'hola')
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
@@ -34,15 +36,22 @@ describe('sendInstagramText', () => {
     expect(body.recipient.id).toBe('IGSID_123')
     expect(body.message.text).toBe('hola')
     expect(body.messaging_type).toBe('RESPONSE')
+    expect(mid).toBe('mid.OUT1')
   })
 
-  it('does not call the API when LLM_STUB=true', async () => {
+  it('returns null when the Send API response carries no message_id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ recipient_id: 'IGSID_123' }) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    expect(await sendInstagramText('PAGE_TOKEN', 'IGSID_123', 'hola')).toBeNull()
+  })
+
+  it('does not call the API and returns null when LLM_STUB=true', async () => {
     process.env['LLM_STUB'] = 'true'
     const fetchMock = vi.fn()
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await sendInstagramText('PAGE_TOKEN', 'IGSID_123', 'hola')
-
+    expect(await sendInstagramText('PAGE_TOKEN', 'IGSID_123', 'hola')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

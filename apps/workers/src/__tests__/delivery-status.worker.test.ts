@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   findByAccount: vi.fn(),
   findByMessengerPageId: vi.fn(),
+  findByInstagramAccountId: vi.fn(),
   findOpenByContact: vi.fn(),
   recordDeliveryStatus: vi.fn(),
   recordReadReceipt: vi.fn(),
@@ -17,7 +18,10 @@ const h = vi.hoisted(() => ({
 vi.mock('@docmee/db', () => ({
   createServiceDbClient: () => ({ end: h.end }),
   createChannelAccountsRepository: () => ({ findByAccount: h.findByAccount }),
-  createClinicsRepository: () => ({ findByMessengerPageId: h.findByMessengerPageId }),
+  createClinicsRepository: () => ({
+    findByMessengerPageId: h.findByMessengerPageId,
+    findByInstagramAccountId: h.findByInstagramAccountId,
+  }),
   createConversationsRepository: () => ({ findOpenByContact: h.findOpenByContact }),
   createMessagesRepository: () => ({
     recordDeliveryStatus: h.recordDeliveryStatus,
@@ -35,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.findByAccount.mockResolvedValue({ clinicId: CLINIC, accountId: 'PHONE_ID' })
   h.findByMessengerPageId.mockResolvedValue({ id: CLINIC })
+  h.findByInstagramAccountId.mockResolvedValue({ id: CLINIC })
   h.findOpenByContact.mockResolvedValue({ id: 'conv-1' })
   h.recordDeliveryStatus.mockResolvedValue(true)
   h.recordReadReceipt.mockResolvedValue(2)
@@ -155,6 +160,57 @@ describe('processDeliveryStatusJob', () => {
       makeJob({
         channel: 'messenger',
         phoneNumberId: 'UNKNOWN_PAGE',
+        channelMessageId: 'mid.X',
+        status: 'delivered',
+      }),
+    )
+
+    expect(h.recordDeliveryStatus).not.toHaveBeenCalled()
+    expect(h.recordReadReceipt).not.toHaveBeenCalled()
+    expect(h.end).toHaveBeenCalledTimes(1)
+  })
+
+  it('records an Instagram delivered receipt, resolving the clinic by IG account id', async () => {
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'instagram',
+        phoneNumberId: 'IG_ACCOUNT_ID',
+        channelMessageId: 'mid.OUT1',
+        status: 'delivered',
+        recipientId: 'IGSID_123',
+      }),
+    )
+
+    expect(h.findByInstagramAccountId).toHaveBeenCalledWith('IG_ACCOUNT_ID')
+    expect(h.findByAccount).not.toHaveBeenCalled()
+    expect(h.findByMessengerPageId).not.toHaveBeenCalled()
+    expect(h.recordDeliveryStatus).toHaveBeenCalledWith(CLINIC, 'mid.OUT1', 'delivered', null)
+    expect(h.createError).not.toHaveBeenCalled()
+  })
+
+  it('marks the Instagram thread read up to the watermark', async () => {
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'instagram',
+        phoneNumberId: 'IG_ACCOUNT_ID',
+        status: 'read',
+        recipientId: 'IGSID_123',
+        watermark: 1700000002000,
+      }),
+    )
+
+    expect(h.findOpenByContact).toHaveBeenCalledWith(CLINIC, 'instagram', 'IGSID_123')
+    expect(h.recordReadReceipt).toHaveBeenCalledWith(CLINIC, 'conv-1', 1700000002000)
+    expect(h.recordDeliveryStatus).not.toHaveBeenCalled()
+  })
+
+  it('drops an Instagram receipt when no clinic owns the IG account id', async () => {
+    h.findByInstagramAccountId.mockResolvedValue(null)
+
+    await processDeliveryStatusJob(
+      makeJob({
+        channel: 'instagram',
+        phoneNumberId: 'UNKNOWN_IG',
         channelMessageId: 'mid.X',
         status: 'delivered',
       }),
