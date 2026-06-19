@@ -142,6 +142,8 @@ export default function PatientHistoryPage({
             </dl>
           </Section>
 
+          <IntakeSection patient={patient} />
+
           <Section title={t('patient.tags')}>
             {tags.length === 0 ? (
               <p className="text-sm text-gray-400">{t('patient.noTags')}</p>
@@ -263,6 +265,57 @@ function ProfileSection({ patient, waId }: { patient: Patient; waId: string }) {
   )
 }
 
+// Req 10 (Patient Data Capture): the bot captures the booking intake — visit
+// reason, preferred date/time, the chosen doctor + specialty and the originating
+// channel — and the scheduling worker merges it onto patients.metadata.intake so
+// it is queryable from the patient (not buried in one appointment). Surface it here.
+interface PatientIntake {
+  reason?: unknown
+  preferredDate?: unknown
+  preferredTime?: unknown
+  doctorName?: unknown
+  specialty?: unknown
+  source?: unknown
+}
+
+function asText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+function IntakeSection({ patient }: { patient: Patient }) {
+  const { t } = useI18n()
+  const meta = patient.metadata as { intake?: PatientIntake; source?: unknown }
+  const intake = meta.intake ?? {}
+
+  const reason = asText(intake.reason)
+  const date = asText(intake.preferredDate)
+  const time = asText(intake.preferredTime)
+  const preferred = [date, time].filter(Boolean).join(' ') || null
+  const doctor = asText(intake.doctorName)
+  const specialty = asText(intake.specialty)
+  // The booking intake records the channel it was booked on; fall back to the
+  // first-contact source captured when the patient was created.
+  const sourceRaw = asText(intake.source) ?? asText(meta.source)
+  const source = sourceRaw
+    ? sourceRaw.charAt(0).toUpperCase() + sourceRaw.slice(1)
+    : null
+
+  // Nothing captured yet (e.g. a patient who never booked through the bot).
+  if (!reason && !preferred && !doctor && !specialty && !source) return null
+
+  return (
+    <Section title={t('patient.intake')}>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+        {reason && <Row label={t('patient.intake.reason')} value={reason} />}
+        {preferred && <Row label={t('patient.intake.preferred')} value={preferred} />}
+        {doctor && <Row label={t('patient.intake.doctor')} value={doctor} />}
+        {specialty && <Row label={t('patient.intake.specialty')} value={specialty} />}
+        {source && <Row label={t('patient.intake.source')} value={source} />}
+      </dl>
+    </Section>
+  )
+}
+
 function ApptGroup({
   label,
   appointments,
@@ -277,17 +330,28 @@ function ApptGroup({
     <div>
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</p>
       <ul className="space-y-1.5">
-        {appointments.map((a) => (
-          <li
-            key={a.id}
-            className="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"
-          >
-            <span className="text-gray-700 dark:text-gray-200">{formatDateTime(a.startTime, language)}</span>
-            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${APPT_BADGE[a.status]}`}>
-              {t(`appt.status.${a.status}` as const)}
-            </span>
-          </li>
-        ))}
+        {appointments.map((a) => {
+          // Req 10: the visit reason is persisted onto the appointment's notes.
+          const reason = asText(a.notes)
+          return (
+            <li
+              key={a.id}
+              className="rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-700 dark:text-gray-200">{formatDateTime(a.startTime, language)}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${APPT_BADGE[a.status]}`}>
+                  {t(`appt.status.${a.status}` as const)}
+                </span>
+              </div>
+              {reason && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {t('patient.apptReason')}: {reason}
+                </p>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
