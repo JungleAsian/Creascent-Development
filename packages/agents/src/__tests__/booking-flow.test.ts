@@ -108,6 +108,72 @@ describe('advanceBookingFlow (LLM_STUB)', () => {
   })
 })
 
+describe('per-doctor working hours (Req 30)', () => {
+  // 2026-07-01 is a Wednesday. The doctor works Wed 09:00–12:00 only.
+  const provider = {
+    id: 'prov-1',
+    fullName: 'Dra. García',
+    specialty: 'Pediatría',
+    availability: { wed: [{ start: '09:00', end: '12:00' }] },
+  }
+  const hoursCtx: BookingContext = { ...ctx, providers: [provider] }
+
+  it('rejects a time outside the doctor hours and offers in-hours alternatives', async () => {
+    // The clinic calendar reports 10:00 booked, but 09:00, 11:00 and 14:00 free.
+    // 14:00 is outside the doctor's hours and must NOT be offered.
+    const calendar = makeCalendar({ listSlots: vi.fn().mockResolvedValue(slotsFor(['09:00', '11:00', '14:00'])) })
+    const deps = makeDeps(calendar)
+    const state: BookingState = {
+      step: 'ask_time',
+      providerId: 'prov-1',
+      doctorName: 'Dra. García',
+      reason: 'control',
+      preferredDate: DATE,
+    }
+    const r = await advanceBookingFlow(state, '14:00', hoursCtx, deps)
+    expect(r.done).toBe(false)
+    expect(r.nextState.step).toBe('ask_time')
+    expect(r.reply).toMatch(/09:00/)
+    expect(r.reply).toMatch(/11:00/)
+    expect(r.reply).not.toMatch(/14:00/)
+    expect(deps.saveAppointment).not.toHaveBeenCalled()
+  })
+
+  it('books a time that falls inside the doctor hours', async () => {
+    const calendar = makeCalendar({ listSlots: vi.fn().mockResolvedValue(slotsFor(['09:00', '11:00', '14:00'])) })
+    const deps = makeDeps(calendar)
+    const state: BookingState = {
+      step: 'ask_time',
+      providerId: 'prov-1',
+      doctorName: 'Dra. García',
+      reason: 'control',
+      preferredDate: DATE,
+    }
+    const r = await advanceBookingFlow(state, '11:00', hoursCtx, deps)
+    expect(r.nextState.step).toBe('confirm_details')
+    expect(r.nextState.confirmedSlot?.start).toBe(`${DATE}T11:00:00`)
+  })
+
+  it('sends the patient back to pick another day when the doctor is off that day', async () => {
+    const calendar = makeCalendar()
+    const deps = makeDeps(calendar)
+    // Doctor works Wed only; ask for 2026-07-04 (a Saturday).
+    const state: BookingState = {
+      step: 'ask_time',
+      providerId: 'prov-1',
+      doctorName: 'Dra. García',
+      reason: 'control',
+      preferredDate: '2026-07-04',
+    }
+    const r = await advanceBookingFlow(state, '10:00', hoursCtx, deps)
+    expect(r.done).toBe(false)
+    expect(r.nextState.step).toBe('ask_date')
+    expect(r.nextState.preferredDate).toBeUndefined()
+    expect(calendar.listSlots).not.toHaveBeenCalled() // no point checking the calendar
+    expect(deps.saveAppointment).not.toHaveBeenCalled()
+  })
+})
+
 describe('double-booking protection', () => {
   it('detects a conflict and offers alternative slots', async () => {
     // The requested 10:00 is NOT free; only 09:00 and 11:00 are.

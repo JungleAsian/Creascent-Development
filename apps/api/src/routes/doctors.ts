@@ -13,13 +13,32 @@ import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 
+// Req 30: per-doctor working hours. Each weekday maps to a list of ordered HH:MM
+// ranges; unknown keys / malformed times are rejected (400) so only a clean
+// schedule reaches the DB. An absent weekday means the doctor is off that day.
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM')
+const timeRange = z
+  .object({ start: hhmm, end: hhmm })
+  .refine((r) => r.start < r.end, { message: 'start must be before end' })
+const availableDaysSchema = z
+  .object({
+    mon: z.array(timeRange).optional(),
+    tue: z.array(timeRange).optional(),
+    wed: z.array(timeRange).optional(),
+    thu: z.array(timeRange).optional(),
+    fri: z.array(timeRange).optional(),
+    sat: z.array(timeRange).optional(),
+    sun: z.array(timeRange).optional(),
+  })
+  .strict()
+
 const createSchema = z.object({
   name: z.string().min(1),
   specialty: z.string().optional(),
   googleCalendarId: z.string().optional(),
   googleCalendarAccessToken: z.string().optional(),
   googleCalendarRefreshToken: z.string().optional(),
-  availableDays: z.record(z.unknown()).optional(),
+  availableDays: availableDaysSchema.optional(),
 })
 
 const patchSchema = z.object({
@@ -28,7 +47,7 @@ const patchSchema = z.object({
   googleCalendarId: z.string().optional(),
   googleCalendarAccessToken: z.string().optional(),
   googleCalendarRefreshToken: z.string().optional(),
-  availableDays: z.record(z.unknown()).optional(),
+  availableDays: availableDaysSchema.optional(),
   isActive: z.boolean().optional(),
 })
 

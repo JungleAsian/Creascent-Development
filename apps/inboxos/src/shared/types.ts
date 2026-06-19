@@ -264,6 +264,14 @@ export interface ClinicUsageRow {
 
 // ── P18 — Phase 3 ────────────────────────────────────────────────────────────────
 
+/** Req 30: per-doctor weekly working hours. */
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+export interface TimeRange {
+  start: string // HH:MM
+  end: string // HH:MM
+}
+export type DoctorAvailability = Partial<Record<Weekday, TimeRange[]>>
+
 /** A doctor (redacted — calendar tokens are never returned to the panel). */
 export interface Doctor {
   id: string
@@ -271,7 +279,7 @@ export interface Doctor {
   name: string
   specialty: string | null
   googleCalendarId: string | null
-  availableDays: Record<string, unknown>
+  availableDays: DoctorAvailability
   isActive: boolean
   calendarConnected: boolean
   createdAt: string

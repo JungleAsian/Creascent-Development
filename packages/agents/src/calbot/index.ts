@@ -31,6 +31,19 @@ export {
 } from './shared.js'
 
 export {
+  normalizeAvailability,
+  hasAvailability,
+  worksOnDay,
+  weekdayOf,
+  isWithinAvailability,
+  filterSlotsByAvailability,
+  WEEKDAYS,
+  type Weekday,
+  type TimeRange,
+  type DoctorAvailability,
+} from './doctor-availability.js'
+
+export {
   advanceBookingFlow,
   initialBookingState,
   type BookingStep,

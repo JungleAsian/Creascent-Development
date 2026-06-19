@@ -18,6 +18,7 @@ import {
   matchProvider,
   pick,
 } from './shared.js'
+import { hasAvailability, worksOnDay, filterSlotsByAvailability } from './doctor-availability.js'
 
 export type BookingStep =
   | 'confirm_doctor'
@@ -188,8 +189,27 @@ export async function advanceBookingFlow(
         }
       }
 
+      // Req 30: respect the chosen doctor's working hours. If they don't work the
+      // requested weekday at all, send them back to pick another day rather than
+      // listing the clinic's (irrelevant) free slots.
+      const provider = ctx.providers.find((p) => p.id === state.providerId)
+      const availability = provider?.availability
+      if (availability && hasAvailability(availability) && !worksOnDay(availability, date)) {
+        return {
+          nextState: { ...state, step: 'ask_date', preferredDate: undefined, preferredTime: undefined },
+          reply: pick(
+            L,
+            `${state.doctorName ?? 'El doctor'} no atiende ese día. ¿Qué otro día prefiere? (AAAA-MM-DD)`,
+            `${state.doctorName ?? 'The doctor'} doesn't work that day. Which other day do you prefer? (YYYY-MM-DD)`,
+          ),
+          done: false,
+        }
+      }
+
       // Double-booking protection: only times that are actually free this day pass.
-      const slots = await deps.calendar.listSlots(date)
+      // Then keep only slots inside the doctor's working hours (Req 30).
+      const freeSlots = await deps.calendar.listSlots(date)
+      const slots = availability ? filterSlotsByAvailability(freeSlots, date, availability) : freeSlots
       const wantStart = slotStart(date, time)
       const match = slots.find((s) => s.start === wantStart)
 

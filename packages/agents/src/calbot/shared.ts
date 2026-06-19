@@ -2,6 +2,7 @@
 // status). Parsing is deterministic so every flow advances identically under
 // LLM_STUB and in tests — no model call is needed to fill a date or a time.
 import type { Language } from '../botbase/language-detector.js'
+import type { DoctorAvailability } from './doctor-availability.js'
 
 export type { Language }
 
@@ -15,6 +16,8 @@ export interface ProviderRef {
   fullName: string
   /** Doctor/provider specialty, captured into the patient intake on booking (Req 10). */
   specialty?: string | null
+  /** Per-doctor working hours (Req 30); when set, restricts the bookable slots. */
+  availability?: DoctorAvailability
 }
 
 /** A patient's existing upcoming appointment, as the flows need to see it. */

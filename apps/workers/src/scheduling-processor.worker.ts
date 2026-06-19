@@ -21,6 +21,7 @@ import {
   advanceCancelFlow,
   initialCancelState,
   buildStatusReply,
+  normalizeAvailability,
   type CalendarOps,
   type Language,
   type ProviderRef,
@@ -355,7 +356,13 @@ export async function processSchedulingJob(job: Job): Promise<void> {
         }
 
         const resourceList: ProviderRef[] = doctorMode
-          ? doctors.map((d) => ({ id: d.id, fullName: d.name, specialty: d.specialty }))
+          ? doctors.map((d) => ({
+              id: d.id,
+              fullName: d.name,
+              specialty: d.specialty,
+              // Req 30: the doctor's own working hours restrict the bookable slots.
+              availability: normalizeAvailability(d.availableDays),
+            }))
           : providers.map(toProviderRef)
 
         const result = await advanceBookingFlow(state, data.message, {
