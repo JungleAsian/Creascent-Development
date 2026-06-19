@@ -14,7 +14,11 @@
 //   PATCH/DELETE    /conversations/:id/notes/:noteId (Req 13 — author-only edit/delete)
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { createConversationsRepository, createMessagesRepository } from '@docmee/db'
+import {
+  createConversationsRepository,
+  createMessagesRepository,
+  createErrorReviewsRepository,
+} from '@docmee/db'
 import type { ConversationStatus } from '@docmee/db'
 import { withDb } from '../lib/db.js'
 import { validate } from '../lib/validate.js'
@@ -45,6 +49,13 @@ const messageSchema = z.object({
 })
 const tagSchema = z.object({ tag: z.string().min(1) })
 const noteSchema = z.object({ content: z.string().min(1) })
+// Req 29: a secretary flags a bad bot reply from the inbox; it surfaces in the
+// IA Studio Error Review area as a `bad_response` entry.
+const flagResponseSchema = z.object({
+  messageId: z.string().optional(),
+  content: z.string().min(1),
+  note: z.string().optional(),
+})
 
 const conversationsRoute: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth)
@@ -248,6 +259,40 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
       })
       if (!message) return reply.code(404).send({ error: 'Conversation not found' })
       return reply.code(201).send({ message })
+    },
+  )
+
+  // ── Flag a bad bot response (Req 29 Error Review) ──
+  // A secretary marks a specific bot reply as wrong/inappropriate from the inbox;
+  // it lands in the IA Studio Error Review queue as a `bad_response` entry where an
+  // operator can review it and (Add-to-KB) correct the underlying knowledge.
+  app.post<{ Params: { id: string } }>(
+    '/:id/flag-response',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const parsed = validate(flagResponseSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const error = await withDb(async (sql) => {
+        const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+        if (!convo) return null
+        return createErrorReviewsRepository(sql).create({
+          clinicId,
+          errorType: 'bad_response',
+          errorMessage: parsed.data.content,
+          context: {
+            conversationId: request.params.id,
+            messageId: parsed.data.messageId ?? null,
+            note: parsed.data.note ?? null,
+            channel: convo.channel,
+            flaggedBy: request.user!.userId,
+          },
+        })
+      })
+      if (!error) return reply.code(404).send({ error: 'Conversation not found' })
+      return reply.code(201).send({ error })
     },
   )
 

@@ -41,6 +41,7 @@ import {
   createAppointmentsRepository,
   createChannelAccountsRepository,
   createDoctorsRepository,
+  createErrorReviewsRepository,
   type Clinic,
   type Patient,
   type ChannelAccount,
@@ -259,7 +260,13 @@ export async function processSchedulingJob(job: Job): Promise<void> {
 
     let nextFlow: StoredFlow | null = null
 
-    switch (data.action) {
+    // Calendar failures (Req 29 Error Review): a Google Calendar call inside any
+    // scheduling flow can throw (expired/revoked OAuth token, API outage, quota).
+    // Rather than let the job fail and retry — which risks a double-book or a
+    // double-send — we record the failure to error_reviews for operator review,
+    // tell the patient a human will follow up, and hand off. Best-effort logging.
+    try {
+      switch (data.action) {
       case 'status': {
         const result = buildStatusReply({
           language,
@@ -406,6 +413,26 @@ export async function processSchedulingJob(job: Job): Promise<void> {
         nextFlow = result.done ? null : { action: 'book', state: result.nextState }
         break
       }
+      }
+    } catch (err) {
+      console.error(`[scheduling] calendar flow failed for clinic ${data.clinicId} (${data.action}):`, err)
+      await createErrorReviewsRepository(sql)
+        .create({
+          clinicId: data.clinicId,
+          errorType: 'calendar_failure',
+          errorMessage: err instanceof Error ? err.message : String(err),
+          context: {
+            conversationId: data.conversationId ?? null,
+            action: data.action,
+            patientId: data.patientId ?? null,
+          },
+        })
+        .catch((logErr) => console.error('[scheduling] failed to log calendar failure:', logErr))
+      // Tell the patient a human will follow up and hand off; do not persist a
+      // partially-advanced flow (we return without writing flow state).
+      await reply(calendarUnavailable(language)).catch(() => {})
+      await notificationQueue.add('notify', { ...data, reason: 'human_handoff' })
+      return
     }
 
     // Persist (or clear) the flow state for the next inbound message.

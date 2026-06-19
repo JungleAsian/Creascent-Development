@@ -3,7 +3,7 @@
 // IA Studio — Error Review (P11, Gap #18). Surfaces logged bot/runtime errors per
 // clinic. Adds a type filter and a detail slide-over with fix guidance on top of
 // the P09 list + resolve flow.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
@@ -16,6 +16,8 @@ import type { ErrorReview } from '@/shared/types'
 // Map a free-form errorType to fix-guidance copy via substring heuristics.
 function guidanceKey(errorType: string): TranslationKey {
   const v = errorType.toLowerCase()
+  if (v.includes('unanswered')) return 'errors.guidance.unanswered'
+  if (v.includes('bad_response') || v.includes('bad response')) return 'errors.guidance.badResponse'
   if (v.includes('timeout') || v.includes('llm') || v.includes('provider')) return 'errors.guidance.timeout'
   if (v.includes('calendar') || v.includes('oauth')) return 'errors.guidance.calendar'
   if (v.includes('whatsapp') || v.includes('template') || v.includes('meta')) return 'errors.guidance.whatsapp'
@@ -30,6 +32,16 @@ export default function ErrorsPage() {
   const [showResolved, setShowResolved] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
   const [selected, setSelected] = useState<ErrorReview | null>(null)
+  const [kbTitle, setKbTitle] = useState('')
+  const [kbContent, setKbContent] = useState('')
+
+  // Pre-fill the Add-to-KB form from the selected error each time it opens: the
+  // patient's question becomes the document title, leaving the answer for the
+  // operator to write.
+  useEffect(() => {
+    setKbTitle(selected ? selected.errorMessage.slice(0, 120) : '')
+    setKbContent('')
+  }, [selected])
 
   const query = useQuery({
     queryKey: ['errors', clinicId, showResolved],
@@ -42,6 +54,19 @@ export default function ErrorsPage() {
 
   const resolveMutation = useMutation({
     mutationFn: (errorId: string) => api.post(`/clinics/${clinicId}/errors/${errorId}/resolve`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['errors', clinicId] })
+      setSelected(null)
+    },
+  })
+
+  // Add-to-KB (Req 29): create approved KB content from this error and resolve it.
+  const addToKbMutation = useMutation({
+    mutationFn: (vars: { errorId: string; title: string; content: string }) =>
+      api.post(`/clinics/${clinicId}/errors/${vars.errorId}/add-to-kb`, {
+        title: vars.title,
+        content: vars.content,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['errors', clinicId] })
       setSelected(null)
@@ -176,6 +201,45 @@ export default function ErrorsPage() {
               ) : (
                 <p className="text-xs text-gray-400">{t('studio.errors.noContext')}</p>
               )}
+            </div>
+
+            {/* Add-to-KB (Req 29): turn an unanswered question / bad response into
+                approved clinic knowledge. The patient's question pre-fills the
+                title; the operator writes the answer. Saving also resolves the error. */}
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/40">
+              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                {t('studio.errors.addToKb')}
+              </p>
+              <p className="mt-0.5 text-[11px] text-emerald-900/80 dark:text-emerald-200/80">
+                {t('studio.errors.addToKbHint')}
+              </p>
+              <input
+                value={kbTitle}
+                onChange={(e) => setKbTitle(e.target.value)}
+                placeholder={t('studio.errors.kbTitle')}
+                className="mt-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800"
+              />
+              <textarea
+                value={kbContent}
+                onChange={(e) => setKbContent(e.target.value)}
+                placeholder={t('studio.errors.kbAnswer')}
+                rows={4}
+                className="mt-2 w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  addToKbMutation.mutate({
+                    errorId: selected.id,
+                    title: kbTitle.trim(),
+                    content: kbContent.trim(),
+                  })
+                }
+                disabled={addToKbMutation.isPending || !kbTitle.trim() || !kbContent.trim()}
+                className="mt-2 w-full rounded-md bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {t('studio.errors.addToKbSubmit')}
+              </button>
             </div>
 
             {selected.status === 'open' && (

@@ -57,7 +57,7 @@ vi.mock('@docmee/db', () => ({
   createChannelAccountsRepository: () => ({ listByClinic: h.listAccounts }),
   createPatientsRepository: () => ({ findById: h.findPatient, update: h.updatePatient }),
   createKnowledgeRepository: () => ({ listEmbeddedChunks: h.listEmbeddedChunks }),
-  createErrorReviewsRepository: () => ({ create: vi.fn() }),
+  createErrorReviewsRepository: () => ({ create: vi.fn().mockResolvedValue(undefined) }),
   createConversationsRepository: () => ({
     findById: h.findConversation,
     update: h.updateConversation,

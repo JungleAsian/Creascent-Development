@@ -59,6 +59,7 @@ export function ConversationView({
   const { t, language } = useI18n()
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
+  const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const conversationQuery = useQuery({
@@ -114,6 +115,18 @@ export function ConversationView({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['conversation', conversationId] })
       qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
+  // Req 29: flag a bad bot reply → IA Studio Error Review (bad_response).
+  const flagMutation = useMutation({
+    mutationFn: (message: Message) =>
+      api.post(`/conversations/${conversationId}/flag-response`, {
+        messageId: message.id,
+        content: message.content,
+      }),
+    onSuccess: (_data, message) => {
+      setFlaggedIds((prev) => new Set(prev).add(message.id))
     },
   })
 
@@ -213,6 +226,11 @@ export function ConversationView({
               message={m}
               roleLabel={t(ROLE_LABEL[m.role])}
               voiceLabel={t('view.voiceNote')}
+              flagLabel={t('view.flagResponse')}
+              flaggedLabel={t('view.flagged')}
+              flagged={flaggedIds.has(m.id)}
+              flagging={flagMutation.isPending && flagMutation.variables?.id === m.id}
+              onFlag={() => flagMutation.mutate(m)}
               language={language}
             />
           ))
@@ -305,21 +323,33 @@ function MessageBubble({
   message,
   roleLabel,
   voiceLabel,
+  flagLabel,
+  flaggedLabel,
+  flagged,
+  flagging,
+  onFlag,
   language,
 }: {
   message: Message
   roleLabel: string
   voiceLabel: string
+  flagLabel: string
+  flaggedLabel: string
+  flagged: boolean
+  flagging: boolean
+  onFlag: () => void
   language: 'es' | 'en'
 }) {
   // Patient messages on the left; clinic (agent/bot/system) on the right.
   const fromPatient = message.role === 'user'
+  // Only the bot's own replies can be flagged as a bad response (Req 29).
+  const canFlag = message.role === 'assistant'
   // Voice note (Req 8): a transcribed audio message shows a 🎤 marker above its
   // transcript so the secretary knows the patient spoke rather than typed.
   const isVoiceNote = message.contentType === 'audio'
   const transcript = message.transcription ?? message.content
   return (
-    <div className={`flex ${fromPatient ? 'justify-start' : 'justify-end'}`}>
+    <div className={`group flex ${fromPatient ? 'justify-start' : 'justify-end'}`}>
       <div
         className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
           fromPatient
@@ -340,6 +370,25 @@ function MessageBubble({
           </div>
         )}
         <p className="whitespace-pre-wrap break-words">{transcript}</p>
+        {canFlag && (
+          <div className="mt-1 text-right">
+            {flagged ? (
+              <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
+                ⚑ {flaggedLabel}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onFlag}
+                disabled={flagging}
+                title={flagLabel}
+                className="text-[10px] font-medium text-gray-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100 disabled:opacity-60 dark:hover:text-red-400"
+              >
+                ⚑ {flagLabel}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

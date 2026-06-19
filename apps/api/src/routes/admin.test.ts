@@ -22,6 +22,7 @@ const store = vi.hoisted(() => ({
   ] as Record<string, unknown>[],
   errors: new Map<string, Record<string, unknown>>([
     ['e-1', { id: 'e-1', clinicId: 'c-1', errorType: 'llm_failure', errorMessage: 'boom', status: 'open' }],
+    ['e-2', { id: 'e-2', clinicId: 'c-1', errorType: 'unanswered_question', errorMessage: '¿Atienden domingos?', status: 'open' }],
   ]),
 }))
 
@@ -42,6 +43,10 @@ vi.mock('@docmee/db', () => ({
       [...store.errors.values()].filter(
         (e) => e.clinicId === clinicId && (!status || e.status === status),
       ),
+    findById: async (clinicId: string, id: string) => {
+      const e = store.errors.get(id)
+      return e && e.clinicId === clinicId ? e : null
+    },
     resolve: async (clinicId: string, id: string, reviewedBy: string) => {
       const e = store.errors.get(id)
       if (!e || e.clinicId !== clinicId) return null
@@ -53,7 +58,9 @@ vi.mock('@docmee/db', () => ({
   createConversationsRepository: () => ({ countActive: async () => 0 }),
   createPatientsRepository: () => ({ list: async () => [] }),
   createMessagesRepository: () => ({}),
-  createKnowledgeRepository: () => ({}),
+  createKnowledgeRepository: () => ({
+    createDocument: async (data: Record<string, unknown>) => ({ id: 'doc-new', ...data }),
+  }),
   createNotificationsRepository: () => ({}),
 }))
 
@@ -102,7 +109,40 @@ describe('IA Studio + AssignPanel routes (P09)', () => {
   it('GET /clinics/:id/errors lists open errors', async () => {
     const res = await app.inject({ method: 'GET', url: '/clinics/c-1/errors', headers: clinicAdminAuth })
     expect(res.statusCode).toBe(200)
-    expect(JSON.parse(res.body).errors).toHaveLength(1)
+    expect(JSON.parse(res.body).errors).toHaveLength(2)
+  })
+
+  it('POST /clinics/:id/errors/:errorId/add-to-kb creates a KB doc and resolves', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/clinics/c-1/errors/e-2/add-to-kb',
+      headers: clinicAdminAuth,
+      payload: { title: '¿Atienden domingos?', content: 'Sí, atendemos los domingos de 9 a 14h.' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.document.id).toBe('doc-new')
+    expect(body.document.status).toBe('active')
+    expect(body.error.status).toBe('resolved')
+  })
+
+  it('POST add-to-kb for unknown error → 404', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/clinics/c-1/errors/missing/add-to-kb',
+      headers: clinicAdminAuth,
+      payload: { title: 'x', content: 'y' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('POST add-to-kb without auth → 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/clinics/c-1/errors/e-2/add-to-kb',
+      payload: { title: 'x', content: 'y' },
+    })
+    expect(res.statusCode).toBe(401)
   })
 
   it('POST /clinics/:id/errors/:errorId/resolve resolves the error', async () => {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   runClinicBot,
   isEmergencyMessage,
+  isLikelyQuestion,
   emergencyNotice,
   resolveLanguage,
   type ClinicBotConfig,
@@ -45,6 +46,24 @@ describe('isEmergencyMessage', () => {
 
   it('does not flag a normal booking request', () => {
     expect(isEmergencyMessage('hola quiero una cita')).toBe(false)
+  })
+})
+
+describe('isLikelyQuestion (Req 29 unanswered-question gate)', () => {
+  it('flags messages ending with a question mark', () => {
+    expect(isLikelyQuestion('¿Atienden los domingos?')).toBe(true)
+    expect(isLikelyQuestion('Do you accept my insurance?')).toBe(true)
+  })
+
+  it('flags messages with question words but no punctuation', () => {
+    expect(isLikelyQuestion('cuanto cuesta una limpieza dental')).toBe(true)
+    expect(isLikelyQuestion('what are your opening hours')).toBe(true)
+  })
+
+  it('ignores short greetings and acknowledgements', () => {
+    expect(isLikelyQuestion('ok gracias')).toBe(false)
+    expect(isLikelyQuestion('hola')).toBe(false)
+    expect(isLikelyQuestion('👍')).toBe(false)
   })
 })
 

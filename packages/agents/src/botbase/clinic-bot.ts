@@ -63,6 +63,33 @@ export function isEmergencyMessage(text: string): boolean {
   return EMERGENCY_KEYWORDS.some((kw) => lower.includes(kw))
 }
 
+// Words that mark a message as information-seeking (ES + EN). Used to decide
+// whether a botbase reply that found NO clinic-KB match is worth logging as an
+// "unanswered question" for the Error Review area (Req 29) — so an operator can
+// answer it and add it to the KB — without flooding the queue with greetings,
+// thanks and one-word acknowledgements.
+const QUESTION_WORDS = [
+  'que', 'qué', 'cual', 'cuál', 'como', 'cómo', 'cuando', 'cuándo', 'donde',
+  'dónde', 'cuanto', 'cuánto', 'cuanta', 'cuánta', 'por que', 'por qué', 'precio',
+  'cuesta', 'costo', 'horario', 'atienden', 'tienen', 'puedo', 'hay', 'what',
+  'which', 'how', 'when', 'where', 'why', 'price', 'cost', 'do you', 'can i',
+  'is there', 'are there', 'hours', 'open',
+]
+
+/**
+ * True when a message reads like a real question an operator should review when
+ * the bot could not ground its answer in the clinic KB. A trailing '?' or any
+ * question word qualifies; very short messages without either (greetings,
+ * "ok", "gracias") are ignored so the unanswered-question queue stays signal.
+ */
+export function isLikelyQuestion(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed.length < 8) return false
+  if (trimmed.includes('?') || trimmed.includes('¿')) return true
+  const lower = trimmed.toLowerCase()
+  return QUESTION_WORDS.some((kw) => lower.includes(kw))
+}
+
 export function resolveLanguage(input: ClinicBotInput): Language {
   if (input.clinic.language === 'es' || input.clinic.language === 'en') {
     return input.clinic.language

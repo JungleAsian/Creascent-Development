@@ -14,6 +14,8 @@ export interface ErrorReviewsRepository {
   /** Record a runtime error (e.g. a bot LLM failure) for later operator review. */
   create(data: CreateErrorReviewInput): Promise<ErrorReview>
   listOpen(clinicId: string): Promise<ErrorReview[]>
+  /** A single error review scoped to its clinic, or null. */
+  findById(clinicId: string, id: string): Promise<ErrorReview | null>
   /** All error reviews for a clinic (newest first), optionally filtered by status. */
   listByClinic(clinicId: string, status?: ErrorReview['status']): Promise<ErrorReview[]>
   /** Mark an error reviewed+resolved by an operator. Returns the updated row or null. */
@@ -43,6 +45,14 @@ export function createErrorReviewsRepository(sql: Sql): ErrorReviewsRepository {
         WHERE clinic_id = ${clinicId} AND status = 'open'
         ORDER BY created_at DESC
       `
+    },
+
+    async findById(clinicId, id) {
+      const rows = await sql<ErrorReview[]>`
+        SELECT * FROM error_reviews
+        WHERE clinic_id = ${clinicId} AND id = ${id}
+      `
+      return rows[0] ?? null
     },
 
     async listByClinic(clinicId, status) {

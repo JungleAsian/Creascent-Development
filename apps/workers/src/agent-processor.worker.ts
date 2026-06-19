@@ -15,6 +15,7 @@ import {
   isBotPaused,
   detectHumanRequest,
   isEmergencyMessage,
+  isLikelyQuestion,
   emergencyNotice,
   handoffNotice,
   isOptOutMessage,
@@ -564,6 +565,27 @@ export async function processAgentJob(job: Job): Promise<void> {
         // (resolveLanguage honors a clinic-forced language over raw detection) so
         // subsequent turns stay consistent.
         await persistPatientLanguage(patients, data.clinicId, patient, botResult.language)
+
+        // Unanswered question (Req 29 Error Review): the bot replied but found NO
+        // clinic-KB match, so the answer was ungrounded — exactly the case an
+        // operator should review and (via the Add-to-KB path) turn into approved
+        // content. Gated by isLikelyQuestion so greetings/thanks don't flood the
+        // queue. Best-effort: a logging failure never affects the patient reply.
+        if (botResult.replied && !kbHit && isLikelyQuestion(data.message)) {
+          await errorReviews
+            .create({
+              clinicId: data.clinicId,
+              errorType: 'unanswered_question',
+              errorMessage: data.message,
+              context: {
+                conversationId: data.conversationId,
+                channel: data.channel,
+                language: botResult.language,
+                kbChunks: chunks.length,
+              },
+            })
+            .catch((err) => console.error('[agent] failed to log unanswered question:', err))
+        }
 
         // Record KB usage for the analytics KB-hit rate (Gap #39). Re-read so we
         // merge onto the metadata the sentiment block just persisted.

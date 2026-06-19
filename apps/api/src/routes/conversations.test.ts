@@ -66,6 +66,7 @@ const store = vi.hoisted(() => ({
     ],
   ]),
   created: [] as Record<string, unknown>[],
+  flagged: [] as Record<string, unknown>[],
   // Internal notes (Req 13). 'note-1' is authored by u-1; edit/delete is author-only.
   notes: new Map<string, Record<string, unknown>>([
     [
@@ -137,6 +138,13 @@ vi.mock('@docmee/db', () => ({
   createKnowledgeRepository: () => ({}),
   createNotificationsRepository: () => ({}),
   createUsersRepository: () => ({}),
+  createErrorReviewsRepository: () => ({
+    create: async (data: Record<string, unknown>) => {
+      const row = { ...data, id: `err-${store.flagged.length + 1}`, status: 'open' }
+      store.flagged.push(row)
+      return row
+    },
+  }),
 }))
 
 import { buildApp } from '../app.js'
@@ -308,6 +316,44 @@ describe('conversation routes', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/conversations/open-1/notes/note-1',
+      payload: { content: 'x' },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  // ── Flag a bad bot response → Error Review (Req 29) ──
+  it('POST /conversations/:id/flag-response records a bad_response error review', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/open-1/flag-response',
+      headers: authHeader('secretary', 'sec-9'),
+      payload: { messageId: 'm-1', content: 'Tómese 2 ibuprofenos', note: 'gave dosage advice' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.error.errorType).toBe('bad_response')
+    expect(body.error.errorMessage).toBe('Tómese 2 ibuprofenos')
+    expect(body.error.context).toMatchObject({
+      conversationId: 'open-1',
+      messageId: 'm-1',
+      flaggedBy: 'sec-9',
+    })
+  })
+
+  it('POST /conversations/:id/flag-response for an unknown conversation → 404', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/nope/flag-response',
+      headers: authHeader('secretary', 'sec-9'),
+      payload: { content: 'x' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('POST /conversations/:id/flag-response without auth → 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/open-1/flag-response',
       payload: { content: 'x' },
     })
     expect(res.statusCode).toBe(401)
