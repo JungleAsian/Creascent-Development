@@ -12,6 +12,7 @@ import { useI18n } from '../hooks/useI18n'
 import { formatDateTime } from '../format'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
+import { deliveryIndicator, type DeliveryTone } from '../delivery'
 import type {
   Appointment,
   AppointmentStatus,
@@ -220,20 +221,24 @@ export function ConversationView({
         ) : messages.length === 0 ? (
           <p className="text-sm text-gray-400">{t('view.noMessages')}</p>
         ) : (
-          messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              roleLabel={t(ROLE_LABEL[m.role])}
-              voiceLabel={t('view.voiceNote')}
-              flagLabel={t('view.flagResponse')}
-              flaggedLabel={t('view.flagged')}
-              flagged={flaggedIds.has(m.id)}
-              flagging={flagMutation.isPending && flagMutation.variables?.id === m.id}
-              onFlag={() => flagMutation.mutate(m)}
-              language={language}
-            />
-          ))
+          messages.map((m) => {
+            const ind = deliveryIndicator(m)
+            return (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                roleLabel={t(ROLE_LABEL[m.role])}
+                voiceLabel={t('view.voiceNote')}
+                flagLabel={t('view.flagResponse')}
+                flaggedLabel={t('view.flagged')}
+                flagged={flaggedIds.has(m.id)}
+                flagging={flagMutation.isPending && flagMutation.variables?.id === m.id}
+                onFlag={() => flagMutation.mutate(m)}
+                delivery={ind ? { glyph: ind.glyph, tone: ind.tone, label: t(ind.labelKey) } : null}
+                language={language}
+              />
+            )
+          })
         )}
       </div>
 
@@ -319,6 +324,14 @@ function ApptSummary({ conversationId, patientId }: { conversationId: string; pa
   )
 }
 
+// Tailwind classes per delivery tone (Req 3). `muted` rides the bubble's own text
+// colour at low opacity (subtle ✓/✓✓), `read` is a blue double-check, `failed` red.
+const DELIVERY_TONE: Record<DeliveryTone, string> = {
+  muted: 'opacity-70',
+  read: 'text-sky-500 dark:text-sky-400',
+  failed: 'text-red-600 dark:text-red-400',
+}
+
 function MessageBubble({
   message,
   roleLabel,
@@ -328,6 +341,7 @@ function MessageBubble({
   flagged,
   flagging,
   onFlag,
+  delivery,
   language,
 }: {
   message: Message
@@ -338,6 +352,7 @@ function MessageBubble({
   flagged: boolean
   flagging: boolean
   onFlag: () => void
+  delivery: { glyph: string; tone: DeliveryTone; label: string } | null
   language: 'es' | 'en'
 }) {
   // Patient messages on the left; clinic (agent/bot/system) on the right.
@@ -362,6 +377,16 @@ function MessageBubble({
         <div className="mb-0.5 flex items-center gap-2 text-[10px] opacity-70">
           <span>{roleLabel}</span>
           <span>{formatDateTime(message.createdAt, language)}</span>
+          {delivery && (
+            <span
+              className={`ml-auto flex items-center gap-1 font-semibold ${DELIVERY_TONE[delivery.tone]}`}
+              title={delivery.label}
+            >
+              <span aria-hidden>{delivery.glyph}</span>
+              {delivery.tone === 'failed' && <span>{delivery.label}</span>}
+              <span className="sr-only">{delivery.label}</span>
+            </span>
+          )}
         </div>
         {isVoiceNote && (
           <div className="mb-1 flex items-center gap-1 text-[11px] font-medium opacity-80">

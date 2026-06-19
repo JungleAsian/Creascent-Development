@@ -24,6 +24,7 @@ export type ConversationStatus =
 export type Channel = 'whatsapp' | 'messenger' | 'instagram'
 export type MessageRole = 'user' | 'assistant' | 'system' | 'agent'
 export type ContentType = 'text' | 'audio' | 'image' | 'template' | 'interactive'
+export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed'
 
 export interface Conversation {
   id: string
@@ -48,6 +49,9 @@ export interface Message {
   content: string
   contentType: ContentType
   transcription: string | null
+  // Req 3: latest delivery state for an outbound message (sent/delivered/read/
+  // failed). null/absent for inbound messages and sends with no receipt yet.
+  deliveryStatus?: DeliveryStatus | null
   createdAt: string
   metadata: Record<string, unknown>
 }

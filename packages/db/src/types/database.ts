@@ -189,6 +189,13 @@ export interface ConversationMessage {
   tokenCount: number | null
   metadata: Record<string, unknown>
   createdAt: string
+  /**
+   * Latest delivery-lifecycle state for an outbound message (Req 3), derived from
+   * the newest message_delivery_events row. null when no receipt exists yet (e.g.
+   * an inbound `user` message, a Messenger/Instagram send, or a pre-feature send).
+   * Only populated by listByConversation; absent on freshly created rows.
+   */
+  deliveryStatus?: DeliveryStatus | null
 }
 
 export interface ConversationTag {

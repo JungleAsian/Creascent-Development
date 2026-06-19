@@ -65,10 +65,22 @@ export function createMessagesRepository(sql: Sql): MessagesRepository {
     },
 
     async listByConversation(clinicId, conversationId) {
+      // Attach the latest delivery-lifecycle state per message (Req 3) so the inbox
+      // can show a sent/delivered/read/failed indicator on outbound bubbles. The
+      // LATERAL picks the newest message_delivery_events row; messages with no
+      // receipt (inbound, Messenger/Instagram, pre-feature sends) get null.
       return sql<ConversationMessage[]>`
-        SELECT * FROM conversation_messages
-        WHERE clinic_id = ${clinicId} AND conversation_id = ${conversationId}
-        ORDER BY created_at
+        SELECT m.*, d.status AS delivery_status
+        FROM conversation_messages m
+        LEFT JOIN LATERAL (
+          SELECT status
+          FROM message_delivery_events e
+          WHERE e.message_id = m.id
+          ORDER BY e.created_at DESC
+          LIMIT 1
+        ) d ON TRUE
+        WHERE m.clinic_id = ${clinicId} AND m.conversation_id = ${conversationId}
+        ORDER BY m.created_at
       `
     },
 
