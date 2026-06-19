@@ -1,7 +1,11 @@
 // Gap #13 / Req 11 — the canonical conversation tag palette. `name` is the stable
 // value stored/queried via the API; the labels are display-only and localized.
-// Two of these are also applied automatically by the workers: `new_patient` (on a
-// patient's first contact) and `appointment_scheduled` (when a booking confirms).
+// Several of these are applied automatically by the workers: `new_patient` (first
+// contact) and `appointment_scheduled` (booking confirmed), plus the safety/
+// compliance flags `emergency` + `medical_safety` (Req 20), `opted_out` (Req 19)
+// and `patient_upset` (Req 18). Every worker-applied tag MUST live here so it
+// renders with a label/colour in the TagsPanel (which only shows palette entries)
+// instead of an invisible or raw-string flag — see tagTypes.test.ts.
 import type { PanelLanguage } from './types'
 
 export interface TagType {
@@ -12,6 +16,12 @@ export interface TagType {
 }
 
 export const TAG_TYPES: TagType[] = [
+  // Safety / compliance flags raised automatically by the workers. Kept at the top
+  // so the most consequential states are the first chips a secretary sees.
+  { name: 'emergency', labelEs: 'Emergencia', labelEn: 'Emergency', color: '#dc2626' },
+  { name: 'medical_safety', labelEs: 'Seguridad médica', labelEn: 'Medical safety', color: '#dc2626' },
+  { name: 'patient_upset', labelEs: 'Paciente molesto', labelEn: 'Upset patient', color: '#ea580c' },
+  { name: 'opted_out', labelEs: 'Dado de baja', labelEn: 'Opted out', color: '#6b7280' },
   { name: 'urgent', labelEs: 'Urgente', labelEn: 'Urgent', color: '#dc2626' },
   { name: 'appointment', labelEs: 'Cita', labelEn: 'Appointment', color: '#2563eb' },
   { name: 'appointment_scheduled', labelEs: 'Cita agendada', labelEn: 'Appointment scheduled', color: '#2563eb' },

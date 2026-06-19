@@ -11,6 +11,7 @@ import { api } from '@/shared/api/client'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { useTeam } from '@/shared/hooks/useTeam'
 import { formatDateTime, relativeTime } from '@/shared/format'
+import { TAG_TYPES, tagColor, tagLabel } from '@/shared/tagTypes'
 import type {
   Appointment,
   AppointmentStatus,
@@ -146,15 +147,23 @@ export default function PatientHistoryPage({
               <p className="text-sm text-gray-400">{t('patient.noTags')}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {tags.map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="rounded-full px-2 py-0.5 text-xs font-medium"
-                    style={{ backgroundColor: `${tag.color}22`, color: tag.color }}
-                  >
-                    {tag.name}
-                  </span>
-                ))}
+                {tags.map((tag) => {
+                  // Prefer the palette's localized label + colour for known tags
+                  // (incl. worker-applied safety flags like medical_safety, which
+                  // the DB stores with a generic default colour); fall back to the
+                  // raw name + stored colour for anything not in the palette.
+                  const known = TAG_TYPES.some((tt) => tt.name === tag.name)
+                  const color = known ? tagColor(tag.name) : tag.color
+                  return (
+                    <span
+                      key={tag.id}
+                      className="rounded-full px-2 py-0.5 text-xs font-medium"
+                      style={{ backgroundColor: `${color}22`, color }}
+                    >
+                      {known ? tagLabel(tag.name, language) : tag.name}
+                    </span>
+                  )
+                })}
               </div>
             )}
           </Section>
