@@ -270,6 +270,19 @@ export async function processAgentJob(job: Job): Promise<void> {
       await persistPatientLanguage(patients, data.clinicId, patient, patientLanguage)
     }
 
+    // Auto-tag a brand-new patient's conversation (Req 11). Runs on first contact,
+    // before any routing branch returns, so the `new_patient` tag is applied no
+    // matter how the message routes (bot / emergency / handoff). createTag upserts
+    // and addTag is ON CONFLICT DO NOTHING, so this is idempotent.
+    if (data.conversationId && conversation && data.isNewPatient) {
+      const tag = await conversations.createTag({
+        clinicId: data.clinicId,
+        name: 'new_patient',
+        color: '#16a34a',
+      })
+      await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+    }
+
     // Medical emergency (Req 20: emergency routing). A cheap pre-LLM keyword check
     // runs FIRST — before business hours, opt-out, custom flows and intent
     // classification — so a true emergency (chest pain, can't breathe, bleeding,

@@ -308,6 +308,15 @@ export async function processSchedulingJob(job: Job): Promise<void> {
             })
             await appointments.update(data.clinicId, created.id, { status: 'confirmed', googleEventId })
             await appointments.addEvent(data.clinicId, created.id, 'confirmed')
+            // Auto-tag the conversation as appointment_scheduled (Req 11). Idempotent.
+            if (data.conversationId) {
+              const tag = await conversations.createTag({
+                clinicId: data.clinicId,
+                name: 'appointment_scheduled',
+                color: '#2563eb',
+              })
+              await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+            }
           },
         })
         await reply(result.reply)

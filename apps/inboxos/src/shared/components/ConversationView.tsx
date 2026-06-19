@@ -12,13 +12,24 @@ import { useI18n } from '../hooks/useI18n'
 import { formatDateTime } from '../format'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
-import type { Conversation, Message, MessageRole } from '../types'
+import type { Conversation, ConversationStatus, Message, MessageRole } from '../types'
 
 const ROLE_LABEL: Record<MessageRole, 'view.role.user' | 'view.role.agent' | 'view.role.assistant' | 'view.role.system'> = {
   user: 'view.role.user',
   agent: 'view.role.agent',
   assistant: 'view.role.assistant',
   system: 'view.role.system',
+}
+
+// Req 11: lifecycle transitions a secretary can pick manually. assigned/handoff
+// are driven by the dedicated assign/handoff flows, so they are excluded here
+// (the current status is still shown if the conversation is in one of them).
+const MANUAL_STATUSES: ConversationStatus[] = ['open', 'pending', 'snoozed', 'resolved', 'archived']
+
+// A conversation is "closed" (composer disabled, reopen offered) when resolved or
+// archived — both are terminal; reopening either creates a fresh conversation.
+function isClosedStatus(status: ConversationStatus | undefined): boolean {
+  return status === 'resolved' || status === 'archived'
 }
 
 export function ConversationView({
@@ -45,7 +56,7 @@ export function ConversationView({
 
   const conversation = conversationQuery.data?.conversation
   const messages = messagesQuery.data?.messages ?? []
-  const resolved = conversation?.status === 'resolved'
+  const closed = isClosedStatus(conversation?.status)
   // The bot drives an open thread; once a human is assigned or it's escalated, a
   // secretary is in control.
   const humanMode = conversation?.status === 'assigned' || conversation?.status === 'handoff'
@@ -80,6 +91,15 @@ export function ConversationView({
     },
   })
 
+  const statusMutation = useMutation({
+    mutationFn: (status: ConversationStatus) =>
+      api.post(`/conversations/${conversationId}/status`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
   function onSend(e: FormEvent) {
     e.preventDefault()
     const content = draft.trim()
@@ -105,8 +125,26 @@ export function ConversationView({
                 {t('patient.title')}
               </Link>
             )}
+            {conversation && (
+              <select
+                aria-label={t('view.changeStatus')}
+                value={conversation.status}
+                onChange={(e) => statusMutation.mutate(e.target.value as ConversationStatus)}
+                disabled={statusMutation.isPending}
+                className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+              >
+                {(MANUAL_STATUSES.includes(conversation.status)
+                  ? MANUAL_STATUSES
+                  : [conversation.status, ...MANUAL_STATUSES]
+                ).map((s) => (
+                  <option key={s} value={s}>
+                    {t(`conv.status.${s}` as const)}
+                  </option>
+                ))}
+              </select>
+            )}
             {conversation &&
-            (resolved ? (
+            (closed ? (
               <button
                 type="button"
                 onClick={() => reopenMutation.mutate()}
@@ -162,7 +200,7 @@ export function ConversationView({
       </div>
 
       {/* Composer */}
-      {resolved ? (
+      {closed ? (
         <p className="border-t border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
           {t('view.closedNotice')}
         </p>

@@ -1,5 +1,7 @@
-// Gap #13 — the 13 canonical conversation tag types. `name` is the stable value
-// stored/queried via the API; the labels are display-only and localized.
+// Gap #13 / Req 11 — the canonical conversation tag palette. `name` is the stable
+// value stored/queried via the API; the labels are display-only and localized.
+// Two of these are also applied automatically by the workers: `new_patient` (on a
+// patient's first contact) and `appointment_scheduled` (when a booking confirms).
 import type { PanelLanguage } from './types'
 
 export interface TagType {
@@ -12,6 +14,7 @@ export interface TagType {
 export const TAG_TYPES: TagType[] = [
   { name: 'urgent', labelEs: 'Urgente', labelEn: 'Urgent', color: '#dc2626' },
   { name: 'appointment', labelEs: 'Cita', labelEn: 'Appointment', color: '#2563eb' },
+  { name: 'appointment_scheduled', labelEs: 'Cita agendada', labelEn: 'Appointment scheduled', color: '#2563eb' },
   { name: 'reschedule', labelEs: 'Reprogramar', labelEn: 'Reschedule', color: '#7c3aed' },
   { name: 'cancellation', labelEs: 'Cancelación', labelEn: 'Cancellation', color: '#b91c1c' },
   { name: 'billing', labelEs: 'Facturación', labelEn: 'Billing', color: '#0891b2' },

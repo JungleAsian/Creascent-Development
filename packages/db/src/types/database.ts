@@ -134,7 +134,16 @@ export interface PatientContact {
   updatedAt: string
 }
 
-export type ConversationStatus = 'open' | 'assigned' | 'resolved' | 'handoff'
+// Req 11: 7-state conversation lifecycle. The bot replies only while `open`
+// (handoff.ts isBotPaused); every other status keeps it silent.
+export type ConversationStatus =
+  | 'open'
+  | 'pending'
+  | 'assigned'
+  | 'handoff'
+  | 'snoozed'
+  | 'resolved'
+  | 'archived'
 export type ContentType        = 'text' | 'audio' | 'image' | 'template' | 'interactive'
 export type MessageRole        = 'user' | 'assistant' | 'system' | 'agent'
 

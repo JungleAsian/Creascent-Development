@@ -41,7 +41,7 @@ export interface CreateNoteInput {
 export interface ConversationsRepository {
   findById(clinicId: string, id: string): Promise<Conversation | null>
   /**
-   * The most recent still-active (not resolved) conversation for a contact on a
+   * The most recent still-active (not resolved/archived) conversation for a contact on a
    * channel, or null. Lets ingest workers thread a new inbound message onto the
    * patient's open thread instead of opening a duplicate.
    */
@@ -87,7 +87,7 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         WHERE clinic_id = ${clinicId}
           AND channel = ${channel}
           AND channel_contact_handle = ${contactHandle}
-          AND status <> 'resolved'
+          AND status NOT IN ('resolved', 'archived')
         ORDER BY last_message_at DESC NULLS LAST, created_at DESC
         LIMIT 1
       `

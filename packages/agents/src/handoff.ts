@@ -9,8 +9,15 @@
 // timeout monitor.
 import type { Language } from './botbase/language-detector.js'
 
-/** Conversation lifecycle states relevant to the interruption rule. */
-export type HandoffStatus = 'open' | 'assigned' | 'resolved' | 'handoff'
+/** Conversation lifecycle states relevant to the interruption rule (Req 11: 7). */
+export type HandoffStatus =
+  | 'open'
+  | 'pending'
+  | 'assigned'
+  | 'handoff'
+  | 'snoozed'
+  | 'resolved'
+  | 'archived'
 
 /** Metadata key set when a human reply auto-pauses the bot. */
 export const BOT_PAUSED_AT = 'botPausedAt'

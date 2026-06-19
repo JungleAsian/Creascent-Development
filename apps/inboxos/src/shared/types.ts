@@ -12,7 +12,15 @@ export interface AuthUser {
   clinicId: string
 }
 
-export type ConversationStatus = 'open' | 'assigned' | 'resolved' | 'handoff'
+// Req 11: 7-state conversation lifecycle (mirrors @docmee/db).
+export type ConversationStatus =
+  | 'open'
+  | 'pending'
+  | 'assigned'
+  | 'handoff'
+  | 'snoozed'
+  | 'resolved'
+  | 'archived'
 export type Channel = 'whatsapp' | 'messenger' | 'instagram'
 export type MessageRole = 'user' | 'assistant' | 'system' | 'agent'
 export type ContentType = 'text' | 'audio' | 'image' | 'template' | 'interactive'

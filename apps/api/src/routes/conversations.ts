@@ -4,6 +4,7 @@
 //   GET    /conversations/:id
 //   POST   /conversations/:id/assign           (secretary, clinic_admin)
 //   POST   /conversations/:id/close
+//   POST   /conversations/:id/status           (Req 11 — set any of the 7 statuses)
 //   POST   /conversations/:id/resume-bot        (secretary, doctor, clinic_admin) — return to bot
 //   POST   /conversations/:id/reopen           → CREATES A NEW conversation (Decision 4)
 //   GET    /conversations/:id/messages
@@ -19,7 +20,16 @@ import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 
-const STATUS_VALUES = ['open', 'assigned', 'resolved', 'handoff'] as const
+// Req 11: the 7-state conversation lifecycle.
+const STATUS_VALUES = [
+  'open',
+  'pending',
+  'assigned',
+  'handoff',
+  'snoozed',
+  'resolved',
+  'archived',
+] as const
 
 const listQuerySchema = z.object({
   clinic_id: z.string().optional(),
@@ -27,6 +37,7 @@ const listQuerySchema = z.object({
   assigned_to: z.string().optional(),
 })
 const assignSchema = z.object({ userId: z.string().optional() })
+const statusSchema = z.object({ status: z.enum(STATUS_VALUES) })
 const messageSchema = z.object({
   content: z.string().min(1),
   contentType: z.enum(['text', 'audio', 'image', 'template', 'interactive']).optional(),
@@ -100,6 +111,38 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
     if (!conversation) return reply.code(404).send({ error: 'Conversation not found' })
     return { conversation }
   })
+
+  // ── Set status (Req 11) — generic lifecycle transition ──
+  // Moves a conversation to any of the 7 statuses (pending/snoozed/archived plus
+  // open/resolved). Setting it back to `open` also clears the bot-pause metadata
+  // so the bot truly resumes. The dedicated assign/close/resume-bot routes remain
+  // the one-click paths for the common transitions.
+  app.post<{ Params: { id: string } }>(
+    '/:id/status',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const parsed = validate(statusSchema, request.body, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+      const conversation = await withDb(async (sql) => {
+        const repo = createConversationsRepository(sql)
+        const existing = await repo.findById(clinicId, request.params.id)
+        if (!existing) return null
+        const metadata: Record<string, unknown> = {
+          ...existing.metadata,
+          statusChangedAt: new Date().toISOString(),
+        }
+        if (parsed.data.status === 'open') {
+          delete metadata.botPausedAt
+          delete metadata.handoffReason
+        }
+        return repo.update(clinicId, request.params.id, { status: parsed.data.status, metadata })
+      })
+      if (!conversation) return reply.code(404).send({ error: 'Conversation not found' })
+      return { conversation }
+    },
+  )
 
   // ── Return to bot (Rev1 #5/#6) — manual reactivation of a paused bot ──
   // Flips a human-owned conversation back to `open` so the bot resumes auto-
