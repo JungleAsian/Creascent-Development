@@ -94,6 +94,8 @@ beforeEach(() => {
   h.listEnabledFlows.mockResolvedValue([])
   h.classifyIntent.mockResolvedValue('general_question')
   h.createTag.mockResolvedValue({ id: 'tag1' })
+  // runClinicBot always resolves a ClinicBotResult; the worker reads .language.
+  h.runClinicBot.mockResolvedValue({ replied: true, triggeredHandoff: false, language: 'es' })
 })
 
 describe('processAgentJob — bot interruption rule', () => {

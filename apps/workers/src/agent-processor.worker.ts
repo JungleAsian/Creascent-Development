@@ -79,6 +79,27 @@ function isPatientOptedOut(patient: Patient | null): boolean {
   return patient ? (patient.metadata as { optedOut?: unknown }).optedOut === true : false
 }
 
+/**
+ * Bilingual bot (Req 22): persist the patient's language to patients.metadata so
+ * every later turn replies in the SAME language. Without this, getPatientLanguage
+ * falls back to 'es' on message 2+ and an English-speaking patient is answered in
+ * Spanish after their first message. Idempotent: only writes when the stored value
+ * actually changes, and is a no-op for an unknown (null) patient.
+ */
+async function persistPatientLanguage(
+  patients: ReturnType<typeof createPatientsRepository>,
+  clinicId: string,
+  patient: Patient | null,
+  language: Language,
+): Promise<void> {
+  if (!patient) return
+  const current = (patient.metadata as { language?: unknown }).language
+  if (current === language) return
+  await patients.update(clinicId, patient.id, {
+    metadata: { ...patient.metadata, language },
+  })
+}
+
 function activeWhatsAppAccount(accounts: ChannelAccount[]): ChannelAccount | undefined {
   return accounts.find((a) => a.channel === 'whatsapp' && a.status === 'active')
 }
@@ -241,6 +262,14 @@ export async function processAgentJob(job: Job): Promise<void> {
       ? detectLanguage(data.message)
       : getPatientLanguage(patient)
 
+    // Bilingual bot (Req 22): capture the language from the patient's FIRST message
+    // so every later turn — and any non-bot route (calbot booking, alertflow) — can
+    // answer in the same language. The botbase route re-persists the bot's resolved
+    // language below in case the clinic forces a fixed reply language.
+    if (data.isNewPatient) {
+      await persistPatientLanguage(patients, data.clinicId, patient, patientLanguage)
+    }
+
     // Medical emergency (Req 20: emergency routing). A cheap pre-LLM keyword check
     // runs FIRST — before business hours, opt-out, custom flows and intent
     // classification — so a true emergency (chest pain, can't breathe, bleeding,
@@ -349,7 +378,7 @@ export async function processAgentJob(job: Job): Promise<void> {
         const chunks = await knowledge.listEmbeddedChunks(data.clinicId)
         let kbHit = false
 
-        await runClinicBot(
+        const botResult = await runClinicBot(
           {
             clinicId: data.clinicId,
             conversationId: data.conversationId ?? null,
@@ -378,6 +407,11 @@ export async function processAgentJob(job: Job): Promise<void> {
                 .then(() => {}),
           },
         )
+
+        // Bilingual bot (Req 22): persist the language the bot actually replied in
+        // (resolveLanguage honors a clinic-forced language over raw detection) so
+        // subsequent turns stay consistent.
+        await persistPatientLanguage(patients, data.clinicId, patient, botResult.language)
 
         // Record KB usage for the analytics KB-hit rate (Gap #39). Re-read so we
         // merge onto the metadata the sentiment block just persisted.
