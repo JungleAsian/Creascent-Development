@@ -47,6 +47,87 @@ export async function sendWhatsAppText(
 }
 
 /**
+ * Upload media to the WhatsApp Cloud API (step 1 of the two-step outbound-media
+ * flow — Req 3) and return the resumable media id. The id is then referenced by
+ * `sendWhatsAppImage`. Unlike the receive path (which resolves a short-lived URL),
+ * sending requires the bytes be uploaded to Meta first so they can be referenced
+ * by id. Mirrors the Graph `/{phone-number-id}/media` endpoint; throws on a non-2xx.
+ */
+export async function uploadWhatsAppMedia(
+  phoneNumberId: string,
+  accessToken: string,
+  bytes: Uint8Array,
+  mimeType: string,
+  filename: string,
+): Promise<string> {
+  const form = new FormData()
+  form.append('messaging_product', 'whatsapp')
+  form.append('type', mimeType)
+  form.append('file', new Blob([bytes], { type: mimeType }), filename)
+
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/media`,
+    {
+      method: 'POST',
+      // No explicit Content-Type — fetch sets the multipart boundary from the FormData.
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`WhatsApp media upload failed ${res.status}: ${await res.text()}`)
+  }
+
+  const data = (await res.json()) as { id?: string }
+  if (!data.id) throw new Error('WhatsApp media upload returned no id')
+  return data.id
+}
+
+/**
+ * Send an image message referencing an already-uploaded media id (step 2 — Req 3);
+ * returns the wamid (or null). The optional caption renders beneath the image in
+ * the patient's WhatsApp. A missing id in the response yields null — the send still
+ * succeeded.
+ */
+export async function sendWhatsAppImage(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  mediaId: string,
+  caption?: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toWaId,
+        type: 'image',
+        image: { id: mediaId, ...(caption ? { caption } : {}) },
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`WhatsApp image send failed ${res.status}: ${await res.text()}`)
+  }
+
+  try {
+    const data = (await res.json()) as { messages?: Array<{ id?: string }> }
+    return data.messages?.[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Send an approved WhatsApp message template (HSM); returns the wamid (or null).
  * A real `type:'template'` message is the ONLY way to reach a patient outside
  * Meta's 24-hour customer-care window (Req 3/14/19). `templateName` + `language`

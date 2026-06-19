@@ -147,9 +147,40 @@ async function blobUrl(path: string, isRetry = false): Promise<string> {
   return URL.createObjectURL(await res.blob())
 }
 
+// Authenticated multipart upload (Req 3 — a secretary attaches an image). Mirrors
+// request()'s bearer header + single 401-refresh, but sends a FormData body and
+// lets the browser set the multipart Content-Type (with its boundary) itself.
+async function upload<T>(path: string, form: FormData, isRetry = false): Promise<T> {
+  const { accessToken } = authSnapshot()
+  const headers: Record<string, string> = {}
+  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`
+
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form })
+
+  if (res.status === 401 && !isRetry) {
+    const next = await refreshAccessToken()
+    if (next) return upload<T>(path, form, true)
+    redirectToLogin()
+    throw new ApiError(401, 'Unauthorized')
+  }
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data?.error) message = data.error
+    } catch {
+      // non-JSON error body — keep the status text
+    }
+    throw new ApiError(res.status, message)
+  }
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   blobUrl,
+  upload,
   post: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
     request<T>(path, { ...opts, method: 'POST', body }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),

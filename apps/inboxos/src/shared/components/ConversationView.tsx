@@ -4,7 +4,7 @@
 // the AI bot or a human secretary is driving the thread, a send box, and
 // resolve/reopen actions. Reopen creates a NEW conversation (Decision 4) and the
 // view follows the caller to it via onConversationChange.
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -63,7 +63,9 @@ export function ConversationView({
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set())
+  const [attachError, setAttachError] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const conversationQuery = useQuery({
     queryKey: ['conversation', conversationId],
@@ -104,6 +106,19 @@ export function ConversationView({
     mutationFn: (templateId: string) =>
       api.post(`/conversations/${conversationId}/send-template`, { templateId }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+      qc.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+
+  // Req 3: attach an image and DELIVER it to the patient over WhatsApp (two-step
+  // Graph media upload, server-side). Like a manual reply it pauses the bot; the
+  // current draft (if any) rides along as the image caption. WhatsApp-only.
+  const sendMediaMutation = useMutation({
+    mutationFn: (form: FormData) =>
+      api.upload(`/conversations/${conversationId}/send-media`, form),
+    onSuccess: () => {
+      setDraft('')
       qc.invalidateQueries({ queryKey: ['messages', conversationId] })
       qc.invalidateQueries({ queryKey: ['conversations'] })
     },
@@ -150,6 +165,25 @@ export function ConversationView({
     e.preventDefault()
     const content = draft.trim()
     if (content) sendMutation.mutate(content)
+  }
+
+  // Validate the picked image client-side (mirrors the server: JPEG/PNG, ≤5 MB),
+  // then send it with the current draft as an optional caption. The caption part is
+  // appended before the file so the server reads it off file.fields.
+  function onAttach(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file after an error
+    if (!file) return
+    if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setAttachError(true)
+      return
+    }
+    setAttachError(false)
+    const form = new FormData()
+    const caption = draft.trim()
+    if (caption) form.append('caption', caption)
+    form.append('file', file)
+    sendMediaMutation.mutate(form)
   }
 
   return (
@@ -269,9 +303,14 @@ export function ConversationView({
           {/* Req 3: the reply is now delivered to the patient over the channel, so a
               failed send (expired token, send outside the 24h window) surfaces here —
               the draft is preserved so the secretary can retry. */}
-          {(sendMutation.isError || sendTemplateMutation.isError) && (
+          {(sendMutation.isError || sendTemplateMutation.isError || sendMediaMutation.isError) && (
             <p className="px-3 pt-2 text-xs font-medium text-red-600 dark:text-red-400">
               ⚠ {t('view.sendFailed')}
+            </p>
+          )}
+          {attachError && (
+            <p className="px-3 pt-2 text-xs font-medium text-red-600 dark:text-red-400">
+              ⚠ {t('view.attachInvalid')}
             </p>
           )}
           <form onSubmit={onSend} className="flex items-end gap-2 p-3">
@@ -284,6 +323,29 @@ export function ConversationView({
                 onPick={(templateId) => sendTemplateMutation.mutate(templateId)}
                 disabled={sendTemplateMutation.isPending}
               />
+            )}
+            {/* Req 3: attach an image (WhatsApp only — Messenger/Instagram attachment
+                upload is a separate mechanism). */}
+            {conversation?.channel === 'whatsapp' && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  onChange={onAttach}
+                />
+                <button
+                  type="button"
+                  title={t('view.attachImage')}
+                  aria-label={t('view.attachImage')}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sendMediaMutation.isPending}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  📎
+                </button>
+              </>
             )}
             <textarea
               value={draft}

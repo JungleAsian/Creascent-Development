@@ -16,17 +16,21 @@ const { fetchMedia } = vi.hoisted(() => ({
 vi.mock('../lib/whatsapp-media.js', () => ({ fetchWhatsAppMedia: fetchMedia }))
 // Req 3/33/34 outbound send: stub the inlined channel senders so no real Meta
 // call runs. Each returns the provider message id the route persists.
-const { sendWa, sendWaTpl, sendMsgr, sendIg } = vi.hoisted(() => ({
+const { sendWa, sendWaTpl, sendMsgr, sendIg, uploadWaMedia, sendWaImage } = vi.hoisted(() => ({
   sendWa: vi.fn(async () => 'wamid.OUT1' as string | null),
   sendWaTpl: vi.fn(async () => 'wamid.TPL1' as string | null),
   sendMsgr: vi.fn(async () => 'mid.OUT1' as string | null),
   sendIg: vi.fn(async () => 'mid.IG1' as string | null),
+  uploadWaMedia: vi.fn(async () => 'media-up-1'),
+  sendWaImage: vi.fn(async () => 'wamid.IMG1' as string | null),
 }))
 vi.mock('../lib/channel-send.js', () => ({
   sendWhatsAppText: sendWa,
   sendWhatsAppTemplate: sendWaTpl,
   sendMessengerText: sendMsgr,
   sendInstagramText: sendIg,
+  uploadWhatsAppMedia: uploadWaMedia,
+  sendWhatsAppImage: sendWaImage,
 }))
 // Mutable clinic config so a test can flip a channel's connected state.
 const clinicCfg = vi.hoisted(() => ({
@@ -126,6 +130,19 @@ const store = vi.hoisted(() => ({
         clinicId: 'c-1',
         channel: 'messenger',
         channelContactHandle: 'PSID-123',
+        status: 'open',
+        assignedTo: null,
+        metadata: {},
+      },
+    ],
+    // Open WhatsApp thread reserved for the outbound image-attachment test (Req 3).
+    [
+      'wa-media',
+      {
+        id: 'wa-media',
+        clinicId: 'c-1',
+        channel: 'whatsapp',
+        channelContactHandle: '+50213131313',
         status: 'open',
         assignedTo: null,
         metadata: {},
@@ -278,6 +295,37 @@ const authHeader = (role: Parameters<typeof tokenFor>[0], userId?: string) => ({
   authorization: `Bearer ${tokenFor(role, userId)}`,
 })
 const auth = authHeader('clinic_admin')
+
+// Build a multipart/form-data body for the outbound image-send test (Req 3). The
+// caption part is appended BEFORE the file so @fastify/multipart exposes it on
+// file.fields when request.file() resolves the file part.
+const BOUNDARY = '----docmeetestboundary'
+function imagePayload({
+  caption,
+  filename = 'photo.jpg',
+  contentType = 'image/jpeg',
+  bytes = 'IMAGEBYTES',
+}: {
+  caption?: string
+  filename?: string
+  contentType?: string
+  bytes?: string
+} = {}) {
+  const parts: string[] = []
+  if (caption !== undefined) {
+    parts.push(`--${BOUNDARY}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`)
+  }
+  parts.push(
+    `--${BOUNDARY}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: ${contentType}\r\n\r\n${bytes}\r\n`,
+  )
+  parts.push(`--${BOUNDARY}--\r\n`)
+  return Buffer.from(parts.join(''), 'utf8')
+}
+const multipartHeaders = (role: Parameters<typeof tokenFor>[0], userId?: string) => ({
+  ...authHeader(role, userId),
+  'content-type': `multipart/form-data; boundary=${BOUNDARY}`,
+})
 
 describe('conversation routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>
@@ -703,5 +751,78 @@ describe('conversation routes', () => {
     expect(store.flagged.at(-1)!.errorType).toBe('meta_send_failure')
     expect(store.sent.length).toBe(sentBefore)
     expect(store.conversations.get('wa-fail')!.status).toBe('open')
+  })
+
+  // ── Outbound image attachment (Req 3) — two-step WhatsApp media upload ──
+  it('POST /conversations/:id/send-media uploads the image, sends it, persists the wamid + media id and pauses the bot', async () => {
+    uploadWaMedia.mockClear()
+    sendWaImage.mockClear()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-media/send-media',
+      headers: multipartHeaders('secretary'),
+      payload: imagePayload({ caption: 'Aquí tienes la receta' }),
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    // Step 1: the bytes are uploaded to the clinic's WhatsApp number with its token.
+    expect(uploadWaMedia).toHaveBeenCalledWith('PHONE', 'tok', expect.anything(), 'image/jpeg', 'photo.jpg')
+    // Step 2: the image message references the returned media id and carries the caption.
+    expect(sendWaImage).toHaveBeenCalledWith('PHONE', 'tok', '+50213131313', 'media-up-1', 'Aquí tienes la receta')
+    // The bubble is an image with the wamid + the uploaded media id (so the inbox
+    // media proxy can render the sent image inline) and the caption as content.
+    expect(body.message.channelMessageId).toBe('wamid.IMG1')
+    expect(body.message.contentType).toBe('image')
+    expect(body.message.content).toBe('Aquí tienes la receta')
+    expect(body.message.metadata).toMatchObject({ mediaId: 'media-up-1', mimeType: 'image/jpeg' })
+    // Bot Interruption Rule: an `open` conversation flips to `handoff`.
+    expect(store.conversations.get('wa-media')!.status).toBe('handoff')
+  })
+
+  it('POST /conversations/:id/send-media rejects a non-image file → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-fail/send-media',
+      headers: multipartHeaders('secretary'),
+      payload: imagePayload({ filename: 'notes.pdf', contentType: 'application/pdf' }),
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-media on a non-WhatsApp thread → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/msgr-send/send-media',
+      headers: multipartHeaders('secretary'),
+      payload: imagePayload(),
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /conversations/:id/send-media logs meta_send_failure and returns 502 when the send throws', async () => {
+    sendWaImage.mockRejectedValueOnce(new Error('Meta 401: token expired'))
+    const before = store.flagged.length
+    const sentBefore = store.sent.length
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-fail/send-media',
+      headers: multipartHeaders('secretary'),
+      payload: imagePayload(),
+    })
+    expect(res.statusCode).toBe(502)
+    expect(store.flagged.length).toBe(before + 1)
+    expect(store.flagged.at(-1)!.errorType).toBe('meta_send_failure')
+    expect(store.sent.length).toBe(sentBefore)
+    expect(store.conversations.get('wa-fail')!.status).toBe('open')
+  })
+
+  it('POST /conversations/:id/send-media without auth → 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/wa-media/send-media',
+      headers: { 'content-type': `multipart/form-data; boundary=${BOUNDARY}` },
+      payload: imagePayload(),
+    })
+    expect(res.statusCode).toBe(401)
   })
 })

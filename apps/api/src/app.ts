@@ -9,6 +9,7 @@ import instagramRoute from './routes/instagram.js'
 import authRoute from './routes/auth.js'
 import clinicsRoute from './routes/clinics.js'
 import conversationsRoute from './routes/conversations.js'
+import conversationMediaRoute from './routes/conversation-media.js'
 import assistantRoute from './routes/assistant.js'
 import patientsRoute from './routes/patients.js'
 import kbRoute from './routes/kb.js'
@@ -65,6 +66,10 @@ export async function buildApp() {
   await app.register(instagramRoute, { prefix: '/webhook' })
   await app.register(clinicsRoute, { prefix: '/clinics' })
   await app.register(conversationsRoute, { prefix: '/conversations' })
+  // Outbound image attachment (Req 3) — separate plugin so @fastify/multipart is
+  // encapsulated and never affects the JSON conversation routes. Declares its own
+  // /conversations/:id/send-media path.
+  await app.register(conversationMediaRoute)
   // Internal AI Assistant for secretaries (Req 41) — staff-only summary/suggestions.
   await app.register(assistantRoute, { prefix: '/conversations' })
   // patients + kb declare their own /clinics/:id/… and /patients/… paths.
