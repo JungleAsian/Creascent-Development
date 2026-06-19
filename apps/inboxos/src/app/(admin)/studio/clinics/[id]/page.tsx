@@ -266,10 +266,21 @@ function BusinessHoursSection({ clinic }: { clinic: Clinic }) {
 
 function CalendarSection({ clinic }: { clinic: Clinic }) {
   const { t } = useI18n()
+  const qc = useQueryClient()
   const settings = clinic.settings as ClinicSettings
   const connected = Boolean(settings.googleCalendar)
   // The API begins the OAuth flow with a redirect; open it in the same tab.
   const authUrl = `${API_BASE}/clinic/${clinic.id}/calendar/auth`
+
+  // Disconnect drops the stored tokens server-side; re-read the clinic so the
+  // badge flips back to "Not connected" and the bot stops booking.
+  const disconnect = useMutation({
+    mutationFn: () => api.del(`/clinic/${clinic.id}/calendar/disconnect`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clinic', clinic.id] })
+      qc.invalidateQueries({ queryKey: ['clinics'] })
+    },
+  })
 
   return (
     <Section title={t('clinic.section.calendar')}>
@@ -283,12 +294,26 @@ function CalendarSection({ clinic }: { clinic: Clinic }) {
         >
           {connected ? t('calendar.connected') : t('calendar.notConnected')}
         </span>
-        <a
-          href={authUrl}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-        >
-          {connected ? t('calendar.reconnect') : t('calendar.connect')}
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          {connected && (
+            <button
+              type="button"
+              disabled={disconnect.isPending}
+              onClick={() => {
+                if (window.confirm(t('calendar.disconnectConfirm'))) disconnect.mutate()
+              }}
+              className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
+            >
+              {disconnect.isPending ? t('calendar.disconnecting') : t('calendar.disconnect')}
+            </button>
+          )}
+          <a
+            href={authUrl}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+          >
+            {connected ? t('calendar.reconnect') : t('calendar.connect')}
+          </a>
+        </div>
       </div>
       <p className="mt-2 text-xs text-gray-400">{t('calendar.hint')}</p>
     </Section>

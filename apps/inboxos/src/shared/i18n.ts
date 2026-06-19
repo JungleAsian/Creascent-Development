@@ -231,6 +231,10 @@ const es: Dict = {
   'calendar.notConnected': 'No conectado',
   'calendar.connect': 'Conectar Google Calendar',
   'calendar.reconnect': 'Reconectar',
+  'calendar.disconnect': 'Desconectar',
+  'calendar.disconnecting': 'Desconectando…',
+  'calendar.disconnectConfirm':
+    '¿Desconectar Google Calendar? El bot dejará de agendar citas hasta que se vuelva a conectar.',
   'calendar.hint': 'Conecta el calendario para que el bot pueda agendar citas.',
 
   'sheets.enable': 'Exportar citas y contactos a Google Sheets',
@@ -927,6 +931,10 @@ const en: Dict = {
   'calendar.notConnected': 'Not connected',
   'calendar.connect': 'Connect Google Calendar',
   'calendar.reconnect': 'Reconnect',
+  'calendar.disconnect': 'Disconnect',
+  'calendar.disconnecting': 'Disconnecting…',
+  'calendar.disconnectConfirm':
+    'Disconnect Google Calendar? The bot will stop booking appointments until it is reconnected.',
   'calendar.hint': 'Connect the calendar so the bot can book appointments.',
 
   'sheets.enable': 'Export appointments and contacts to Google Sheets',
