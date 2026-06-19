@@ -1,5 +1,6 @@
 // Auth routes (P08): login, refresh, logout.
 //   POST /auth/login   { email, password }      → { accessToken, refreshToken, user }
+//     user carries panelLanguage so the panel restores the saved ES/EN language on login.
 //   POST /auth/refresh { refreshToken }          → { accessToken }
 //   POST /auth/logout  { refreshToken }          → { success: true }
 // Credentials are checked against clinic_users.password_hash (scrypt). Refresh
@@ -49,7 +50,13 @@ const authRoute: FastifyPluginAsync = async (app) => {
     return {
       accessToken: signAccessToken(payload),
       refreshToken: signRefreshToken(payload),
-      user: { id: auth.id, email: auth.email, role: auth.role, clinicId: auth.clinicId },
+      user: {
+        id: auth.id,
+        email: auth.email,
+        role: auth.role,
+        clinicId: auth.clinicId,
+        panelLanguage: auth.panelLanguage,
+      },
     }
   })
 
