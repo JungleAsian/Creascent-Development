@@ -308,6 +308,11 @@ export interface ClinicSettings {
     string,
     unknown
   >
+  // Meta Page-token expiry dates (Req 19). Set in the panel so the
+  // conversation-processor can raise META_TOKEN_EXPIRING before the token lapses.
+  // WhatsApp's expiry lives on channel_accounts.settings.tokenExpiresAt, not here.
+  messengerTokenExpiresAt?: string
+  instagramTokenExpiresAt?: string
   license_key?: string
   [key: string]: unknown
 }

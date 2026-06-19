@@ -255,6 +255,9 @@ const es: Dict = {
   'messenger.pageId': 'ID de la página',
   'messenger.pageToken': 'Token de acceso de la página',
   'messenger.pageTokenHint': 'Se guarda de forma segura. Déjalo vacío para conservar el token actual.',
+  'messenger.tokenExpiry': 'Vencimiento del token',
+  'messenger.tokenExpiryHint':
+    'Fecha de vencimiento del token de la página. El panel avisa antes de que caduque.',
   'messenger.verifyToken': 'Token de verificación del webhook',
   'messenger.test': 'Probar conexión',
   'messenger.testOk': 'Configuración lista',
@@ -267,6 +270,9 @@ const es: Dict = {
   'instagram.accountId': 'ID de la cuenta',
   'instagram.pageToken': 'Token de acceso de la página',
   'instagram.pageTokenHint': 'Se guarda de forma segura. Déjalo vacío para conservar el token actual.',
+  'instagram.tokenExpiry': 'Vencimiento del token',
+  'instagram.tokenExpiryHint':
+    'Fecha de vencimiento del token de la página. El panel avisa antes de que caduque.',
   'instagram.verifyToken': 'Token de verificación del webhook',
   'instagram.test': 'Probar conexión',
   'instagram.testOk': 'Configuración lista',
@@ -967,6 +973,9 @@ const en: Dict = {
   'messenger.pageId': 'Page ID',
   'messenger.pageToken': 'Page access token',
   'messenger.pageTokenHint': 'Stored securely. Leave empty to keep the current token.',
+  'messenger.tokenExpiry': 'Token expiry',
+  'messenger.tokenExpiryHint':
+    'Page access token expiry date. The panel warns before it lapses.',
   'messenger.verifyToken': 'Webhook verify token',
   'messenger.test': 'Test connection',
   'messenger.testOk': 'Configuration ready',
@@ -979,6 +988,9 @@ const en: Dict = {
   'instagram.accountId': 'Account ID',
   'instagram.pageToken': 'Page access token',
   'instagram.pageTokenHint': 'Stored securely. Leave empty to keep the current token.',
+  'instagram.tokenExpiry': 'Token expiry',
+  'instagram.tokenExpiryHint':
+    'Page access token expiry date. The panel warns before it lapses.',
   'instagram.verifyToken': 'Webhook verify token',
   'instagram.test': 'Test connection',
   'instagram.testOk': 'Configuration ready',

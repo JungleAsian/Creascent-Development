@@ -411,10 +411,14 @@ function SheetsSection({ clinic }: { clinic: Clinic }) {
 
 function MessengerSection({ clinic }: { clinic: Clinic }) {
   const { t } = useI18n()
+  const settings = clinic.settings as ClinicSettings
   const [enabled, setEnabled] = useState(Boolean(clinic.messengerEnabled))
   const [pageId, setPageId] = useState(clinic.messengerPageId ?? '')
   const [verifyToken, setVerifyToken] = useState(clinic.messengerWebhookVerifyToken ?? '')
   const [token, setToken] = useState('') // write-only; empty keeps the stored token
+  // Token-expiry date (Req 19) — drives the META_TOKEN_EXPIRING alert. Date inputs
+  // use 'YYYY-MM-DD'; we keep just that day part of any stored ISO value.
+  const [expiry, setExpiry] = useState((settings.messengerTokenExpiresAt ?? '').slice(0, 10))
   const [tested, setTested] = useState<boolean | null>(null)
   const save = useSaveClinic(clinic.id)
 
@@ -422,6 +426,7 @@ function MessengerSection({ clinic }: { clinic: Clinic }) {
     enabled !== Boolean(clinic.messengerEnabled) ||
     pageId !== (clinic.messengerPageId ?? '') ||
     verifyToken !== (clinic.messengerWebhookVerifyToken ?? '') ||
+    expiry !== (settings.messengerTokenExpiresAt ?? '').slice(0, 10) ||
     token.trim() !== ''
 
   const webhookUrl = `${API_BASE}/webhook/messenger`
@@ -431,6 +436,8 @@ function MessengerSection({ clinic }: { clinic: Clinic }) {
       messengerEnabled: enabled,
       messengerPageId: pageId.trim(),
       messengerWebhookVerifyToken: verifyToken.trim(),
+      // Merge so unrelated settings keys are never dropped; clear when blanked.
+      settings: { ...clinic.settings, messengerTokenExpiresAt: expiry || undefined },
     }
     // Only send the token when the admin typed a new one — empty preserves it.
     if (token.trim()) body.messengerPageAccessToken = token.trim()
@@ -475,8 +482,17 @@ function MessengerSection({ clinic }: { clinic: Clinic }) {
             className={`w-full ${inputCls}`}
           />
         </Field>
+        <Field label={t('messenger.tokenExpiry')}>
+          <input
+            type="date"
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
       </div>
       <p className="mt-1 text-xs text-gray-400">{t('messenger.pageTokenHint')}</p>
+      <p className="mt-1 text-xs text-gray-400">{t('messenger.tokenExpiryHint')}</p>
       <p className="mt-1 text-xs text-gray-400">{t('messenger.hint', { url: webhookUrl })}</p>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -505,10 +521,13 @@ function MessengerSection({ clinic }: { clinic: Clinic }) {
 
 function InstagramSection({ clinic }: { clinic: Clinic }) {
   const { t } = useI18n()
+  const settings = clinic.settings as ClinicSettings
   const [enabled, setEnabled] = useState(Boolean(clinic.instagramEnabled))
   const [accountId, setAccountId] = useState(clinic.instagramAccountId ?? '')
   const [verifyToken, setVerifyToken] = useState(clinic.instagramWebhookVerifyToken ?? '')
   const [token, setToken] = useState('') // write-only; empty keeps the stored token
+  // Token-expiry date (Req 19) — drives the META_TOKEN_EXPIRING alert.
+  const [expiry, setExpiry] = useState((settings.instagramTokenExpiresAt ?? '').slice(0, 10))
   const [tested, setTested] = useState<boolean | null>(null)
   const save = useSaveClinic(clinic.id)
 
@@ -516,6 +535,7 @@ function InstagramSection({ clinic }: { clinic: Clinic }) {
     enabled !== Boolean(clinic.instagramEnabled) ||
     accountId !== (clinic.instagramAccountId ?? '') ||
     verifyToken !== (clinic.instagramWebhookVerifyToken ?? '') ||
+    expiry !== (settings.instagramTokenExpiresAt ?? '').slice(0, 10) ||
     token.trim() !== ''
 
   const webhookUrl = `${API_BASE}/webhook/instagram`
@@ -525,6 +545,8 @@ function InstagramSection({ clinic }: { clinic: Clinic }) {
       instagramEnabled: enabled,
       instagramAccountId: accountId.trim(),
       instagramWebhookVerifyToken: verifyToken.trim(),
+      // Merge so unrelated settings keys are never dropped; clear when blanked.
+      settings: { ...clinic.settings, instagramTokenExpiresAt: expiry || undefined },
     }
     // Only send the token when the admin typed a new one — empty preserves it.
     if (token.trim()) body.instagramPageAccessToken = token.trim()
@@ -569,8 +591,17 @@ function InstagramSection({ clinic }: { clinic: Clinic }) {
             className={`w-full ${inputCls}`}
           />
         </Field>
+        <Field label={t('instagram.tokenExpiry')}>
+          <input
+            type="date"
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+            className={`w-full ${inputCls}`}
+          />
+        </Field>
       </div>
       <p className="mt-1 text-xs text-gray-400">{t('instagram.pageTokenHint')}</p>
+      <p className="mt-1 text-xs text-gray-400">{t('instagram.tokenExpiryHint')}</p>
       <p className="mt-1 text-xs text-gray-400">{t('instagram.hint', { url: webhookUrl })}</p>
       <p className="mt-1 text-xs text-gray-400">{t('instagram.note')}</p>
 
