@@ -12,7 +12,24 @@ import { useI18n } from '../hooks/useI18n'
 import { formatDateTime } from '../format'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
-import type { Conversation, ConversationStatus, Message, MessageRole } from '../types'
+import type {
+  Appointment,
+  AppointmentStatus,
+  Conversation,
+  ConversationStatus,
+  Message,
+  MessageRole,
+} from '../types'
+
+// Compact status colours for the in-thread appointment summary (mirrors the
+// patient-history page palette, kept local so the view stays self-contained).
+const APPT_BADGE: Record<AppointmentStatus, string> = {
+  pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  confirmed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  cancelled: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+  completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  no_show: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+}
 
 const ROLE_LABEL: Record<MessageRole, 'view.role.user' | 'view.role.agent' | 'view.role.assistant' | 'view.role.system'> = {
   user: 'view.role.user',
@@ -178,6 +195,9 @@ export function ConversationView({
           </span>
           <span className="text-gray-400">{humanMode ? t('view.mode.humanHint') : t('view.mode.botHint')}</span>
         </div>
+        {conversation?.patientId && (
+          <ApptSummary conversationId={conversationId} patientId={conversation.patientId} />
+        )}
       </div>
 
       {/* Messages */}
@@ -230,6 +250,52 @@ export function ConversationView({
             {sendMutation.isPending ? t('view.sending') : t('view.send')}
           </button>
         </form>
+      )}
+    </div>
+  )
+}
+
+// Req 4 / Req 16: surface the patient's appointment status in-thread so a
+// secretary sees the next (or, failing that, the most recent) appointment without
+// leaving the conversation. Picks the soonest upcoming non-cancelled appointment;
+// if there is none, falls back to the most recent past one. Links to the full
+// patient history. Best-effort: renders nothing while loading or on error.
+function ApptSummary({ conversationId, patientId }: { conversationId: string; patientId: string }) {
+  const { t, language } = useI18n()
+  const appointmentsQuery = useQuery({
+    queryKey: ['patient-appointments', patientId],
+    queryFn: () => api.get<{ appointments: Appointment[] }>(`/patients/${patientId}/appointments`),
+  })
+
+  if (appointmentsQuery.isLoading || appointmentsQuery.isError) return null
+  const appointments = appointmentsQuery.data?.appointments ?? []
+
+  const now = new Date().toISOString()
+  // listByPatient returns appointments newest-first (start_time DESC).
+  const upcoming = appointments
+    .filter((a) => a.startTime >= now && a.status !== 'cancelled')
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+  const next = upcoming[0]
+  const last = appointments.find((a) => a.startTime < now)
+  const appt = next ?? last
+  const label = next ? t('view.appt.next') : t('view.appt.last')
+
+  return (
+    <div className="flex items-center gap-2 px-4 pb-2 text-xs">
+      <span aria-hidden>📅</span>
+      {appt ? (
+        <Link
+          href={`/inbox/${conversationId}/patient`}
+          className="flex items-center gap-2 hover:text-indigo-600"
+        >
+          <span className="font-medium text-gray-500">{label}:</span>
+          <span className="text-gray-600 dark:text-gray-300">{formatDateTime(appt.startTime, language)}</span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${APPT_BADGE[appt.status]}`}>
+            {t(`appt.status.${appt.status}` as const)}
+          </span>
+        </Link>
+      ) : (
+        <span className="text-gray-400">{t('view.appt.none')}</span>
       )}
     </div>
   )

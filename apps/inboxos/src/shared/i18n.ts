@@ -78,6 +78,9 @@ const es: Dict = {
   'view.role.assistant': 'Bot',
   'view.role.system': 'Sistema',
   'view.voiceNote': 'Nota de voz',
+  'view.appt.next': 'Próxima cita',
+  'view.appt.last': 'Última cita',
+  'view.appt.none': 'Sin citas',
 
   'tags.title': 'Etiquetas',
   'tags.placeholder': 'Nueva etiqueta…',
@@ -494,6 +497,9 @@ const en: Dict = {
   'view.role.assistant': 'Bot',
   'view.role.system': 'System',
   'view.voiceNote': 'Voice note',
+  'view.appt.next': 'Next appointment',
+  'view.appt.last': 'Last appointment',
+  'view.appt.none': 'No appointments',
 
   'tags.title': 'Tags',
   'tags.placeholder': 'New tag…',
