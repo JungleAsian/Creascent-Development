@@ -62,6 +62,8 @@ const es: Dict = {
   'conv.filter.allAssignees': 'Todos',
 
   'view.empty': 'Selecciona una conversación',
+  'inbox.details': 'Detalles',
+  'inbox.backToList': 'Conversaciones',
   'view.placeholder': 'Escribe un mensaje…',
   'view.send': 'Enviar',
   'view.sending': 'Enviando…',
@@ -755,6 +757,8 @@ const en: Dict = {
   'conv.filter.allAssignees': 'Anyone',
 
   'view.empty': 'Select a conversation',
+  'inbox.details': 'Details',
+  'inbox.backToList': 'Conversations',
   'view.placeholder': 'Type a message…',
   'view.send': 'Send',
   'view.sending': 'Sending…',

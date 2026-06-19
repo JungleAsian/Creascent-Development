@@ -9,6 +9,7 @@ import { useHeartbeat } from '@/shared/hooks/useHeartbeat'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { Breadcrumbs } from '@/shared/components/Breadcrumbs'
+import { PushOptIn } from '@/shared/components/PushOptIn'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { ready } = useAuthGuard(['ia_studio_admin'])
@@ -75,6 +76,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ☰
           </button>
           <Breadcrumbs />
+          {/* Req 39: let an admin enable Web Push on this device too, so platform
+              alerts reach them on their phone with the panel closed. */}
+          <div className="ml-auto">
+            <PushOptIn />
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
