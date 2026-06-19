@@ -6,7 +6,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import multipart from '@fastify/multipart'
 import { createKnowledgeRepository } from '@docmee/db'
 import { kbEmbedQueue } from '@docmee/queue'
-import { trainDocument, detectFormat } from '@docmee/agents'
+import { trainDocument, detectFormat, needsOcr } from '@docmee/agents'
 import { withDb } from '../lib/db.js'
 import { resolveClinicScope } from '../lib/scope.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -31,6 +31,7 @@ const kbUploadRoute: FastifyPluginAsync = async (app) => {
 
       const buffer = await file.toBuffer()
       const format = detectFormat(file.filename, file.mimetype)
+      const ocrUsed = needsOcr(format)
 
       let chunks
       try {
@@ -43,13 +44,17 @@ const kbUploadRoute: FastifyPluginAsync = async (app) => {
 
       const { document, stored } = await withDb(async (sql) => {
         const repo = createKnowledgeRepository(sql)
+        // Parsed/OCR'd documents land as `draft` so a human reviews the extracted
+        // text before it is retrievable — the bot only ever searches `active`
+        // documents (knowledge.repository listEmbeddedChunks filters d.status='active').
+        // Chunks are still embedded immediately, so approval makes it instantly live.
         const doc = await repo.createDocument({
           clinicId,
           title: file.filename || 'Uploaded document',
           content: chunks.map((c) => c.content).join('\n\n'),
           documentType: 'custom',
-          status: 'active',
-          metadata: { source: 'document', format },
+          status: 'draft',
+          metadata: { source: 'document', format, needsReview: true, ocr: ocrUsed },
         })
         const rows = []
         for (const c of chunks) {
@@ -71,7 +76,9 @@ const kbUploadRoute: FastifyPluginAsync = async (app) => {
         await kbEmbedQueue.add('embed', { chunkId: chunk.id, clinicId, content: chunk.content })
       }
 
-      return reply.code(201).send({ jobId: document.id, chunks: stored.length })
+      return reply
+        .code(201)
+        .send({ jobId: document.id, chunks: stored.length, status: 'draft', ocr: ocrUsed })
     },
   )
 }

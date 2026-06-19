@@ -4,6 +4,7 @@ import {
   looksLikeFaq,
   chunkText,
   detectFormat,
+  needsOcr,
   trainDocument,
 } from '../botbase/document-trainer.js'
 
@@ -14,6 +15,22 @@ describe('detectFormat', () => {
     expect(detectFormat('notes.md')).toBe('md')
     expect(detectFormat('plain.txt')).toBe('txt')
     expect(detectFormat('file', 'application/pdf')).toBe('pdf')
+  })
+
+  it('maps scanned image extensions and mime types to image (OCR)', () => {
+    expect(detectFormat('scan.png')).toBe('image')
+    expect(detectFormat('photo.jpg')).toBe('image')
+    expect(detectFormat('photo.jpeg')).toBe('image')
+    expect(detectFormat('fax.tiff')).toBe('image')
+    expect(detectFormat('blob', 'image/png')).toBe('image')
+  })
+})
+
+describe('needsOcr', () => {
+  it('flags image documents for OCR and leaves text formats alone', () => {
+    expect(needsOcr('image')).toBe(true)
+    expect(needsOcr('pdf')).toBe(false)
+    expect(needsOcr('txt')).toBe(false)
   })
 })
 
@@ -68,5 +85,12 @@ describe('trainDocument', () => {
 
   it('returns no chunks for an empty document', async () => {
     expect(await trainDocument({ buffer: Buffer.from('   ', 'utf-8'), format: 'txt' })).toEqual([])
+  })
+
+  it('OCRs an image document and chunks the recognised text (LLM_STUB)', async () => {
+    // With LLM_STUB the OCR engine is never loaded; the stub text is chunked.
+    const chunks = await trainDocument({ buffer: Buffer.from('fake-image-bytes'), format: 'image' })
+    expect(chunks.length).toBeGreaterThan(0)
+    expect(chunks[0]?.content).toContain('Horario de atención')
   })
 })

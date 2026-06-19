@@ -37,11 +37,14 @@ export {
   looksLikeFaq,
   chunkText,
   detectFormat,
+  needsOcr,
   type DocumentFormat,
   type TrainedChunk,
   type TrainDocumentInput,
   type QAPair,
 } from './document-trainer.js'
+
+export { ocrImage, type OcrResult } from './ocr.js'
 
 export {
   matchCustomFlow,

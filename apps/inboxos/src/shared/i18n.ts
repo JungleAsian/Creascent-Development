@@ -462,9 +462,12 @@ const es: Dict = {
   'studio.customFlows.disable': 'Desactivar',
 
   'studio.kb.upload': 'Subir documento',
-  'studio.kb.uploadHint': 'PDF, Word, texto o FAQ (Q:/A:)',
-  'studio.kb.uploadSuccess': 'Documento procesado: {n} fragmentos',
+  'studio.kb.uploadHint': 'PDF, Word, texto, FAQ (Q:/A:) o imagen escaneada (OCR)',
+  'studio.kb.uploadSuccess': 'Documento procesado: {n} fragmentos — pendiente de revisión',
   'studio.kb.uploadError': 'No se pudo procesar el documento',
+  'studio.kb.pendingReview': 'Pendiente de revisión',
+  'studio.kb.approve': 'Aprobar',
+  'studio.kb.reviewBanner': '{n} documento(s) subido(s) esperan revisión antes de estar disponibles para el bot.',
 
   // ── Notifications (Req 24) ──────────────────────────────────────────────────
   'notif.title': 'Notificaciones',
@@ -960,9 +963,12 @@ const en: Dict = {
   'studio.customFlows.disable': 'Disable',
 
   'studio.kb.upload': 'Upload document',
-  'studio.kb.uploadHint': 'PDF, Word, text or FAQ (Q:/A:)',
-  'studio.kb.uploadSuccess': 'Document processed: {n} chunks',
+  'studio.kb.uploadHint': 'PDF, Word, text, FAQ (Q:/A:) or scanned image (OCR)',
+  'studio.kb.uploadSuccess': 'Document processed: {n} chunks — pending review',
   'studio.kb.uploadError': 'Could not process the document',
+  'studio.kb.pendingReview': 'Pending review',
+  'studio.kb.approve': 'Approve',
+  'studio.kb.reviewBanner': '{n} uploaded document(s) await review before they are available to the bot.',
 
   // ── Notifications (Req 24) ──────────────────────────────────────────────────
   'notif.title': 'Notifications',

@@ -8,8 +8,11 @@
 //
 // pdf-parse and mammoth are heavy and only needed on the binary paths, so they are
 // imported lazily — merely loading the botbase barrel stays cheap and test-safe.
+// Image (scan/photo) documents have no text layer, so they go through OCR (ocr.ts).
 
-export type DocumentFormat = 'pdf' | 'docx' | 'txt' | 'md' | 'faq'
+import { ocrImage } from './ocr.js'
+
+export type DocumentFormat = 'pdf' | 'docx' | 'txt' | 'md' | 'faq' | 'image'
 
 export interface TrainedChunk {
   content: string
@@ -38,8 +41,16 @@ export function detectFormat(filename: string, mimeType?: string): DocumentForma
   ) {
     return 'docx'
   }
+  if (/\.(png|jpe?g|webp|tiff?|bmp|gif)$/.test(lower) || mimeType?.startsWith('image/')) {
+    return 'image'
+  }
   if (lower.endsWith('.md')) return 'md'
   return 'txt'
+}
+
+/** Formats that have no text layer and must be read with OCR. */
+export function needsOcr(format: DocumentFormat): boolean {
+  return format === 'image'
 }
 
 /** Extract plain text from a document buffer. */
@@ -59,6 +70,10 @@ export async function extractText(buffer: Buffer, format: DocumentFormat): Promi
       const mammoth = await import('mammoth')
       const result = await mammoth.extractRawText({ buffer })
       return result.value
+    }
+    case 'image': {
+      // Scanned/photographed document — recognise the text with OCR.
+      return (await ocrImage(buffer)).text
     }
     case 'txt':
     case 'md':

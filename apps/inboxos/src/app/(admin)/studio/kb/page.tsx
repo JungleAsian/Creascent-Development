@@ -46,6 +46,7 @@ export default function KbPage() {
   })
 
   const documents = query.data?.documents ?? []
+  const pendingReview = documents.filter((d) => d.status === 'draft').length
 
   return (
     <div className="mx-auto max-w-4xl p-6">
@@ -71,6 +72,12 @@ export default function KbPage() {
           </div>
 
           <UploadDocForm clinicId={clinicId} onUploaded={() => qc.invalidateQueries({ queryKey: key })} />
+
+          {pendingReview > 0 && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+              {t('studio.kb.reviewBanner', { n: pendingReview })}
+            </div>
+          )}
 
           <NewDocForm clinicId={clinicId} />
 
@@ -105,18 +112,35 @@ export default function KbPage() {
                           </option>
                         ))}
                       </select>
+                      {d.status === 'draft' && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                          {t('studio.kb.pendingReview')}
+                        </span>
+                      )}
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs text-gray-500">{d.content}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm(t('studio.kb.deleteConfirm'))) deleteMutation.mutate(d.id)
-                    }}
-                    className="shrink-0 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                  >
-                    {t('common.delete')}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {d.status === 'draft' && (
+                      <button
+                        type="button"
+                        onClick={() => statusMutation.mutate({ entryId: d.id, status: 'active' })}
+                        disabled={statusMutation.isPending}
+                        className="rounded-md border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-900 dark:hover:bg-emerald-950"
+                      >
+                        {t('studio.kb.approve')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(t('studio.kb.deleteConfirm'))) deleteMutation.mutate(d.id)
+                      }}
+                      className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                    >
+                      {t('common.delete')}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -172,7 +196,7 @@ function UploadDocForm({ clinicId, onUploaded }: { clinicId: string; onUploaded:
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.docx,.txt,.md,.text,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".pdf,.docx,.txt,.md,.text,.png,.jpg,.jpeg,.webp,.tif,.tiff,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
           onChange={onChange}
           disabled={busy}
           className="hidden"
