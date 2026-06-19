@@ -75,4 +75,7 @@ export type {
   // Follow-ups (P18)
   FollowUp,
   FollowUpStatus,
+  // Generated reports (Req 37)
+  GeneratedReport,
+  ReportType,
 } from './database.js'

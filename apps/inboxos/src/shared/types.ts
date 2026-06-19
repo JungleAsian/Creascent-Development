@@ -176,6 +176,26 @@ export interface ClinicQos {
   attention: QosAttentionItem[]
 }
 
+// ── Automatic reports (Req 37) ──────────────────────────────────────────────────
+export type ReportType = 'daily' | 'weekly'
+
+/** List-row shape (no html body — fetched per report on open). */
+export interface ReportSummary {
+  id: string
+  type: ReportType
+  periodStart: string
+  periodEnd: string
+  subject: string
+  recipientEmail: string | null
+  emailed: boolean
+  createdAt: string
+}
+
+export interface GeneratedReport extends ReportSummary {
+  html: string
+  data: Record<string, unknown>
+}
+
 export type ClinicPlan = 'starter' | 'pro' | 'enterprise'
 export type ClinicStatus = 'active' | 'suspended' | 'cancelled'
 

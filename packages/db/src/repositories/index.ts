@@ -18,6 +18,7 @@ export { createMessageTemplatesRepository }    from './message-templates.reposit
 export { createMetricsRepository }             from './metrics.repository.js'
 export { createAnalyticsRepository }           from './analytics.repository.js'
 export { createQosRepository }                 from './qos.repository.js'
+export { createReportsRepository }             from './reports.repository.js'
 
 export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput }                          from './clinics.repository.js'
 export type { ChannelAccountsRepository, CreateChannelAccountInput }                             from './channel-accounts.repository.js'
@@ -44,3 +45,4 @@ export type { MessageTemplatesRepository, CreateMessageTemplateInput }          
 export type { MetricsRepository, MetricsDashboard }                                              from './metrics.repository.js'
 export type { AnalyticsRepository, AdvancedAnalytics, ConversationExportRow }                    from './analytics.repository.js'
 export type { QosRepository, QosDashboard, QosAttentionItem }                                    from './qos.repository.js'
+export type { ReportsRepository, CreateGeneratedReportInput }                                    from './reports.repository.js'

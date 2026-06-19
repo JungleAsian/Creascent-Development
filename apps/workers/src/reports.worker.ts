@@ -11,7 +11,10 @@ import {
   createUsersRepository,
   createMetricsRepository,
   createAppointmentsRepository,
+  createReportsRepository,
   type Clinic,
+  type ReportsRepository,
+  type ReportType,
 } from '@docmee/db'
 import { sendEmail } from '@docmee/notifications'
 import { type Job } from '@docmee/queue'
@@ -87,6 +90,55 @@ interface WeeklyData {
   botReplyRate: number
 }
 
+interface ReportPayload {
+  type: ReportType
+  periodStart: Date
+  periodEnd: Date
+  subject: string
+  html: string
+  data: Record<string, unknown>
+}
+
+/**
+ * Delivers a report through BOTH channels: email it to the clinic admin (when a
+ * recipient is known) and persist it so it shows up in the clinic panel's reports
+ * list. The email is best-effort — a delivery failure is recorded as emailed=false
+ * on the persisted row rather than dropping the report, so the panel copy always
+ * survives. The persist itself is best-effort too (logged, never throws) so a
+ * reports-table hiccup can't abort the rest of the clinic fan-out.
+ */
+async function deliverReport(
+  reports: ReportsRepository,
+  clinicId: string,
+  recipient: string | null,
+  payload: ReportPayload,
+): Promise<void> {
+  let emailed = false
+  if (recipient) {
+    try {
+      await sendEmail({ to: recipient, subject: payload.subject, html: payload.html })
+      emailed = true
+    } catch (err) {
+      console.error(`[reports] email failed for clinic ${clinicId} (${payload.type}):`, err)
+    }
+  }
+  try {
+    await reports.create({
+      clinicId,
+      type: payload.type,
+      periodStart: payload.periodStart.toISOString(),
+      periodEnd: payload.periodEnd.toISOString(),
+      subject: payload.subject,
+      html: payload.html,
+      data: payload.data,
+      recipientEmail: recipient,
+      emailed,
+    })
+  } catch (err) {
+    console.error(`[reports] persist failed for clinic ${clinicId} (${payload.type}):`, err)
+  }
+}
+
 export async function processReportsJob(_job: Job): Promise<void> {
   const sql = createServiceDbClient({ url: process.env['DATABASE_URL'] ?? '' })
   const now = new Date()
@@ -96,6 +148,7 @@ export async function processReportsJob(_job: Job): Promise<void> {
     const users = createUsersRepository(sql)
     const metrics = createMetricsRepository(sql)
     const appointments = createAppointmentsRepository(sql)
+    const reports = createReportsRepository(sql)
 
     for (const clinic of await clinics.list()) {
       if (clinic.status !== 'active') continue
@@ -104,24 +157,28 @@ export async function processReportsJob(_job: Job): Promise<void> {
       const wantWeekly = local.dayOfWeek === MONDAY && local.hour === WEEKLY_HOUR
       if (!wantDaily && !wantWeekly) continue
 
+      // A report is still generated + stored in the panel even with no admin email
+      // on file; only the email half is skipped.
       const recipient = await users.findPrimaryEmail(clinic.id)
-      if (!recipient) continue
-
       const dashboard = await metrics.dashboard(clinic.id, clinic.timezone)
 
       if (wantDaily) {
         const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
         const bookings = await appointments.countCreatedBetween(clinic.id, dayAgo.toISOString(), now.toISOString())
-        await sendEmail({
-          to: recipient,
+        const data: DailyData = {
+          conversations: dashboard.conversationsToday,
+          messages: dashboard.messagesToday,
+          botReplyRate: dashboard.botReplyRate,
+          bookings,
+          avgResponseSeconds: dashboard.avgResponseSeconds,
+        }
+        await deliverReport(reports, clinic.id, recipient, {
+          type: 'daily',
+          periodStart: dayAgo,
+          periodEnd: now,
           subject: `${clinic.name}: daily report`,
-          html: dailyReportHtml(clinic, {
-            conversations: dashboard.conversationsToday,
-            messages: dashboard.messagesToday,
-            botReplyRate: dashboard.botReplyRate,
-            bookings,
-            avgResponseSeconds: dashboard.avgResponseSeconds,
-          }),
+          html: dailyReportHtml(clinic, data),
+          data: { ...data },
         })
       }
 
@@ -133,16 +190,20 @@ export async function processReportsJob(_job: Job): Promise<void> {
         const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
         const bookingsThisWeek = await appointments.countCreatedBetween(clinic.id, weekAgo.toISOString(), now.toISOString())
         const bookingsLastWeek = await appointments.countCreatedBetween(clinic.id, twoWeeksAgo.toISOString(), weekAgo.toISOString())
-        await sendEmail({
-          to: recipient,
+        const data: WeeklyData = {
+          conversationsThisWeek: last7,
+          conversationsLastWeek: prev7,
+          bookingsThisWeek,
+          bookingsLastWeek,
+          botReplyRate: dashboard.botReplyRate,
+        }
+        await deliverReport(reports, clinic.id, recipient, {
+          type: 'weekly',
+          periodStart: weekAgo,
+          periodEnd: now,
           subject: `${clinic.name}: weekly report`,
-          html: weeklyReportHtml(clinic, {
-            conversationsThisWeek: last7,
-            conversationsLastWeek: prev7,
-            bookingsThisWeek,
-            bookingsLastWeek,
-            botReplyRate: dashboard.botReplyRate,
-          }),
+          html: weeklyReportHtml(clinic, data),
+          data: { ...data },
         })
       }
     }

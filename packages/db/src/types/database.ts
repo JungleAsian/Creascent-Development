@@ -566,3 +566,26 @@ export interface FollowUp {
   createdAt: string
   updatedAt: string
 }
+
+// ── Generated reports (Req 37 — Automatic reports) ──────────────────────────────
+
+export type ReportType = 'daily' | 'weekly'
+
+/**
+ * A scheduled report generated for a clinic admin and delivered through the panel
+ * (this persisted row) and email (`emailed`). `data` holds the structured figures
+ * so the panel can re-render or aggregate without re-querying metrics.
+ */
+export interface GeneratedReport {
+  id: string
+  clinicId: string
+  type: ReportType
+  periodStart: string
+  periodEnd: string
+  subject: string
+  html: string
+  data: Record<string, unknown>
+  recipientEmail: string | null
+  emailed: boolean
+  createdAt: string
+}

@@ -70,6 +70,8 @@ export type {
   CustomFlowStep,
   FollowUp,
   FollowUpStatus,
+  GeneratedReport,
+  ReportType,
 } from './types/index.js'
 
 // ── Repository factories ───────────────────────────────────────────────────────
@@ -94,6 +96,7 @@ export {
   createMetricsRepository,
   createAnalyticsRepository,
   createQosRepository,
+  createReportsRepository,
 } from './repositories/index.js'
 
 export type {
@@ -157,4 +160,6 @@ export type {
   QosRepository,
   QosDashboard,
   QosAttentionItem,
+  ReportsRepository,
+  CreateGeneratedReportInput,
 } from './repositories/index.js'

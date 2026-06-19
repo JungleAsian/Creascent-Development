@@ -24,6 +24,7 @@ import customFlowsRoute from './routes/custom-flows.js'
 import kbUploadRoute from './routes/kb-upload.js'
 import analyticsRoute from './routes/analytics.js'
 import qosRoute from './routes/qos.js'
+import reportsRoute from './routes/reports.js'
 import reviewsRoute from './routes/reviews.js'
 
 export async function buildApp() {
@@ -78,6 +79,7 @@ export async function buildApp() {
   await app.register(kbUploadRoute)
   await app.register(analyticsRoute)
   await app.register(qosRoute)
+  await app.register(reportsRoute)
   await app.register(reviewsRoute)
   await app.register(notificationsRoute, { prefix: '/notifications' })
   await app.register(calendarRoute)
