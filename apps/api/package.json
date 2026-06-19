@@ -15,6 +15,7 @@
   "dependencies": {
     "@docmee/agents": "workspace:*",
     "@docmee/db": "workspace:*",
+    "@docmee/llm": "workspace:*",
     "@docmee/notifications": "workspace:*",
     "@docmee/queue": "workspace:*",
     "@docmee/shared": "workspace:*",

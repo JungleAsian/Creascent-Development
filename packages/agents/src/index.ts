@@ -16,6 +16,8 @@ export { isOptOutMessage, isOptInMessage, optInConfirmation } from './consent.js
 
 export * from './botbase/index.js'
 
+export * from './assistant/index.js'
+
 export interface MessageContext {
   clinicId: string
   conversationId: string

@@ -9,6 +9,7 @@ import { ConversationView } from '@/shared/components/ConversationView'
 import { TagsPanel } from '@/shared/components/TagsPanel'
 import { NotesPanel } from '@/shared/components/NotesPanel'
 import { AssignPanel } from '@/shared/components/AssignPanel'
+import { AssistantPanel } from '@/shared/components/AssistantPanel'
 import { useI18n } from '@/shared/hooks/useI18n'
 
 export default function InboxPage() {
@@ -35,6 +36,7 @@ export default function InboxPage() {
         {selectedId ? (
           <>
             <TagsPanel conversationId={selectedId} />
+            <AssistantPanel conversationId={selectedId} />
             <NotesPanel conversationId={selectedId} />
             <AssignPanel conversationId={selectedId} />
           </>
