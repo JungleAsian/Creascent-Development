@@ -78,6 +78,55 @@ describe('dispatchNotification', () => {
     expect(statuses).toEqual([{ id: 'n1', status: 'failed', error: 'resend down' }])
   })
 
+  it('online recipient + standard alert → panel-only (no email), channel in_app, status sent', async () => {
+    const { store, created, statuses } = makeStore()
+    const sendEmail = vi.fn(async () => {})
+    await dispatchNotification(
+      {
+        clinicId: 'c1',
+        type: NOTIFICATION_TYPES.CONVERSATION_ASSIGNED,
+        recipientEmail: 'a@b.com',
+        recipientOnline: true,
+      },
+      { store, sendEmail },
+    )
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(created[0]).toMatchObject({ notificationType: 'in_app', priority: 'standard' })
+    expect(statuses).toEqual([{ id: 'n1', status: 'sent', error: undefined }])
+  })
+
+  it('online recipient + p1 alert → still emails (channel email)', async () => {
+    const { store, created } = makeStore()
+    const sendEmail = vi.fn(async () => {})
+    await dispatchNotification(
+      {
+        clinicId: 'c1',
+        type: NOTIFICATION_TYPES.UPSET_PATIENT,
+        recipientEmail: 'a@b.com',
+        recipientOnline: true,
+      },
+      { store, sendEmail },
+    )
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    expect(created[0]).toMatchObject({ notificationType: 'email', priority: 'p1' })
+  })
+
+  it('offline recipient + standard alert → emails (channel email)', async () => {
+    const { store, created } = makeStore()
+    const sendEmail = vi.fn(async () => {})
+    await dispatchNotification(
+      {
+        clinicId: 'c1',
+        type: NOTIFICATION_TYPES.CONVERSATION_ASSIGNED,
+        recipientEmail: 'a@b.com',
+        recipientOnline: false,
+      },
+      { store, sendEmail },
+    )
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    expect(created[0]).toMatchObject({ notificationType: 'email' })
+  })
+
   it('every notification type has a defined, non-empty template', () => {
     for (const type of Object.values(NOTIFICATION_TYPES)) {
       const email = buildNotificationEmail(type, { sample: 1 })

@@ -37,6 +37,13 @@ export interface NotificationsRepository {
     alertType: string,
     withinMinutes: number,
   ): Promise<boolean>
+  /**
+   * Urgent (p1) conversation-scoped alerts that are still un-acknowledged after
+   * `olderThanMinutes`, scanned only within the last `withinHours` (so ancient
+   * alerts are not re-escalated forever). Already-escalated rows are excluded.
+   * Used by the timeout monitor's escalation pass (Rev1 #18).
+   */
+  listEscalatable(olderThanMinutes: number, withinHours: number): Promise<NotificationEvent[]>
 }
 
 export function createNotificationsRepository(sql: Sql): NotificationsRepository {
@@ -102,6 +109,19 @@ export function createNotificationsRepository(sql: Sql): NotificationsRepository
         ) AS exists
       `
       return rows[0]?.exists ?? false
+    },
+
+    async listEscalatable(olderThanMinutes, withinHours) {
+      return sql<NotificationEvent[]>`
+        SELECT * FROM notification_events
+        WHERE priority        = 'p1'
+          AND conversation_id IS NOT NULL
+          AND status         NOT IN ('acknowledged', 'skipped')
+          AND alert_type     <> 'secretary_escalated'
+          AND created_at      < NOW() - ${`${olderThanMinutes} minutes`}::interval
+          AND created_at      > NOW() - ${`${withinHours} hours`}::interval
+        ORDER BY created_at
+      `
     },
   }
 }

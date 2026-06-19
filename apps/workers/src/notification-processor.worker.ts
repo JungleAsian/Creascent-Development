@@ -6,6 +6,7 @@
 import {
   dispatchNotification,
   isNotificationType,
+  isOnline,
   NOTIFICATION_TYPES,
   type NotificationType,
 } from '@docmee/notifications'
@@ -26,7 +27,7 @@ interface NotificationJobData {
   [key: string]: unknown
 }
 
-/** Map a raw job into one of the 17 canonical alert types (null if unmappable). */
+/** Map a raw job into one of the 20 canonical alert types (null if unmappable). */
 export function resolveNotificationType(data: NotificationJobData): NotificationType | null {
   if (typeof data.type === 'string' && isNotificationType(data.type.toLowerCase())) {
     return data.type.toLowerCase() as NotificationType
@@ -36,6 +37,8 @@ export function resolveNotificationType(data: NotificationJobData): Notification
       return NOTIFICATION_TYPES.EMERGENCY
     case 'human_handoff':
       return NOTIFICATION_TYPES.HUMAN_HANDOFF_REQUESTED
+    case 'upset':
+      return NOTIFICATION_TYPES.UPSET_PATIENT
     default:
       return null
   }
@@ -79,6 +82,12 @@ export async function processNotificationJob(job: Job): Promise<void> {
       return
     }
 
+    // Presence drives email-vs-panel routing: an online secretary just gets the
+    // panel entry for non-urgent alerts (p1 still always emails). Unknown/offline
+    // recipients are emailed.
+    const lastSeen = await users.findLastSeenByEmail(data.clinicId, recipientEmail)
+    const recipientOnline = isOnline(lastSeen, new Date())
+
     await dispatchNotification(
       {
         clinicId: data.clinicId,
@@ -86,6 +95,7 @@ export async function processNotificationJob(job: Job): Promise<void> {
         type,
         data: { reason: data.reason, ...(typeof data['daysRemaining'] === 'number' ? { daysRemaining: data['daysRemaining'] } : {}) },
         recipientEmail,
+        recipientOnline,
       },
       { store: buildNotificationStore(notifications) },
     )

@@ -6,6 +6,16 @@ export interface UsersRepository {
   listByClinic(clinicId: string): Promise<ClinicUser[]>
   /** Email of the clinic's primary active user — the default alert recipient. */
   findPrimaryEmail(clinicId: string): Promise<string | null>
+  /**
+   * Email of an active clinic user holding the given role — the escalation
+   * target (e.g. 'clinic_admin'). Null when no such user exists.
+   */
+  findEmailByRole(clinicId: string, role: PanelRole): Promise<string | null>
+  /**
+   * last_seen heartbeat of a clinic user by email (presence for alert routing).
+   * Null when the email is unknown or the user has never been seen.
+   */
+  findLastSeenByEmail(clinicId: string, email: string): Promise<string | null>
   /** Bump last_seen to NOW() (heartbeat). Returns false if the user is unknown. */
   touchLastSeen(id: string): Promise<boolean>
   /**
@@ -60,6 +70,31 @@ export function createUsersRepository(sql: Sql): UsersRepository {
         LIMIT 1
       `
       return rows[0]?.email ?? null
+    },
+
+    async findEmailByRole(clinicId, role) {
+      const rows = await sql<[{ email: string }]>`
+        SELECT u.email
+        FROM clinic_users u
+        JOIN user_roles ur ON ur.clinic_user_id = u.id
+        JOIN roles r       ON r.id = ur.role_id
+        WHERE u.clinic_id = ${clinicId}
+          AND u.status    = 'active'
+          AND r.name      = ${role}
+        ORDER BY u.created_at
+        LIMIT 1
+      `
+      return rows[0]?.email ?? null
+    },
+
+    async findLastSeenByEmail(clinicId, email) {
+      const rows = await sql<[{ lastSeen: string | null }]>`
+        SELECT last_seen FROM clinic_users
+        WHERE clinic_id = ${clinicId} AND LOWER(email) = LOWER(${email}) AND status = 'active'
+        ORDER BY created_at
+        LIMIT 1
+      `
+      return rows[0]?.lastSeen ?? null
     },
 
     async touchLastSeen(id) {

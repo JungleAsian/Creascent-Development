@@ -10,6 +10,10 @@ describe('resolveNotificationType', () => {
     expect(resolveNotificationType({ reason: 'human_handoff' })).toBe('human_handoff_requested')
   })
 
+  it('maps the agent-worker reason "upset" → upset_patient', () => {
+    expect(resolveNotificationType({ reason: 'upset' })).toBe('upset_patient')
+  })
+
   it('maps the conversation-processor type "META_TOKEN_EXPIRING" → meta_token_expiring', () => {
     expect(resolveNotificationType({ type: 'META_TOKEN_EXPIRING' })).toBe('meta_token_expiring')
   })

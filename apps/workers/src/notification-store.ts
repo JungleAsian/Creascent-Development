@@ -11,6 +11,7 @@ export function buildNotificationStore(notifications: NotificationsRepository): 
         conversationId: input.conversationId ?? null,
         alertType: input.alertType,
         priority: input.priority,
+        notificationType: input.notificationType,
         recipient: input.recipient,
         subject: input.subject,
         content: input.content,

@@ -39,6 +39,14 @@ export function buildNotificationEmail(
       subject: '⚠️ Bot error — patient needs attention',
       html: `<h2>Bot Error</h2><p>The bot encountered an error. Please respond to this patient manually.</p>${details(data)}`,
     },
+    upset_patient: {
+      subject: '😟 Upset patient — please step in',
+      html: `<h2>Upset Patient</h2><p>A patient appears upset or frustrated. The bot has paused and a human should take over.</p>${details(data)}`,
+    },
+    secretary_escalated: {
+      subject: '🔼 Escalation — unattended urgent alert',
+      html: `<h2>Escalation</h2><p>An urgent alert was not acknowledged in time and has been escalated to you.</p>${details(data)}`,
+    },
     new_patient: {
       subject: '🆕 New patient registered',
       html: `<h2>New Patient</h2><p>A new patient has contacted the clinic.</p>${details(data)}`,
@@ -58,6 +66,10 @@ export function buildNotificationEmail(
     opted_out: {
       subject: '🚫 Patient opted out',
       html: `<h2>STOP Received</h2><p>A patient has opted out of messaging.</p>${details(data)}`,
+    },
+    appointment_reminder: {
+      subject: '⏰ Appointment reminder due',
+      html: `<h2>Appointment Reminder</h2><p>An upcoming appointment needs a reminder or confirmation.</p>${details(data)}`,
     },
     conversation_assigned: {
       subject: '📨 Conversation assigned to you',

@@ -10,7 +10,11 @@
 //      bot (status → open) so it can answer again (Rev1 #5/#6).
 import {
   dispatchNotification,
+  pickEscalationRecipient,
+  shouldEscalate,
+  ESCALATION_AFTER_MINUTES,
   NOTIFICATION_TYPES,
+  type NotificationStore,
   type NotificationType,
 } from '@docmee/notifications'
 import {
@@ -19,6 +23,8 @@ import {
   createNotificationsRepository,
   createUsersRepository,
   type Conversation,
+  type NotificationsRepository,
+  type UsersRepository,
 } from '@docmee/db'
 import { buildNotificationStore } from './notification-store.js'
 
@@ -26,6 +32,8 @@ export const SECRETARY_TIMEOUT_MINUTES = 10
 export const STALE_MINUTES = 30
 export const BOT_REACTIVATION_MINUTES = 60
 const DEDUP_WINDOW_MINUTES = 60
+/** Only scan the last day of alerts when escalating — older ones never re-fire. */
+const ESCALATION_SCAN_HOURS = 24
 
 /**
  * A handoff is *auto-paused* (eligible for bot reactivation) when the bot paused
@@ -95,10 +103,72 @@ export async function runTimeoutChecks(): Promise<void> {
       delete (metadata as { handoffReason?: unknown }).handoffReason
       await conversations.update(conv.clinicId, conv.id, { status: 'open', metadata })
     }
+
+    // Escalation chain (Rev1 #18): urgent alerts nobody acknowledged in time
+    // bubble up to the clinic admin (then a configured fallback).
+    await runEscalationPass(notifications, users, store)
   } catch (err) {
     // A monitor tick must never crash the worker process.
     console.error('[timeout-monitor] check failed:', err instanceof Error ? err.message : err)
   } finally {
     await sql.end()
+  }
+}
+
+/**
+ * Escalation chain (Rev1 #18). Find p1 alerts that are still un-acknowledged past
+ * ESCALATION_AFTER_MINUTES and raise a `secretary_escalated` alert to the next
+ * person up the chain (clinic admin → ALERT_FALLBACK_EMAIL), deduped per
+ * conversation so a stuck alert escalates at most once per DEDUP window.
+ */
+export async function runEscalationPass(
+  notifications: NotificationsRepository,
+  users: UsersRepository,
+  store: NotificationStore,
+): Promise<void> {
+  const escalatable = await notifications.listEscalatable(ESCALATION_AFTER_MINUTES, ESCALATION_SCAN_HOURS)
+  for (const alert of escalatable) {
+    if (!alert.clinicId || !alert.conversationId) continue
+
+    const ageMinutes = (Date.now() - new Date(alert.createdAt).getTime()) / 60_000
+    if (!shouldEscalate({ priority: alert.priority ?? '', ageMinutes, status: alert.status })) continue
+
+    if (
+      await notifications.existsRecent(
+        alert.clinicId,
+        alert.conversationId,
+        NOTIFICATION_TYPES.SECRETARY_ESCALATED,
+        DEDUP_WINDOW_MINUTES,
+      )
+    ) {
+      continue // already escalated this conversation recently
+    }
+
+    const adminEmail = await users.findEmailByRole(alert.clinicId, 'clinic_admin')
+    const recipientEmail = pickEscalationRecipient({
+      originalRecipient: alert.recipient,
+      adminEmail,
+      fallbackEmail: process.env['ALERT_FALLBACK_EMAIL'] ?? null,
+    })
+    if (!recipientEmail) {
+      console.warn(`[timeout-monitor] no escalation target for clinic ${alert.clinicId}; skipping`)
+      continue
+    }
+
+    await dispatchNotification(
+      {
+        clinicId: alert.clinicId,
+        conversationId: alert.conversationId,
+        type: NOTIFICATION_TYPES.SECRETARY_ESCALATED,
+        data: {
+          originalAlertId: alert.id,
+          originalAlertType: alert.alertType,
+          originalRecipient: alert.recipient,
+          ageMinutes: Math.round(ageMinutes),
+        },
+        recipientEmail,
+      },
+      { store },
+    )
   }
 }

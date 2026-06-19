@@ -16,6 +16,21 @@ export { sendEmail, type SendEmailParams, type SendEmailFn } from './channels/em
 export { buildNotificationEmail, type NotificationEmail } from './templates.js'
 
 export {
+  routeNotification,
+  isOnline,
+  ONLINE_WINDOW_MINUTES,
+  type RouteDecision,
+} from './routing.js'
+
+export {
+  shouldEscalate,
+  pickEscalationRecipient,
+  ESCALATION_AFTER_MINUTES,
+  type EscalationCandidate,
+  type NotificationStatus,
+} from './escalation.js'
+
+export {
   dispatchNotification,
   type DispatchNotificationParams,
   type DispatchNotificationDeps,

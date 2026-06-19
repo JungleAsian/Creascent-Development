@@ -344,13 +344,13 @@ export async function processAgentJob(job: Job): Promise<void> {
       })
 
       if (upset) {
-        // Tag the conversation and alert a human (HUMAN_HANDOFF_REQUESTED).
+        // Tag the conversation and raise an UPSET_PATIENT alert (p1).
         const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'patient_upset' })
         await conversations.addTag(data.clinicId, data.conversationId, tag.id)
         await notificationQueue.add('notify', {
           clinicId: data.clinicId,
           conversationId: data.conversationId,
-          reason: 'human_handoff',
+          reason: 'upset',
         })
       }
     }

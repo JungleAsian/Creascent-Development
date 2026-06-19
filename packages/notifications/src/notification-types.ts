@@ -1,12 +1,15 @@
-// The 17 secretary-alert notification types and their dispatch priority.
-// These are the alert taxonomy (distinct from the delivery channel, which is
-// always 'email' for the P07 MVP — see @docmee/db NotificationType).
+// The 20 secretary-alert notification types and their dispatch priority.
+// These are the alert taxonomy (distinct from the delivery channel — email vs.
+// in_app panel — which is decided per-alert by ./routing.ts from the priority
+// and the recipient's online presence).
 
 export const NOTIFICATION_TYPES = {
-  // P1 — Urgent (immediate dispatch)
+  // P1 — Urgent (immediate dispatch, always emailed even when online)
   EMERGENCY:               'emergency',
   HUMAN_HANDOFF_REQUESTED: 'human_handoff_requested',
   BOT_FAILED:              'bot_failed',
+  UPSET_PATIENT:           'upset_patient',
+  SECRETARY_ESCALATED:     'secretary_escalated',
 
   // P2 — Important (< 5 min)
   NEW_PATIENT:             'new_patient',
@@ -14,6 +17,7 @@ export const NOTIFICATION_TYPES = {
   BOOKING_CANCELLED:       'booking_cancelled',
   BOOKING_RESCHEDULED:     'booking_rescheduled',
   OPTED_OUT:               'opted_out',
+  APPOINTMENT_REMINDER:    'appointment_reminder',
 
   // Standard
   CONVERSATION_ASSIGNED:   'conversation_assigned',
@@ -35,11 +39,14 @@ export const NOTIFICATION_PRIORITY: Record<NotificationType, NotificationPriorit
   emergency:               'p1',
   human_handoff_requested: 'p1',
   bot_failed:              'p1',
+  upset_patient:           'p1',
+  secretary_escalated:     'p1',
   new_patient:             'p2',
   booking_confirmed:       'p2',
   booking_cancelled:       'p2',
   booking_rescheduled:     'p2',
   opted_out:               'p2',
+  appointment_reminder:    'p2',
   conversation_assigned:   'standard',
   conversation_resolved:   'standard',
   stale_conversation:      'standard',
