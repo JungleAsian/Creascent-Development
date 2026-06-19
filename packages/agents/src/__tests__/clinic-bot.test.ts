@@ -112,6 +112,30 @@ describe('runClinicBot', () => {
     expect(system).toContain('NEVER diagnose')
   })
 
+  it('clinic rules are injected into the system prompt regardless of the query', async () => {
+    const deps = makeDeps({ searchKb: vi.fn().mockResolvedValue([]) })
+    const rulesText = 'Solo atendemos pacientes mayores de 18 años. No damos precios por chat.'
+    // No KB match for this message → rules must still be present.
+    await runClinicBot(baseInput({ clinic: { ...clinic, rulesText }, message: 'tienen estacionamiento?' }), deps)
+    const system = (deps.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(system).toContain('CLINIC-SPECIFIC RULES')
+    expect(system).toContain(rulesText)
+  })
+
+  it('omits the clinic-rules block when no rules are configured', async () => {
+    const deps = makeDeps()
+    await runClinicBot(baseInput({ clinic: { ...clinic, rulesText: null } }), deps)
+    const system = (deps.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(system).not.toContain('CLINIC-SPECIFIC RULES')
+  })
+
+  it('applies the configured tone to the system prompt', async () => {
+    const deps = makeDeps()
+    await runClinicBot(baseInput({ clinic: { ...clinic, tone: 'brief' } }), deps)
+    const system = (deps.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(system).toContain('Keep responses short')
+  })
+
   it('LLM failure → logs the error, sends an apology, still reports replied', async () => {
     const deps = makeDeps({ complete: vi.fn().mockRejectedValue(new Error('boom')) })
     const result = await runClinicBot(baseInput(), deps)

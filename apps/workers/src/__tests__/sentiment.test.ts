@@ -26,7 +26,41 @@ vi.mock('@docmee/db', () => ({
   createConversationsRepository: vi.fn(),
 }))
 
-import { detectUpsetTone } from '../agent-processor.worker.js'
+import { detectUpsetTone, getClinicBotConfig } from '../agent-processor.worker.js'
+import type { Clinic } from '@docmee/db'
+
+const clinic = (settings: Record<string, unknown>): Clinic =>
+  ({ id: 'c1', name: 'Clínica Demo', settings, timezone: 'America/Mexico_City' }) as unknown as Clinic
+
+describe('getClinicBotConfig', () => {
+  it('reads the flat tone + rules keys the IA Studio UI persists', () => {
+    // Clinic-Specific Rules / Bot Tone (Req 27 / Req 26): the Studio saves
+    // settings.botTone + settings.clinicRules — these must reach the bot config.
+    const cfg = getClinicBotConfig(clinic({ botTone: 'friendly', clinicRules: 'Mayores de 18 años.' }))
+    expect(cfg.tone).toBe('friendly')
+    expect(cfg.rulesText).toBe('Mayores de 18 años.')
+  })
+
+  it('falls back to safe defaults when nothing is configured', () => {
+    const cfg = getClinicBotConfig(clinic({}))
+    expect(cfg).toMatchObject({ tone: 'professional', language: 'auto', rulesText: null })
+  })
+
+  it('treats a blank rules string as no rules', () => {
+    expect(getClinicBotConfig(clinic({ clinicRules: '   ' })).rulesText).toBeNull()
+  })
+
+  it('still honors the legacy nested settings.bot.* shape', () => {
+    const cfg = getClinicBotConfig(clinic({ bot: { tone: 'brief', rulesText: 'Sin precios por chat.' } }))
+    expect(cfg.tone).toBe('brief')
+    expect(cfg.rulesText).toBe('Sin precios por chat.')
+  })
+
+  it('flat keys win over the legacy nested shape', () => {
+    const cfg = getClinicBotConfig(clinic({ botTone: 'friendly', bot: { tone: 'brief' } }))
+    expect(cfg.tone).toBe('friendly')
+  })
+})
 
 describe('detectUpsetTone', () => {
   it('flags upset Spanish keywords', () => {

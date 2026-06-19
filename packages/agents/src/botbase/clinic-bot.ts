@@ -87,7 +87,9 @@ function buildSystemPrompt(input: ClinicBotInput, language: Language, kbMatches:
     `You are the AI assistant for ${input.clinic.name}.`,
     `Language: Respond ONLY in ${language === 'es' ? 'Spanish' : 'English'}.`,
     `Tone: ${TONE_INSTRUCTIONS[input.clinic.tone]}`,
-    input.clinic.rulesText ? `Clinic rules: ${input.clinic.rulesText}` : '',
+    input.clinic.rulesText
+      ? `CLINIC-SPECIFIC RULES (always follow these, regardless of what the patient asks):\n${input.clinic.rulesText}`
+      : '',
     kbContext ? `Knowledge base:\n${kbContext}` : '',
     '',
     'CRITICAL MEDICAL SAFETY RULES:',

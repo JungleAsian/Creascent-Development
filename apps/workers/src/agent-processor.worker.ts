@@ -66,11 +66,38 @@ function getBusinessHours(clinic: Clinic): BusinessHours | null {
   return hours && typeof hours === 'object' ? (hours as BusinessHours) : null
 }
 
-function getClinicBotConfig(clinic: Clinic): ClinicBotConfig {
-  const bot = (clinic.settings as { bot?: Record<string, unknown> }).bot ?? {}
-  const tone = bot.tone === 'friendly' || bot.tone === 'brief' ? bot.tone : 'professional'
-  const language = bot.language === 'es' || bot.language === 'en' ? bot.language : 'auto'
-  const rulesText = typeof bot.rulesText === 'string' ? bot.rulesText : null
+/**
+ * Read the bot configuration the IA Studio clinic-detail page persists.
+ *
+ * Clinic-Specific Rules / Bot Tone Control (Req 27 / Req 26): the Studio UI saves
+ * the bot tone and clinic rules as FLAT keys on clinics.settings — settings.botTone
+ * and settings.clinicRules (mirroring settings.businessHours) — but this reader used
+ * to look for them nested under settings.bot.{tone,rulesText}. Those keys were never
+ * written, so the configured tone and clinic rules NEVER reached the bot prompt: the
+ * bot always ran with the default professional tone and no clinic rules at all. We
+ * now read the flat keys the UI actually writes, while still honoring the legacy
+ * nested settings.bot.* shape if present. An empty rules string collapses to null so
+ * a blank textarea doesn't inject an empty "Clinic rules:" line.
+ */
+export function getClinicBotConfig(clinic: Clinic): ClinicBotConfig {
+  const settings = clinic.settings as {
+    botTone?: unknown
+    clinicRules?: unknown
+    botLanguage?: unknown
+    bot?: Record<string, unknown>
+  }
+  const legacy = settings.bot ?? {}
+
+  const toneRaw = settings.botTone ?? legacy.tone
+  const tone = toneRaw === 'friendly' || toneRaw === 'brief' ? toneRaw : 'professional'
+
+  const langRaw = settings.botLanguage ?? legacy.language
+  const language = langRaw === 'es' || langRaw === 'en' ? langRaw : 'auto'
+
+  const rulesRaw = settings.clinicRules ?? legacy.rulesText
+  const rulesText =
+    typeof rulesRaw === 'string' && rulesRaw.trim() !== '' ? rulesRaw.trim() : null
+
   return { name: clinic.name, language, tone, rulesText }
 }
 
