@@ -33,7 +33,7 @@ export type { FollowUpsRepository, CreateFollowUpInput }                        
 export type { KnowledgeRepository, CreateDocumentInput, CreateChunkInput,
               CreateIaProfileInput, UpdateIaProfileInput, CreateIaRuleInput,
               EmbeddedChunkRow }                                                                  from './knowledge.repository.js'
-export type { ErrorReviewsRepository, CreateErrorReviewInput }                                   from './error-reviews.repository.js'
+export type { ErrorReviewsRepository, CreateErrorReviewInput, ErrorReviewFilters }               from './error-reviews.repository.js'
 export type { AiUsageRepository, ClinicUsageSummary, ClinicUsageRow }                            from './ai-usage.repository.js'
 export type { NotificationsRepository, CreateNotificationInput }                                 from './notifications.repository.js'
 export type { UsersRepository }                                                                  from './users.repository.js'

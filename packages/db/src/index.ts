@@ -131,6 +131,7 @@ export type {
   EmbeddedChunkRow,
   ErrorReviewsRepository,
   CreateErrorReviewInput,
+  ErrorReviewFilters,
   AiUsageRepository,
   ClinicUsageSummary,
   ClinicUsageRow,

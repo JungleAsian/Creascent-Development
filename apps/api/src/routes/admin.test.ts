@@ -39,9 +39,9 @@ vi.mock('@docmee/db', () => ({
     listByClinic: async (clinicId: string) => store.members.filter((m) => m.clinicId === clinicId),
   }),
   createErrorReviewsRepository: () => ({
-    listByClinic: async (clinicId: string, status?: string) =>
+    listByClinic: async (clinicId: string, filters: { status?: string } = {}) =>
       [...store.errors.values()].filter(
-        (e) => e.clinicId === clinicId && (!status || e.status === status),
+        (e) => e.clinicId === clinicId && (!filters.status || e.status === filters.status),
       ),
     findById: async (clinicId: string, id: string) => {
       const e = store.errors.get(id)

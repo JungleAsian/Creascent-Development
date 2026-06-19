@@ -95,6 +95,37 @@ async function request<T>(path: string, opts: ApiOptions = {}, isRetry = false):
   return (await res.json()) as T
 }
 
+// Authenticated file download (e.g. CSV export — Req 36). Mirrors request()'s bearer
+// header + single 401-refresh, but returns the raw body as a Blob and triggers a
+// browser download instead of parsing JSON.
+async function download(path: string, filename: string, isRetry = false): Promise<void> {
+  const { accessToken } = authSnapshot()
+  const headers: Record<string, string> = {}
+  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`
+
+  const res = await fetch(`${API_BASE}${path}`, { method: 'GET', headers })
+
+  if (res.status === 401 && !isRetry) {
+    const next = await refreshAccessToken()
+    if (next) return download(path, filename, true)
+    redirectToLogin()
+    throw new ApiError(401, 'Unauthorized')
+  }
+  if (!res.ok) throw new ApiError(res.status, res.statusText)
+
+  const blob = await res.blob()
+  if (typeof window !== 'undefined') {
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
@@ -102,6 +133,7 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  download,
 }
 
 export { API_BASE }

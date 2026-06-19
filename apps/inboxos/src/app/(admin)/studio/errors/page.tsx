@@ -31,9 +31,23 @@ export default function ErrorsPage() {
   const [clinicId, setClinicId] = useState('')
   const [showResolved, setShowResolved] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [checked, setChecked] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<ErrorReview | null>(null)
   const [kbTitle, setKbTitle] = useState('')
   const [kbContent, setKbContent] = useState('')
+
+  // Build the shared status + date-range query string for both the list and the
+  // CSV export so they always reflect the same filters (Req 36).
+  const filterQuery = useMemo(() => {
+    const params = new URLSearchParams()
+    if (!showResolved) params.set('status', 'open')
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    const qs = params.toString()
+    return qs ? `?${qs}` : ''
+  }, [showResolved, from, to])
 
   // Pre-fill the Add-to-KB form from the selected error each time it opens: the
   // patient's question becomes the document title, leaving the answer for the
@@ -44,12 +58,9 @@ export default function ErrorsPage() {
   }, [selected])
 
   const query = useQuery({
-    queryKey: ['errors', clinicId, showResolved],
+    queryKey: ['errors', clinicId, filterQuery],
     enabled: Boolean(clinicId),
-    queryFn: () => {
-      const qs = showResolved ? '' : '?status=open'
-      return api.get<{ errors: ErrorReview[] }>(`/clinics/${clinicId}/errors${qs}`)
-    },
+    queryFn: () => api.get<{ errors: ErrorReview[] }>(`/clinics/${clinicId}/errors${filterQuery}`),
   })
 
   const resolveMutation = useMutation({
@@ -57,6 +68,16 @@ export default function ErrorsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['errors', clinicId] })
       setSelected(null)
+    },
+  })
+
+  // Batch resolve (Req 36): resolve every checked error in one request.
+  const batchResolveMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post(`/clinics/${clinicId}/errors/batch-resolve`, { ids }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['errors', clinicId] })
+      setChecked(new Set())
     },
   })
 
@@ -80,6 +101,34 @@ export default function ErrorsPage() {
   )
   const errors = typeFilter ? allErrors.filter((e) => e.errorType === typeFilter) : allErrors
 
+  // Only open errors can be batch-resolved; selection is scoped to the visible list.
+  const resolvableIds = useMemo(
+    () => errors.filter((e) => e.status === 'open').map((e) => e.id),
+    [errors],
+  )
+  const checkedIds = useMemo(
+    () => resolvableIds.filter((id) => checked.has(id)),
+    [resolvableIds, checked],
+  )
+  const allChecked = resolvableIds.length > 0 && checkedIds.length === resolvableIds.length
+
+  function toggleCheck(id: string) {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setChecked(allChecked ? new Set() : new Set(resolvableIds))
+  }
+
+  function exportCsv() {
+    void api.download(`/clinics/${clinicId}/errors/export.csv${filterQuery}`, `error-reviews-${clinicId}.csv`)
+  }
+
   return (
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -99,6 +148,24 @@ export default function ErrorsPage() {
               ))}
             </select>
           )}
+          <label className="flex items-center gap-1 text-xs text-gray-500">
+            {t('studio.errors.from')}
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800"
+            />
+          </label>
+          <label className="flex items-center gap-1 text-xs text-gray-500">
+            {t('studio.errors.to')}
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800"
+            />
+          </label>
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
             <input
               type="checkbox"
@@ -107,9 +174,35 @@ export default function ErrorsPage() {
             />
             {t('studio.errors.showResolved')}
           </label>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={!clinicId || errors.length === 0}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            {t('studio.errors.export')}
+          </button>
           <ClinicSelect value={clinicId} onChange={setClinicId} label={t('studio.usage.selectClinic')} />
         </div>
       </div>
+
+      {/* Batch-resolve bar (Req 36): select-all + resolve every checked open error. */}
+      {clinicId && resolvableIds.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-gray-800 dark:bg-gray-900/50">
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+            {allChecked ? t('studio.errors.clearSelection') : t('studio.errors.selectAll')}
+          </label>
+          <button
+            type="button"
+            onClick={() => batchResolveMutation.mutate(checkedIds)}
+            disabled={checkedIds.length === 0 || batchResolveMutation.isPending}
+            className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {t('studio.errors.resolveSelected', { count: checkedIds.length })}
+          </button>
+        </div>
+      )}
 
       {!clinicId ? (
         <p className="text-sm text-gray-400">{t('studio.errors.selectClinic')}</p>
@@ -125,7 +218,17 @@ export default function ErrorsPage() {
               className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-start gap-2">
+                  {e.status === 'open' && (
+                    <input
+                      type="checkbox"
+                      checked={checked.has(e.id)}
+                      onChange={() => toggleCheck(e.id)}
+                      className="mt-1 shrink-0"
+                      aria-label={t('studio.errors.resolve')}
+                    />
+                  )}
+                  <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-red-700 dark:bg-red-950 dark:text-red-300">
                       {e.errorType}
@@ -138,6 +241,7 @@ export default function ErrorsPage() {
                     )}
                   </div>
                   <p className="mt-1 break-words text-sm">{e.errorMessage}</p>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
