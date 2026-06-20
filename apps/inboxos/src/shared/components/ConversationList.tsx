@@ -11,6 +11,7 @@ import { useI18n } from '../hooks/useI18n'
 import { useTeam } from '../hooks/useTeam'
 import { relativeTime } from '../format'
 import { assessSafety, safetyRank, type SafetyLevel } from '../safety'
+import { filterConversations, type ChannelFilter } from '../conversationFilter'
 import type { Channel, Conversation, ConversationStatus } from '../types'
 
 // Req 20: row treatment per safety severity — a coloured left rail + a badge so an
@@ -79,6 +80,10 @@ export function ConversationList({
   // Reserved values never collide with a uuid, so this is a pure UI default the
   // user can still change with the assignee picker.
   const [assignee, setAssignee] = useState<AssigneeFilter>(role === 'doctor' ? 'mine' : 'all')
+  // Find-a-thread affordances (client-side over the loaded set — the list isn't
+  // server-paginated): free-text search on the contact handle + a channel filter.
+  const [search, setSearch] = useState('')
+  const [channel, setChannel] = useState<ChannelFilter>('all')
 
   const query = useQuery({
     queryKey: ['conversations', status, assignee, userId],
@@ -95,20 +100,45 @@ export function ConversationList({
     },
   })
 
-  // Float safety-critical / urgent threads to the top of the queue (stable within
-  // each severity band, so recency order is preserved otherwise) — Req 20.
+  const allRows = query.data?.conversations ?? []
+  const filtersActive = search.trim() !== '' || channel !== 'all'
+
+  // Apply the search/channel filter, then float safety-critical / urgent threads to
+  // the top of the queue (stable within each severity band, so recency order is
+  // preserved otherwise) — Req 20.
   const conversations = useMemo(() => {
-    const rows = query.data?.conversations ?? []
-    return rows
+    return filterConversations(allRows, search, channel)
       .map((c, i) => ({ c, i, rank: safetyRank(assessSafety(c.tags).level) }))
       .sort((a, b) => b.rank - a.rank || a.i - b.i)
       .map((x) => x.c)
-  }, [query.data])
+  }, [allRows, search, channel])
 
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-gray-200 p-3 dark:border-gray-800">
         <h2 className="mb-2 text-sm font-semibold">{t('conv.title')}</h2>
+        {/* Find a thread by patient handle (client-side over the loaded set). */}
+        <div className="relative mb-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('conv.search')}
+            aria-label={t('conv.search')}
+            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+          />
+        </div>
+        {/* Channel filter (Req 4) — narrow the queue to one platform. */}
+        <div className="mb-2 flex flex-wrap gap-1">
+          <FilterChip active={channel === 'all'} onClick={() => setChannel('all')}>
+            {t('conv.filter.allChannels')}
+          </FilterChip>
+          {(Object.keys(CHANNEL_INDICATOR) as Channel[]).map((ch) => (
+            <FilterChip key={ch} active={channel === ch} onClick={() => setChannel(ch)}>
+              {CHANNEL_INDICATOR[ch].icon} {CHANNEL_INDICATOR[ch].label}
+            </FilterChip>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-1">
           <FilterChip active={status === 'all'} onClick={() => setStatus('all')}>
             {t('conv.filter.all')}
@@ -144,7 +174,23 @@ export function ConversationList({
         {query.isLoading ? (
           <p className="p-4 text-sm text-gray-400">{t('common.loading')}</p>
         ) : conversations.length === 0 ? (
-          <p className="p-4 text-sm text-gray-400">{t('conv.empty')}</p>
+          filtersActive ? (
+            <div className="p-4 text-sm text-gray-400">
+              <p>{t('conv.noMatch')}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('')
+                  setChannel('all')
+                }}
+                className="mt-2 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                {t('conv.clearFilters')}
+              </button>
+            </div>
+          ) : (
+            <p className="p-4 text-sm text-gray-400">{t('conv.empty')}</p>
+          )
         ) : (
           <ul>
             {conversations.map((c) => {

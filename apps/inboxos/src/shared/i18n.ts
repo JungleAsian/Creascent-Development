@@ -61,6 +61,11 @@ const es: Dict = {
   'conv.filter.mine': 'Mías',
   'conv.filter.assignee': 'Responsable',
   'conv.filter.allAssignees': 'Todos',
+  'conv.search': 'Buscar contacto…',
+  'conv.filter.channel': 'Canal',
+  'conv.filter.allChannels': 'Todos los canales',
+  'conv.noMatch': 'Ninguna conversación coincide con el filtro',
+  'conv.clearFilters': 'Limpiar filtros',
 
   'view.empty': 'Selecciona una conversación',
   'inbox.details': 'Detalles',
@@ -1099,6 +1104,11 @@ const en: Dict = {
   'conv.filter.mine': 'Mine',
   'conv.filter.assignee': 'Assignee',
   'conv.filter.allAssignees': 'Anyone',
+  'conv.search': 'Search contact…',
+  'conv.filter.channel': 'Channel',
+  'conv.filter.allChannels': 'All channels',
+  'conv.noMatch': 'No conversations match the filter',
+  'conv.clearFilters': 'Clear filters',
 
   'view.empty': 'Select a conversation',
   'inbox.details': 'Details',
