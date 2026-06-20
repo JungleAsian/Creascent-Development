@@ -97,6 +97,13 @@ export async function processReviewRequestJob(_job: Job): Promise<void> {
     for (const clinic of await clinics.list()) {
       if (clinic.status !== 'active') continue
 
+      // Screen 12 (Automation builder): skip clinics that switched review-request
+      // automation off. Absent flag = enabled (default-on).
+      const reviewEnabled =
+        (clinic.settings as { automations?: { reviewRequest?: { enabled?: boolean } } }).automations
+          ?.reviewRequest?.enabled !== false
+      if (!reviewEnabled) continue
+
       const reviewLink = getReviewLink(clinic)
       if (!reviewLink) continue // nothing to point patients at
 

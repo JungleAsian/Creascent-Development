@@ -959,6 +959,71 @@ const es: Dict = {
     'Eres administrador de IA Studio viendo los datos de otra clínica. Cualquier acción afecta a {clinic}, no a tu clínica.',
   'tenant.returnHome': 'Volver a mi clínica',
   'tenant.unknown': 'Clínica',
+
+  // Screen 12 — Automation & follow-ups.
+  'nav.automations': 'Automatizaciones',
+  'automations.title': 'Automatización y seguimientos',
+  'automations.selectClinic': 'Selecciona una clínica para configurar sus automatizaciones.',
+  'automations.saving': 'Guardando…',
+  'automations.saveError': 'No se pudo guardar el cambio. Inténtalo de nuevo.',
+  'automations.active': '{active} de {total} activas',
+  'automations.windowNote':
+    'WhatsApp solo permite texto libre dentro de las 24 h tras el último mensaje del paciente; fuera de esa ventana se requiere una plantilla aprobada. Además limitamos a {cap} mensajes proactivos por paciente al día para proteger el número.',
+
+  'automations.section.followUps': 'Seguimientos automáticos',
+  'automations.section.followUps.desc':
+    'Mensajes que el bot envía automáticamente según la cita del paciente. Cada tipo se vuelve a verificar al enviarse (consentimiento, cancelación y ventana de 24 h).',
+  'automations.section.review': 'Solicitudes de reseña',
+  'automations.section.review.desc':
+    'Pide la opinión del paciente tras una cita completada y mide cuántos hacen clic.',
+  'automations.section.flows': 'Flujos personalizados',
+  'automations.section.flows.desc':
+    'Flujos por palabra clave que omiten el LLM. Edítalos en el constructor de flujos.',
+
+  'automations.unit.hour': 'hora',
+  'automations.unit.hours': 'horas',
+  'automations.unit.day': 'día',
+  'automations.unit.days': 'días',
+  'automations.schedule.before': '{amount} {unit} antes de la cita',
+  'automations.schedule.after': '{amount} {unit} después de la cita',
+  'automations.schedule.afterSilence': '~{amount} {unit} después de que el paciente deja de responder',
+
+  'automations.window.template_fallback': 'Llega fuera de la ventana',
+  'automations.window.template_fallback.hint':
+    'Se envía como texto libre dentro de las 24 h, o con tu plantilla de WhatsApp aprobada fuera de ese plazo.',
+  'automations.window.in_window_only': 'Solo dentro de 24 h',
+  'automations.window.in_window_only.hint':
+    'Solo se entrega si el paciente escribió en las últimas 24 h; fuera de ese plazo se omite (no hay plantilla de respaldo).',
+
+  'automations.type.appointment_confirmation': 'Confirmación de cita',
+  'automations.type.appointment_confirmation.desc': 'Pide al paciente que confirme su asistencia.',
+  'automations.type.appointment_reminder': 'Recordatorio de cita',
+  'automations.type.appointment_reminder.desc': 'Recuerda al paciente su cita el mismo día.',
+  'automations.type.post_consultation': 'Tras la consulta',
+  'automations.type.post_consultation.desc': 'Pregunta cómo se siente el paciente después de la visita.',
+  'automations.type.seven_day': 'Seguimiento a 7 días',
+  'automations.type.seven_day.desc': 'Revisa la evolución del paciente una semana después.',
+  'automations.type.three_month': 'Reactivación a 3 meses',
+  'automations.type.three_month.desc': 'Invita a agendar una revisión tres meses después.',
+  'automations.type.no_response': 'Sin respuesta',
+  'automations.type.no_response.desc':
+    'Un único recordatorio cuando el paciente deja una conversación a medias.',
+
+  'automations.review.trigger': 'Se envía de 48 h a 7 días después de una cita completada.',
+  'automations.review.linkLabel': 'Enlace de reseña',
+  'automations.review.linkPlaceholder': 'https://g.page/r/tu-clinica/review',
+  'automations.review.linkHint': 'El paciente recibe un enlace rastreable que redirige aquí.',
+  'automations.review.noLink':
+    'No hay enlace de reseña configurado: las solicitudes están en pausa hasta que agregues uno.',
+  'automations.review.previewTitle': 'El paciente ve',
+  'automations.review.sampleDoctor': 'Dr. García',
+  'automations.review.samplePlaceholder': '[enlace de reseña]',
+
+  'automations.flows.manage': 'Gestionar flujos →',
+  'automations.flows.empty': 'Aún no hay flujos personalizados.',
+  'automations.flows.keywords': 'Palabras clave',
+  'automations.flows.on': 'Activo',
+  'automations.flows.off': 'Inactivo',
 }
 
 const en: Dict = {
@@ -1910,6 +1975,70 @@ const en: Dict = {
     'You are an IA Studio admin viewing another clinic\'s data. Any action affects {clinic}, not your own clinic.',
   'tenant.returnHome': 'Back to my clinic',
   'tenant.unknown': 'Clinic',
+
+  // Screen 12 — Automation & follow-ups.
+  'nav.automations': 'Automations',
+  'automations.title': 'Automation & follow-ups',
+  'automations.selectClinic': 'Select a clinic to configure its automations.',
+  'automations.saving': 'Saving…',
+  'automations.saveError': 'Could not save the change. Please try again.',
+  'automations.active': '{active} of {total} active',
+  'automations.windowNote':
+    'WhatsApp only allows free text within 24 h of the patient’s last message; outside that window an approved template is required. We also cap proactive messages at {cap} per patient per day to protect the number.',
+
+  'automations.section.followUps': 'Automatic follow-ups',
+  'automations.section.followUps.desc':
+    'Messages the bot sends automatically around a patient’s appointment. Each type is re-checked at send time (consent, cancellation, and the 24 h window).',
+  'automations.section.review': 'Review requests',
+  'automations.section.review.desc':
+    'Ask patients for feedback after a completed appointment and measure click-through.',
+  'automations.section.flows': 'Custom flows',
+  'automations.section.flows.desc':
+    'Keyword-triggered flows that bypass the LLM. Edit them in the flow builder.',
+
+  'automations.unit.hour': 'hour',
+  'automations.unit.hours': 'hours',
+  'automations.unit.day': 'day',
+  'automations.unit.days': 'days',
+  'automations.schedule.before': '{amount} {unit} before the appointment',
+  'automations.schedule.after': '{amount} {unit} after the appointment',
+  'automations.schedule.afterSilence': '~{amount} {unit} after the patient goes quiet',
+
+  'automations.window.template_fallback': 'Reaches patients anytime',
+  'automations.window.template_fallback.hint':
+    'Sent as free text inside the 24 h window, or via your approved WhatsApp template outside it.',
+  'automations.window.in_window_only': '24 h window only',
+  'automations.window.in_window_only.hint':
+    'Only delivered if the patient messaged in the last 24 h; otherwise skipped (no approved template fallback).',
+
+  'automations.type.appointment_confirmation': 'Appointment confirmation',
+  'automations.type.appointment_confirmation.desc': 'Asks the patient to confirm they will attend.',
+  'automations.type.appointment_reminder': 'Appointment reminder',
+  'automations.type.appointment_reminder.desc': 'Reminds the patient of their appointment the same day.',
+  'automations.type.post_consultation': 'Post-consultation',
+  'automations.type.post_consultation.desc': 'Checks how the patient feels after the visit.',
+  'automations.type.seven_day': '7-day follow-up',
+  'automations.type.seven_day.desc': 'Checks on the patient’s recovery a week later.',
+  'automations.type.three_month': '3-month re-activation',
+  'automations.type.three_month.desc': 'Invites the patient to book a check-up three months later.',
+  'automations.type.no_response': 'No response',
+  'automations.type.no_response.desc':
+    'A single nudge when the patient leaves a conversation half-finished.',
+
+  'automations.review.trigger': 'Sent 48 h to 7 days after a completed appointment.',
+  'automations.review.linkLabel': 'Review link',
+  'automations.review.linkPlaceholder': 'https://g.page/r/your-clinic/review',
+  'automations.review.linkHint': 'Patients receive a tracked link that redirects here.',
+  'automations.review.noLink': 'No review link set — review requests are paused until you add one.',
+  'automations.review.previewTitle': 'Patient sees',
+  'automations.review.sampleDoctor': 'Dr. García',
+  'automations.review.samplePlaceholder': '[review link]',
+
+  'automations.flows.manage': 'Manage flows →',
+  'automations.flows.empty': 'No custom flows yet.',
+  'automations.flows.keywords': 'Keywords',
+  'automations.flows.on': 'Active',
+  'automations.flows.off': 'Inactive',
 }
 
 const DICTS: Record<PanelLanguage, Dict> = { es, en }

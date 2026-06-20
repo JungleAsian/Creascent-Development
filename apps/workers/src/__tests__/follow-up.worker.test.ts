@@ -171,6 +171,31 @@ describe('processFollowUpJob', () => {
     expect(h.sendWhatsAppText).not.toHaveBeenCalled()
   })
 
+  describe('per-clinic automation toggle (Screen 12)', () => {
+    it('skips a type the clinic switched off', async () => {
+      h.findClinic.mockResolvedValue({
+        id: CLINIC,
+        name: 'Clinic',
+        timezone: 'UTC',
+        settings: { automations: { followUps: { appointment_confirmation: false } } },
+      })
+      await processFollowUpJob(makeJob(base))
+      expect(h.sendWhatsAppText).not.toHaveBeenCalled()
+      expect(h.createIfAbsent).not.toHaveBeenCalled()
+    })
+
+    it('still sends a different type that stays enabled', async () => {
+      h.findClinic.mockResolvedValue({
+        id: CLINIC,
+        name: 'Clinic',
+        timezone: 'UTC',
+        settings: { automations: { followUps: { seven_day: false } } },
+      })
+      await processFollowUpJob(makeJob(base)) // confirmation — not disabled
+      expect(h.sendWhatsAppText).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('drops the job for an unknown clinic', async () => {
     h.findClinic.mockResolvedValue(null)
     await processFollowUpJob(makeJob(base))

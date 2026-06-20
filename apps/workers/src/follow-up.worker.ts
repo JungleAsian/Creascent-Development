@@ -58,6 +58,14 @@ function getPatientLanguage(patient: Patient): Language {
   return (patient.metadata as { language?: unknown }).language === 'en' ? 'en' : 'es'
 }
 
+/** Screen 12: a follow-up type is disabled only when clinic.settings.automations
+ *  carries an explicit `false`. Anything else (no config, true) means enabled. */
+function isFollowUpTypeDisabled(settings: unknown, type: string): boolean {
+  const automations = (settings as { automations?: { followUps?: Record<string, unknown> } } | null)
+    ?.automations
+  return automations?.followUps?.[type] === false
+}
+
 function isPatientOptedOut(patient: Patient): boolean {
   return (patient.metadata as { optedOut?: unknown }).optedOut === true
 }
@@ -153,6 +161,15 @@ export async function processFollowUpJob(job: Job): Promise<void> {
     const clinic = await clinics.findById(data.clinicId)
     if (!clinic) {
       console.warn(`[follow-up] unknown clinic ${data.clinicId}; dropping ${data.type}`)
+      return
+    }
+
+    // Screen 12 (Automation builder): honour the clinic's per-type enable flag at
+    // fire time. A type the admin switched off is skipped here — consistent with the
+    // consent / cancellation re-checks below. Absent flag = enabled (default-on), so
+    // clinics that never opened the builder are unaffected.
+    if (isFollowUpTypeDisabled(clinic.settings, data.type)) {
+      console.log(`[follow-up] ${data.type} disabled for clinic ${data.clinicId}; skipping`)
       return
     }
 

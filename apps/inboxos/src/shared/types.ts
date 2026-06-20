@@ -3,6 +3,7 @@
 // on the database package.
 
 import type { ClinicRule } from './clinicRules'
+import type { AutomationsConfig } from './automations'
 
 export type PanelRole = 'secretary' | 'doctor' | 'clinic_admin' | 'ia_studio_admin'
 export type PanelLanguage = 'es' | 'en'
@@ -368,6 +369,10 @@ export interface ClinicSettings {
   messengerTokenExpiresAt?: string
   instagramTokenExpiresAt?: string
   license_key?: string
+  // Screen 12 (Automation & follow-ups). reviewLink is where the review-request
+  // worker points patients; automations gates the follow-up/review automations.
+  reviewLink?: string
+  automations?: AutomationsConfig
   [key: string]: unknown
 }
 

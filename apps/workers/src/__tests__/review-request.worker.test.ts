@@ -121,6 +121,22 @@ describe('processReviewRequestJob', () => {
     expect(h.end).toHaveBeenCalled() // db connection always closed
   })
 
+  it('skips a clinic that switched review-request automation off (Screen 12)', async () => {
+    h.listClinics.mockResolvedValue([
+      {
+        id: CLINIC,
+        status: 'active',
+        settings: {
+          reviewLink: 'https://g.page/clinic/review',
+          automations: { reviewRequest: { enabled: false } },
+        },
+      },
+    ])
+    await processReviewRequestJob(makeJob())
+    expect(h.listCompletedForReview).not.toHaveBeenCalled()
+    expect(h.sendWhatsAppText).not.toHaveBeenCalled()
+  })
+
   it('stays silent when the patient has no WhatsApp contact', async () => {
     h.listContacts.mockResolvedValue([])
     await processReviewRequestJob(makeJob())

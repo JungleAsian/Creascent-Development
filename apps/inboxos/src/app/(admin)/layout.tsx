@@ -25,6 +25,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       { href: '/studio/doctors', label: t('nav.doctors') },
       { href: '/studio/kb', label: t('nav.kb') },
       { href: '/studio/custom-flows', label: t('nav.customFlows') },
+      { href: '/studio/automations', label: t('nav.automations') },
       { href: '/studio/quick-replies', label: t('nav.quickReplies') },
       { href: '/studio/templates', label: t('nav.templates') },
       { href: '/studio/errors', label: t('nav.errors') },
