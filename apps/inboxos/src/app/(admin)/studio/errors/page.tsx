@@ -208,6 +208,13 @@ export default function ErrorsPage() {
         <p className="text-sm text-gray-400">{t('studio.errors.selectClinic')}</p>
       ) : query.isLoading ? (
         <p className="text-sm text-gray-400">{t('common.loading')}</p>
+      ) : query.isError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {t('common.error')}{' '}
+          <button type="button" onClick={() => query.refetch()} className="font-medium underline">
+            {t('common.retry')}
+          </button>
+        </div>
       ) : errors.length === 0 ? (
         <p className="text-sm text-gray-400">{t('studio.errors.empty')}</p>
       ) : (
