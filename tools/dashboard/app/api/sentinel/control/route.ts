@@ -46,8 +46,20 @@ function stopDaemon(pid: number) {
 }
 
 function redirect(request: Request, key: 'message' | 'error', value: string) {
-  const referer = request.headers.get('referer') ?? 'http://127.0.0.1:4000/sentinel'
-  const url = new URL(referer)
+  // Always redirect to a fixed local origin; only carry a validated pathname from
+  // the referer so the Referer header can't drive an off-site open redirect.
+  const fixedBase = 'http://127.0.0.1:4000'
+  let pathname = '/sentinel'
+  try {
+    const refPath = new URL(request.headers.get('referer') ?? '').pathname
+    if (refPath.startsWith('/')) pathname = refPath
+  } catch {
+    // Keep the default pathname.
+  }
+  const url = new URL(pathname, fixedBase)
+  // Clear both banners first so a prior message/error doesn't linger alongside the new one.
+  url.searchParams.delete('message')
+  url.searchParams.delete('error')
   url.searchParams.set(key, value)
   return NextResponse.redirect(url, 303)
 }

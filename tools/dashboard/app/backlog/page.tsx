@@ -31,7 +31,8 @@ function countBy(rows: Task[], key: keyof Pick<Task, 'status' | 'priority' | 'ph
 }
 
 function priorityDotTone(priority: string) {
-  if (priority === 'critical' || priority === 'high') return 'red' as const
+  if (priority === 'critical') return 'red' as const
+  if (priority === 'high') return 'orange' as const
   if (priority === 'medium') return 'amber' as const
   if (priority === 'infrastructure') return 'sky' as const
   return 'slate' as const

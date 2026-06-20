@@ -56,26 +56,33 @@ type CodexSessionEvent = {
 
 const phases = Array.from({ length: 19 }, (_, index) => `P${String(index + 1).padStart(2, '0')}`)
 
+// These JSON files are written concurrently by daemons/CLI, so a mid-write read
+// can be malformed — guard every parse so the Cost page degrades instead of 500ing.
+function readJsonSafe<T>(file: string, fallback: T): T {
+  if (!fs.existsSync(file)) return fallback
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as T
+  } catch {
+    return fallback
+  }
+}
+
 function readDevelopmentCost() {
-  if (!fs.existsSync(costFile)) return [] as DevCostEntry[]
-  const data = JSON.parse(fs.readFileSync(costFile, 'utf8')) as CostStore
+  const data = readJsonSafe<CostStore>(costFile, [])
   return Array.isArray(data) ? [] : data.development ?? []
 }
 
 function readRuntimeCost() {
-  if (!fs.existsSync(costFile)) return [] as RuntimeCostEntry[]
-  const data = JSON.parse(fs.readFileSync(costFile, 'utf8')) as CostStore
+  const data = readJsonSafe<CostStore>(costFile, [])
   return Array.isArray(data) ? data : data.runtime ?? []
 }
 
 function readFeatures() {
-  if (!fs.existsSync(coverageFile)) return [] as Feature[]
-  return JSON.parse(fs.readFileSync(coverageFile, 'utf8')) as Feature[]
+  return readJsonSafe<Feature[]>(coverageFile, [])
 }
 
 function readFeatureRun() {
-  if (!fs.existsSync(featureRunFile)) return {} as FeatureRun
-  return JSON.parse(fs.readFileSync(featureRunFile, 'utf8')) as FeatureRun
+  return readJsonSafe<FeatureRun>(featureRunFile, {} as FeatureRun)
 }
 
 function sum(entries: DevCostEntry[], tool?: string) {
@@ -146,7 +153,16 @@ function codexSessionFiles(root: string) {
   return files
 }
 
-function readCodexUsageSince(since: Date) {
+type CodexUsageResult = { since: Date; sessions: number; events: number; input: number; cached: number; output: number; reasoning: number; total: number }
+let codexUsageCache: { at: number; sinceMs: number; result: CodexUsageResult } | null = null
+const codexUsageTtlMs = 60 * 1000
+
+function readCodexUsageSince(since: Date): CodexUsageResult {
+  const now = Date.now()
+  const sinceMs = since.getTime()
+  if (codexUsageCache && codexUsageCache.sinceMs === sinceMs && now - codexUsageCache.at < codexUsageTtlMs) {
+    return codexUsageCache.result
+  }
   const codexRoot = path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex')
   const files = [
     ...codexSessionFiles(path.join(codexRoot, 'sessions')),
@@ -157,6 +173,13 @@ function readCodexUsageSince(since: Date) {
   let events = 0
 
   for (const file of files) {
+    // A session entirely older than `since` contributes no at/after-window usage,
+    // so skip by mtime instead of reading the whole (ever-growing) archive corpus.
+    try {
+      if (fs.statSync(file).mtimeMs < sinceMs) continue
+    } catch {
+      continue
+    }
     let sessionMatches = file.includes(currentCodexThreadId)
     let before: CodexTokenUsage | undefined
     let after: CodexTokenUsage | undefined
@@ -185,7 +208,7 @@ function readCodexUsageSince(since: Date) {
     }
   }
 
-  return {
+  const result: CodexUsageResult = {
     since,
     sessions,
     events,
@@ -195,6 +218,8 @@ function readCodexUsageSince(since: Date) {
     reasoning: total.reasoning_output_tokens ?? 0,
     total: total.total_tokens ?? 0
   }
+  codexUsageCache = { at: now, sinceMs, result }
+  return result
 }
 
 export default async function CostPage({ searchParams }: PageProps) {
