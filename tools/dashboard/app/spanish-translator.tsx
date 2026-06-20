@@ -155,28 +155,370 @@ const exactTranslations: Record<string, string> = {
 }
 
 const wordTranslations: Record<string, string> = {
+  active: 'activo',
+  Active: 'Activo',
+  Accepted: 'Aceptado',
+  Account: 'Cuenta',
+  Accounts: 'Cuentas',
+  Action: 'Accion',
+  Actions: 'Acciones',
+  Add: 'Agregar',
+  Admin: 'Admin',
+  After: 'Despues',
   Agents: 'Agentes',
+  All: 'Todo',
+  Application: 'Aplicacion',
+  Approval: 'Aprobacion',
+  Approved: 'Aprobado',
+  Area: 'Area',
+  Audit: 'Auditoria',
+  Automated: 'Automatizado',
+  Automation: 'Automatizacion',
+  Available: 'Disponible',
   Backlog: 'Pendientes',
+  Backend: 'Backend',
+  Before: 'Antes',
+  Blocker: 'Bloqueo',
+  Blockers: 'Bloqueos',
+  Bot: 'Bot',
+  Build: 'Compilacion',
+  Button: 'Boton',
+  Calendar: 'Calendario',
+  Cached: 'En cache',
+  Capture: 'Captura',
+  Card: 'Tarjeta',
+  Change: 'Cambiar',
   Check: 'Comprobar',
+  Checks: 'Comprobaciones',
+  Checking: 'Revisando',
+  Claude: 'Claude',
+  Clear: 'Limpiar',
+  Clinic: 'Clinica',
+  Clinics: 'Clinicas',
+  Code: 'Codigo',
   Complete: 'Completo',
   Completed: 'Completado',
+  Cost: 'Costo',
   Configuration: 'Configuracion',
+  Connected: 'Conectado',
+  Console: 'Consola',
+  Continue: 'Continuar',
+  Control: 'Control',
+  Current: 'Actual',
+  Database: 'Base de datos',
+  Date: 'Fecha',
+  Delay: 'Retraso',
+  Delayed: 'Retrasado',
+  Delete: 'Eliminar',
+  Deploy: 'Desplegar',
+  Deployment: 'Despliegue',
+  Design: 'Diseno',
+  Details: 'Detalles',
+  Development: 'Desarrollo',
   Diagnostics: 'Diagnosticos',
+  Discord: 'Discord',
+  Doctor: 'Doctor',
+  Done: 'Listo',
+  Dry: 'Seco',
+  Empty: 'Vacio',
   English: 'Ingles',
+  Error: 'Error',
+  Errors: 'Errores',
+  Event: 'Evento',
+  Events: 'Eventos',
+  Exact: 'Exacto',
+  Export: 'Exportar',
+  Failed: 'Fallo',
+  Feature: 'Funcion',
+  Features: 'Funciones',
+  File: 'Archivo',
+  Filter: 'Filtro',
+  Final: 'Final',
+  Finished: 'Terminado',
+  Fix: 'Corregir',
+  Frontend: 'Frontend',
   Gates: 'Controles',
-  Halted: 'Detenido',
+  Generated: 'Generado',
+  Guide: 'Guia',
+  Health: 'Estado',
+  Home: 'Inicio',
+  Human: 'Humano',
+  Idle: 'Inactivo',
+  Import: 'Importar',
+  Imported: 'Importado',
+  Inbox: 'Bandeja',
+  Input: 'Entrada',
+  Integration: 'Integracion',
+  Integrations: 'Integraciones',
+  Issue: 'Problema',
+  Issues: 'Problemas',
+  Item: 'Elemento',
+  Items: 'Elementos',
+  Label: 'Etiqueta',
+  Labels: 'Etiquetas',
+  Lane: 'Carril',
+  Language: 'Idioma',
+  Last: 'Ultimo',
+  Latest: 'Mas reciente',
+  Launch: 'Abrir',
+  Layout: 'Diseno',
+  Live: 'Activo',
+  Loading: 'Cargando',
+  Local: 'Local',
+  Log: 'Registro',
   Logs: 'Registros',
+  Manual: 'Manual',
+  Matrix: 'Matriz',
+  Message: 'Mensaje',
+  Method: 'Metodo',
+  Metrics: 'Metricas',
+  Missing: 'Faltante',
+  Mobile: 'Movil',
+  Model: 'Modelo',
+  Monitor: 'Monitor',
   More: 'Mas',
+  Name: 'Nombre',
+  Needed: 'Necesario',
+  Needs: 'Requiere',
+  New: 'Nuevo',
+  Next: 'Siguiente',
+  No: 'No',
+  Note: 'Nota',
+  Notes: 'Notas',
+  Notion: 'Notion',
+  Offline: 'Sin conexion',
+  Open: 'Abrir',
+  Operations: 'Operaciones',
+  Output: 'Salida',
   Overview: 'Resumen',
+  Page: 'Pagina',
+  Passed: 'Aprobado',
+  Patient: 'Paciente',
   Pending: 'Pendiente',
+  Permission: 'Permiso',
+  Phase: 'Fase',
+  Planned: 'Planificado',
+  Pre: 'Pre',
+  Priority: 'Prioridad',
+  Process: 'Proceso',
+  Product: 'Producto',
+  Progress: 'Progreso',
+  Halted: 'Detenido',
+  Heartbeat: 'Latido',
   Progressing: 'Avanzando',
+  Prompt: 'Prompt',
+  Prompts: 'Prompts',
+  Queue: 'Cola',
   Ready: 'Listo',
+  Record: 'Registro',
+  Recorded: 'Registrado',
+  Records: 'Registros',
+  Refresh: 'Actualizar',
+  Report: 'Reporte',
+  Required: 'Requerido',
+  Reset: 'Restablecer',
+  Response: 'Respuesta',
+  Result: 'Resultado',
+  Resume: 'Reanudar',
+  Review: 'Revisar',
+  Run: 'Ejecutar',
+  Running: 'Activo',
+  Safe: 'Seguro',
+  Scan: 'Escaneo',
+  Screen: 'Pantalla',
+  Screens: 'Pantallas',
+  Secretary: 'Secretaria',
+  Session: 'Sesion',
+  Sessions: 'Sesiones',
+  Set: 'Definir',
   Settings: 'Configuracion',
+  Source: 'Origen',
+  Spanish: 'Espanol',
+  Start: 'Iniciar',
+  Started: 'Iniciado',
+  State: 'Estado',
+  States: 'Estados',
+  Status: 'Estado',
+  Step: 'Paso',
+  Steps: 'Pasos',
+  Stop: 'Detener',
   Stopped: 'Detenido',
-  Unknown: 'Desconocido'
+  Success: 'Exito',
+  Summary: 'Resumen',
+  Sync: 'Sincronizar',
+  Synced: 'Sincronizado',
+  Switch: 'Cambiar',
+  Table: 'Tabla',
+  Target: 'Destino',
+  Task: 'Tarea',
+  Tasks: 'Tareas',
+  Test: 'Prueba',
+  Time: 'Hora',
+  Timestamp: 'Fecha y hora',
+  Tokens: 'Tokens',
+  Tool: 'Herramienta',
+  Tools: 'Herramientas',
+  Total: 'Total',
+  Traceability: 'Trazabilidad',
+  Type: 'Tipo',
+  UI: 'UI',
+  Unknown: 'Desconocido',
+  Update: 'Actualizar',
+  Updated: 'Actualizado',
+  Updates: 'Actualizaciones',
+  Usage: 'Uso',
+  User: 'Usuario',
+  Value: 'Valor',
+  Verified: 'Verificado',
+  View: 'Vista',
+  Visible: 'Visible',
+  Waiting: 'En espera',
+  Warning: 'Advertencia',
+  Warnings: 'Advertencias',
+  Working: 'Trabajando',
+  Workflow: 'Flujo',
+  Workspace: 'Espacio de trabajo',
+  accepted: 'aceptado',
+  action: 'accion',
+  all: 'todo',
+  audit: 'auditoria',
+  automated: 'automatizado',
+  available: 'disponible',
+  backend: 'backend',
+  blockers: 'bloqueos',
+  build: 'compilacion',
+  button: 'boton',
+  check: 'comprobacion',
+  checks: 'comprobaciones',
+  complete: 'completo',
+  completed: 'completado',
+  connected: 'conectado',
+  cost: 'costo',
+  current: 'actual',
+  deployment: 'despliegue',
+  design: 'diseno',
+  development: 'desarrollo',
+  done: 'listo',
+  error: 'error',
+  errors: 'errores',
+  feature: 'funcion',
+  features: 'funciones',
+  frontend: 'frontend',
+  heartbeat: 'latido',
+  lane: 'carril',
+  latest: 'mas reciente',
+  local: 'local',
+  missing: 'faltante',
+  mobile: 'movil',
+  needed: 'necesario',
+  needs: 'requiere',
+  next: 'siguiente',
+  open: 'abierto',
+  pending: 'pendiente',
+  phase: 'fase',
+  planned: 'planificado',
+  priority: 'prioridad',
+  progress: 'progreso',
+  progressing: 'avanzando',
+  queue: 'cola',
+  ready: 'listo',
+  record: 'registro',
+  records: 'registros',
+  report: 'reporte',
+  review: 'revision',
+  running: 'activo',
+  screen: 'pantalla',
+  screens: 'pantallas',
+  source: 'origen',
+  start: 'iniciar',
+  status: 'estado',
+  stopped: 'detenido',
+  sync: 'sincronizar',
+  synced: 'sincronizado',
+  tokens: 'tokens',
+  total: 'total',
+  updated: 'actualizado',
+  warning: 'advertencia',
+  warnings: 'advertencias',
+  workflow: 'flujo'
 }
 
+const phraseTranslations: Array<[RegExp, string]> = [
+  [/\bStart Frontend Development\b/g, 'Iniciar desarrollo frontend'],
+  [/\bFrontend Start Check\b/g, 'Comprobacion de inicio frontend'],
+  [/\bFrontend Build Control\b/g, 'Control de compilacion frontend'],
+  [/\bFeatures Development\b/g, 'Desarrollo de funciones'],
+  [/\bFeature Development\b/g, 'Desarrollo de funciones'],
+  [/\bDocmee Deployment\b/g, 'Despliegue de Docmee'],
+  [/\bBuild Control\b/g, 'Control de compilacion'],
+  [/\bReady Check\b/g, 'Comprobacion de preparacion'],
+  [/\bStart Check\b/g, 'Comprobacion de inicio'],
+  [/\bOpen Ready Details\b/g, 'Abrir detalles de preparacion'],
+  [/\bOpen Feature Queue\b/g, 'Abrir cola de funciones'],
+  [/\bLaunch Local App\b/g, 'Abrir aplicacion local'],
+  [/\bOpen Deploy Guide\b/g, 'Abrir guia de despliegue'],
+  [/\bDevelopment Cost\b/g, 'Costo de desarrollo'],
+  [/\bStack Intelligence\b/g, 'Inteligencia del stack'],
+  [/\bPost-Deployment Log\b/g, 'Registro post-despliegue'],
+  [/\bPre-deployment\b/g, 'Pre-despliegue'],
+  [/\bDiscord Status\b/g, 'Estado de Discord'],
+  [/\bWebhook Console\b/g, 'Consola de webhooks'],
+  [/\bSeed Generator\b/g, 'Generador de datos'],
+  [/\bInstall Monitor\b/g, 'Monitor de instalacion'],
+  [/\bPhase Progress\b/g, 'Progreso de fases'],
+  [/\bSix Gates\b/g, 'Seis controles'],
+  [/\bClaude Switch\b/g, 'Cambio de Claude'],
+  [/\bCodex Switch\b/g, 'Cambio de Codex'],
+  [/\bCurrent workspace\b/g, 'Espacio de trabajo actual'],
+  [/\bGo back\b/g, 'Volver'],
+  [/\bGo forward\b/g, 'Avanzar'],
+  [/\bTurn on auto refresh\b/g, 'Activar actualizacion automatica'],
+  [/\bTurn off auto refresh\b/g, 'Desactivar actualizacion automatica'],
+  [/\bRefresh DevTools view\b/g, 'Actualizar vista de DevTools'],
+  [/\bWorking\.\.\./g, 'Trabajando...'],
+  [/\bnot running\b/g, 'no esta activo'],
+  [/\bnot passed yet\b/g, 'todavia no aprobado'],
+  [/\bneeds audit\b/g, 'requiere auditoria'],
+  [/\bneed audit\b/g, 'requieren auditoria'],
+  [/\baccepted\b/g, 'aceptado'],
+  [/\bcomplete\b/g, 'completo'],
+  [/\bpending\b/g, 'pendiente'],
+  [/\brunning\b/g, 'activo'],
+  [/\bpaused\b/g, 'pausado'],
+  [/\bstopped\b/g, 'detenido'],
+  [/\bfailed\b/g, 'fallo'],
+  [/\bwarning\b/g, 'advertencia'],
+  [/\bwarnings\b/g, 'advertencias'],
+  [/\bblockers\b/g, 'bloqueos'],
+  [/\bReady\b/g, 'Listo'],
+  [/\bOpen\b/g, 'Abrir'],
+  [/\bRun\b/g, 'Ejecutar'],
+  [/\bStart\b/g, 'Iniciar'],
+  [/\bStop\b/g, 'Detener'],
+  [/\bDeploy\b/g, 'Desplegar'],
+  [/\bDeployment\b/g, 'Despliegue'],
+  [/\bSettings\b/g, 'Configuracion']
+]
+
 const originals = new WeakMap<Text, string>()
+
+function preserveCase(source: string, translated: string) {
+  if (source.toUpperCase() === source && source.length > 1) return translated.toUpperCase()
+  if (source[0]?.toUpperCase() === source[0]) return `${translated[0]?.toUpperCase() ?? ''}${translated.slice(1)}`
+  return translated
+}
+
+function translateWord(word: string) {
+  const exact = wordTranslations[word]
+  if (exact) return exact
+  const lower = word.toLowerCase()
+  const translated = wordTranslations[lower]
+  return translated ? preserveCase(word, translated) : word
+}
+
+function translateWords(value: string) {
+  return value.replace(/\b[A-Za-z][A-Za-z'-]*\b/g, (word) => translateWord(word))
+}
 
 function translateText(value: string) {
   const trimmed = value.trim()
@@ -206,13 +548,20 @@ function translateText(value: string) {
   if (startingMatch) return value.replace(trimmed, `Compilacion de ${startingMatch[1]} con Claude Code iniciando`)
 
   const word = wordTranslations[trimmed]
-  return word ? value.replace(trimmed, word) : value
+  if (word) return value.replace(trimmed, word)
+
+  let translated = trimmed
+  for (const [pattern, replacement] of phraseTranslations) {
+    translated = translated.replace(pattern, replacement)
+  }
+  if (translated === trimmed) translated = translateWords(trimmed)
+  return translated !== trimmed ? value.replace(trimmed, translated) : value
 }
 
 function shouldSkip(node: Node) {
   const parent = node.parentElement
   if (!parent) return true
-  return Boolean(parent.closest('script, style, code, pre, textarea, input, select, option, [data-no-translate]'))
+  return Boolean(parent.closest('script, style, code, pre, textarea, input, select, option, svg, [data-no-translate]'))
 }
 
 function translate(root: HTMLElement, language: 'en' | 'es') {
@@ -231,7 +580,25 @@ function translate(root: HTMLElement, language: 'en' | 'es') {
       original = current
       originals.set(node, original)
     }
-    node.nodeValue = language === 'es' ? translateText(original) : original
+    const next = language === 'es' ? translateText(original) : original
+    // Only write when the value actually changes. An unconditional assignment
+    // queues a characterData mutation even for identical text, which would
+    // re-trigger the MutationObserver below and spin the main thread forever.
+    if (node.nodeValue !== next) node.nodeValue = next
+  }
+
+  const attributes = ['title', 'aria-label', 'placeholder']
+  for (const element of Array.from(root.querySelectorAll<HTMLElement>('a, button, input, textarea, [title], [aria-label], [placeholder]'))) {
+    if (element.closest('script, style, code, pre, [data-no-translate]')) continue
+    for (const attribute of attributes) {
+      const current = element.getAttribute(attribute)
+      if (!current) continue
+      const key = `data-original-${attribute}`
+      const original = element.getAttribute(key) ?? current
+      if (!element.hasAttribute(key)) element.setAttribute(key, original)
+      const next = language === 'es' ? translateText(original) : original
+      if (current !== next) element.setAttribute(attribute, next)
+    }
   }
 }
 
@@ -241,18 +608,37 @@ export function SpanishTranslator({ children, language }: Props) {
   useEffect(() => {
     const root = ref.current
     if (!root) return
-    let applying = false
-    const apply = () => {
-      if (applying) return
-      applying = true
-      translate(root, language)
-      applying = false
+    let observer: MutationObserver | null = null
+    let cancelled = false
+    const observeConfig: MutationObserverInit = {
+      attributes: true,
+      attributeFilter: ['title', 'aria-label', 'placeholder'],
+      characterData: true,
+      childList: true,
+      subtree: true
     }
-    apply()
-    const observer = new MutationObserver(apply)
-    observer.observe(root, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    // Disconnect while translating so our own DOM writes don't feed back into
+    // the observer (a MutationObserver callback is async, so an in-callback
+    // re-entrancy flag cannot prevent that self-trigger). Re-observe afterward
+    // to keep picking up real content changes from React re-renders.
+    const apply = () => {
+      if (cancelled || !observer) return
+      observer.disconnect()
+      translate(root, language)
+      if (!cancelled) observer.observe(root, observeConfig)
+    }
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      observer = new MutationObserver(apply)
+      translate(root, language)
+      observer.observe(root, observeConfig)
+    }, 750)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      observer?.disconnect()
+    }
   }, [language])
 
-  return <div ref={ref}>{children}</div>
+  return <div ref={ref} className="contents" suppressHydrationWarning>{children}</div>
 }
