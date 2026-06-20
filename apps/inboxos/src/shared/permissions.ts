@@ -24,6 +24,7 @@ import type { PanelRole } from './types'
 /** A clinic-panel surface a role may (or may not) reach. */
 export type Capability =
   | 'inbox' // conversation list / view: read, reply, status, assign, notes
+  | 'calendar' // booking calendar: read appointments, book/reschedule/cancel
   | 'assistant' // the AI assistant panel inside a conversation
   | 'metrics' // basic metrics dashboard
   | 'analytics' // advanced analytics dashboard (additionally feature-flagged)
@@ -32,10 +33,10 @@ export type Capability =
   | 'studio' // IA Studio admin console
 
 const ROLE_CAPABILITIES: Record<PanelRole, readonly Capability[]> = {
-  secretary: ['inbox', 'assistant'],
-  doctor: ['inbox', 'assistant'],
-  clinic_admin: ['inbox', 'assistant', 'metrics', 'analytics', 'qos', 'reports'],
-  ia_studio_admin: ['inbox', 'assistant', 'metrics', 'analytics', 'qos', 'reports', 'studio'],
+  secretary: ['inbox', 'calendar', 'assistant'],
+  doctor: ['inbox', 'calendar', 'assistant'],
+  clinic_admin: ['inbox', 'calendar', 'assistant', 'metrics', 'analytics', 'qos', 'reports'],
+  ia_studio_admin: ['inbox', 'calendar', 'assistant', 'metrics', 'analytics', 'qos', 'reports', 'studio'],
 }
 
 const ALL_ROLES = Object.keys(ROLE_CAPABILITIES) as PanelRole[]

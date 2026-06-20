@@ -34,6 +34,25 @@ export interface UpdateAppointmentInput {
   metadata?: Record<string, unknown>
 }
 
+/**
+ * An appointment joined with the human-readable names the operational calendar
+ * (Screen 2 — Req 9/30) needs to render a row without N+1 lookups: the patient,
+ * the doctor, and the service (whose duration sets the slot length).
+ */
+export interface AppointmentWithNames extends Appointment {
+  patientName: string | null
+  doctorName: string | null
+  serviceName: string | null
+  serviceDurationMinutes: number | null
+}
+
+export interface ListInRangeOptions {
+  from: string
+  to: string
+  /** Restrict to one doctor (the panel's per-doctor calendar filter). */
+  doctorId?: string
+}
+
 export interface CreateProviderInput {
   clinicId: string
   fullName: string
@@ -56,6 +75,12 @@ export interface CreateServiceInput {
 export interface AppointmentsRepository {
   findById(clinicId: string, id: string): Promise<Appointment | null>
   listByClinic(clinicId: string, status?: AppointmentStatus): Promise<Appointment[]>
+  /**
+   * Appointments whose start_time falls in [from, to), optionally for a single
+   * doctor, joined with patient/doctor/service names. Powers the panel calendar
+   * (Screen 2) and its per-doctor free-slot computation.
+   */
+  listInRange(clinicId: string, options: ListInRangeOptions): Promise<AppointmentWithNames[]>
   listByPatient(clinicId: string, patientId: string): Promise<Appointment[]>
   listByProvider(clinicId: string, providerId: string, from: string, to: string): Promise<Appointment[]>
   /** Completed appointments whose end_time falls in [from, to] — drives review requests (P18). */
@@ -93,6 +118,27 @@ export function createAppointmentsRepository(sql: Sql): AppointmentsRepository {
       }
       return sql<Appointment[]>`
         SELECT * FROM appointments WHERE clinic_id = ${clinicId} ORDER BY start_time
+      `
+    },
+
+    async listInRange(clinicId, { from, to, doctorId }) {
+      const doctorFilter = doctorId ? sql`AND a.doctor_id = ${doctorId}` : sql``
+      return sql<AppointmentWithNames[]>`
+        SELECT
+          a.*,
+          p.full_name       AS patient_name,
+          d.name            AS doctor_name,
+          s.name            AS service_name,
+          s.duration_minutes AS service_duration_minutes
+        FROM appointments a
+        LEFT JOIN patients p ON p.id = a.patient_id
+        LEFT JOIN doctors  d ON d.id = a.doctor_id
+        LEFT JOIN services s ON s.id = a.service_id
+        WHERE a.clinic_id  = ${clinicId}
+          AND a.start_time >= ${from}::timestamptz
+          AND a.start_time <  ${to}::timestamptz
+          ${doctorFilter}
+        ORDER BY a.start_time
       `
     },
 

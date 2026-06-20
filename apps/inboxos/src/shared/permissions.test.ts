@@ -6,10 +6,10 @@ import type { PanelRole } from './types'
 // role list changes server-side, this table must change with it — that is the whole
 // point of the panel-side RBAC mirror (Req 2).
 const EXPECTED: Record<PanelRole, Capability[]> = {
-  secretary: ['inbox', 'assistant'],
-  doctor: ['inbox', 'assistant'],
-  clinic_admin: ['inbox', 'assistant', 'metrics', 'analytics', 'qos', 'reports'],
-  ia_studio_admin: ['inbox', 'assistant', 'metrics', 'analytics', 'qos', 'reports', 'studio'],
+  secretary: ['inbox', 'calendar', 'assistant'],
+  doctor: ['inbox', 'calendar', 'assistant'],
+  clinic_admin: ['inbox', 'calendar', 'assistant', 'metrics', 'analytics', 'qos', 'reports'],
+  ia_studio_admin: ['inbox', 'calendar', 'assistant', 'metrics', 'analytics', 'qos', 'reports', 'studio'],
 }
 
 describe('permissions.can', () => {
@@ -45,6 +45,7 @@ describe('permissions.can', () => {
 describe('permissions.rolesWith', () => {
   it('lists the roles allowed per capability (matches API gates)', () => {
     expect(rolesWith('inbox').sort()).toEqual(['clinic_admin', 'doctor', 'ia_studio_admin', 'secretary'])
+    expect(rolesWith('calendar').sort()).toEqual(['clinic_admin', 'doctor', 'ia_studio_admin', 'secretary'])
     expect(rolesWith('metrics').sort()).toEqual(['clinic_admin', 'ia_studio_admin'])
     expect(rolesWith('analytics').sort()).toEqual(['clinic_admin', 'ia_studio_admin'])
     expect(rolesWith('qos').sort()).toEqual(['clinic_admin', 'ia_studio_admin'])

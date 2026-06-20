@@ -25,6 +25,7 @@ import metricsRoute from './routes/metrics.js'
 import templatesRoute from './routes/templates.js'
 import doctorsRoute from './routes/doctors.js'
 import servicesRoute from './routes/services.js'
+import appointmentsRoute from './routes/appointments.js'
 import customFlowsRoute from './routes/custom-flows.js'
 import kbUploadRoute from './routes/kb-upload.js'
 import analyticsRoute from './routes/analytics.js'
@@ -92,6 +93,8 @@ export async function buildApp() {
   // /clinics/:id/… paths; reviews exposes the public /r/:id review redirector.
   await app.register(doctorsRoute)
   await app.register(servicesRoute)
+  // Screen 2 — operational booking calendar (declares its own /clinics/:id/… paths)
+  await app.register(appointmentsRoute)
   await app.register(customFlowsRoute)
   await app.register(kbUploadRoute)
   await app.register(analyticsRoute)

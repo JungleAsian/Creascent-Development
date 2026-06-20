@@ -122,6 +122,8 @@ export type {
   AppointmentsRepository,
   CreateAppointmentInput,
   UpdateAppointmentInput,
+  AppointmentWithNames,
+  ListInRangeOptions,
   CreateProviderInput,
   CreateServiceInput,
   DoctorsRepository,

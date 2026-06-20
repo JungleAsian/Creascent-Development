@@ -153,12 +153,47 @@ export interface Appointment {
   id: string
   clinicId: string
   patientId: string
-  providerId: string
+  providerId: string | null
+  doctorId: string | null
+  serviceId: string | null
+  googleEventId: string | null
   status: AppointmentStatus
   startTime: string
   endTime: string
   notes: string | null
   createdAt: string
+}
+
+// Screen 2 (AI booking & calendar) — an appointment enriched with the names the
+// operational calendar renders, returned by GET /clinics/:id/appointments.
+export interface AppointmentWithNames extends Appointment {
+  patientName: string | null
+  doctorName: string | null
+  serviceName: string | null
+  serviceDurationMinutes: number | null
+}
+
+/** A bookable start time, returned by GET /clinics/:id/appointments/slots. */
+export interface BookingSlot {
+  start: string // HH:MM
+  end: string // HH:MM
+}
+
+export interface SlotsResponse {
+  date: string
+  doctorId: string
+  durationMinutes: number
+  /** Whether this doctor's Google Calendar is connected (drives the disconnected banner). */
+  calendarConnected: boolean
+  /** Whether the doctor works on this date at all (false → day off). */
+  working: boolean
+  slots: BookingSlot[]
+}
+
+/** Minimal patient row for the booking picker (GET /clinics/:id/appointments/patients). */
+export interface BookingPatient {
+  id: string
+  fullName: string | null
 }
 
 // ── Metrics dashboard (P16 — Gap #27) ──────────────────────────────────────────

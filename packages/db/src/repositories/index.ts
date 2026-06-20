@@ -30,6 +30,7 @@ export type { ConversationsRepository, CreateConversationInput, UpdateConversati
               CreateTagInput, CreateNoteInput }                                                    from './conversations.repository.js'
 export type { MessagesRepository, CreateMessageInput }                                            from './messages.repository.js'
 export type { AppointmentsRepository, CreateAppointmentInput, UpdateAppointmentInput,
+              AppointmentWithNames, ListInRangeOptions,
               CreateProviderInput, CreateServiceInput }                                            from './appointments.repository.js'
 export type { DoctorsRepository, CreateDoctorInput, UpdateDoctorInput }                           from './doctors.repository.js'
 export type { DoctorServicesRepository }                                                          from './doctor-services.repository.js'

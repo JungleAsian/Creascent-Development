@@ -26,6 +26,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
     const role = user?.role
     const base: NavLink[] = []
     if (can(role, 'inbox')) base.push({ href: '/inbox', label: t('nav.inbox') })
+    if (can(role, 'calendar')) base.push({ href: '/calendar', label: t('nav.calendar') })
     if (can(role, 'metrics')) base.push({ href: '/metrics', label: t('nav.metrics') })
     // Req 40: the advanced analytics dashboard is additionally gated behind a
     // server feature flag (capability is necessary but not sufficient).
