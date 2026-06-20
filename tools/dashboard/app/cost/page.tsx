@@ -494,23 +494,6 @@ export default async function CostPage({ searchParams }: PageProps) {
             </details>
           </div>
 
-          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <details>
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2">
-                <span className="text-sm font-semibold">Development Session Log</span>
-                <span className="text-xs text-slate-400">Open / collapse</span>
-              </summary>
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-950"><tr><th className="p-3">Timestamp</th><th className="p-3">Phase</th><th className="p-3">Feature</th><th className="p-3">Tool</th><th className="p-3">Model</th><th className="p-3">Minutes</th><th className="p-3">Tokens</th><th className="p-3">Cost</th><th className="p-3">Method</th></tr></thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {development.slice(-80).reverse().map((entry) => <tr key={entry.id}><td className="p-3 text-slate-400">{new Date(entry.timestamp).toLocaleString()}</td><td className="p-3 font-mono">{entry.phase}</td><td className="p-3">{entry.feature}</td><td className="p-3">{entry.tool}</td><td className="p-3">{entry.model}</td><td className="p-3">{entry.session_minutes}</td><td className="p-3">{entry.input_tokens}/{entry.output_tokens}/{entry.cached_tokens}</td><td className="p-3">{money(entry.cost_usd)}</td><td className="p-3">{entry.capture_method}</td></tr>)}
-                    {development.length === 0 && <tr><td className="p-3 text-slate-400" colSpan={9}>No development cost entries yet.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          </div>
         </div>
       </div>
     </section>
