@@ -7,14 +7,13 @@
 // doctor filter scopes the grid and every booking is made against one doctor's
 // working hours + free slots. Renders explicit empty / loading / error /
 // disconnected (Google Calendar) / day-off / no-slots / success states.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/shared/api/client'
 import { useAuthGuard } from '@/shared/hooks/useAuthGuard'
-import { useAuthStore } from '@/shared/store/auth'
+import { useActiveClinic } from '@/shared/hooks/useActiveClinic'
 import { rolesWith } from '@/shared/permissions'
 import { useI18n } from '@/shared/hooks/useI18n'
-import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { SlideOver } from '@/shared/components/SlideOver'
 import type {
   AppointmentStatus,
@@ -68,11 +67,17 @@ function StatusBadge({ status }: { status: AppointmentStatus }) {
 export default function CalendarPage() {
   const { t, language } = useI18n()
   const { ready } = useAuthGuard(rolesWith('calendar'))
-  const user = useAuthStore((s) => s.user)
-  const isAdmin = user?.role === 'ia_studio_admin'
-  const [clinicId, setClinicId] = useState(user?.clinicId ?? '')
+  // Screen 6 — the clinic comes from the shared active-clinic context (the header
+  // switcher), so an admin who switches clinic re-scopes the calendar too.
+  const { clinicId } = useActiveClinic()
   const [date, setDate] = useState(todayISO())
   const [doctorId, setDoctorId] = useState('') // '' = all doctors
+
+  // A clinic switch invalidates the previously-picked doctor (it belongs to the old
+  // clinic), so fall back to the all-doctors view whenever the active clinic changes.
+  useEffect(() => {
+    setDoctorId('')
+  }, [clinicId])
   const [booking, setBooking] = useState(false)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
 
@@ -120,7 +125,6 @@ export default function CalendarPage() {
             <p className="text-xs text-gray-400">{t('cal.subtitle')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isAdmin && <ClinicSelect value={clinicId} onChange={setClinicId} label={t('cal.doctor')} />}
             <select
               value={doctorId}
               onChange={(e) => setDoctorId(e.target.value)}

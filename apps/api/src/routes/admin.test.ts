@@ -97,6 +97,24 @@ describe('IA Studio + AssignPanel routes (P09)', () => {
     expect(res.statusCode).toBe(403)
   })
 
+  it('GET /clinics/current returns the caller\'s own clinic (any role)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/clinics/current', headers: secretaryAuth })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).clinic.id).toBe('c-1')
+    expect(JSON.parse(res.body).clinic.name).toBe('Clinic One')
+  })
+
+  it('GET /clinics/current ignores a foreign X-Clinic-Id header (own clinic only)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/clinics/current',
+      headers: { ...secretaryAuth, 'x-clinic-id': 'c-2' },
+    })
+    expect(res.statusCode).toBe(200)
+    // /current reads the JWT clinic, never the active-clinic header.
+    expect(JSON.parse(res.body).clinic.id).toBe('c-1')
+  })
+
   it('GET /clinics/:id/team returns members without password hashes', async () => {
     const res = await app.inject({ method: 'GET', url: '/clinics/c-1/team', headers: secretaryAuth })
     expect(res.statusCode).toBe(200)

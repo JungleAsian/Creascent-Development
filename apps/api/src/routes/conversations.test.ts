@@ -392,6 +392,27 @@ describe('conversation routes', () => {
     )
   })
 
+  it('GET /conversations honours an admin\'s X-Clinic-Id header — Screen 6 clinic switching', async () => {
+    // The seeded conversations all live in c-1, so switching the active clinic to
+    // c-2 scopes the admin to that (empty) clinic instead of leaking c-1's threads.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations',
+      headers: { ...authHeader('ia_studio_admin'), 'x-clinic-id': 'c-2' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).conversations).toEqual([])
+  })
+
+  it('GET /conversations rejects a non-admin\'s foreign X-Clinic-Id header → 403', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/conversations',
+      headers: { ...authHeader('secretary'), 'x-clinic-id': 'c-2' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
   it('GET /conversations attaches each conversation\'s tag names (Req 20 — safety triage)', async () => {
     const res = await app.inject({ method: 'GET', url: '/conversations', headers: auth })
     expect(res.statusCode).toBe(200)

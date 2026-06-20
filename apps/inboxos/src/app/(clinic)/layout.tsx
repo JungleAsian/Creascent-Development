@@ -12,6 +12,7 @@ import { can } from '@/shared/permissions'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { NotificationBell } from '@/shared/components/NotificationBell'
 import { PushOptIn } from '@/shared/components/PushOptIn'
+import { ClinicSwitcher } from '@/shared/components/ClinicSwitcher'
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { ready, user } = useAuthGuard()
@@ -79,6 +80,9 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
           >
             ☰
           </button>
+          {/* Screen 6 — tenant separation: always show (and, for admins, switch) the
+              clinic being operated on so the active tenant is unmistakable. */}
+          <ClinicSwitcher />
           <div className="ml-auto flex items-center gap-2">
             <PushOptIn />
             <NotificationBell />

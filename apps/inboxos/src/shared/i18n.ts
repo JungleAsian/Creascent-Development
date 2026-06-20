@@ -790,6 +790,17 @@ const es: Dict = {
   'cal.withDoctor': 'con {doctor}',
   'cal.unknownPatient': 'Paciente sin nombre',
   'cal.bookingClosed': 'Cerrar',
+
+  // Screen 6 — tenant separation + clinic switching.
+  'tenant.label': 'Clínica',
+  'tenant.switch': 'Cambiar de clínica',
+  'tenant.allClinics': 'Todas las clínicas',
+  'tenant.adminBadge': 'Admin',
+  'tenant.crossTenant': 'Operando en otra clínica',
+  'tenant.crossTenantHint':
+    'Eres administrador de IA Studio viendo los datos de otra clínica. Cualquier acción afecta a {clinic}, no a tu clínica.',
+  'tenant.returnHome': 'Volver a mi clínica',
+  'tenant.unknown': 'Clínica',
 }
 
 const en: Dict = {
@@ -1573,6 +1584,17 @@ const en: Dict = {
   'cal.withDoctor': 'with {doctor}',
   'cal.unknownPatient': 'Unnamed patient',
   'cal.bookingClosed': 'Close',
+
+  // Screen 6 — tenant separation + clinic switching.
+  'tenant.label': 'Clinic',
+  'tenant.switch': 'Switch clinic',
+  'tenant.allClinics': 'All clinics',
+  'tenant.adminBadge': 'Admin',
+  'tenant.crossTenant': 'Operating in another clinic',
+  'tenant.crossTenantHint':
+    'You are an IA Studio admin viewing another clinic\'s data. Any action affects {clinic}, not your own clinic.',
+  'tenant.returnHome': 'Back to my clinic',
+  'tenant.unknown': 'Clinic',
 }
 
 const DICTS: Record<PanelLanguage, Dict> = { es, en }

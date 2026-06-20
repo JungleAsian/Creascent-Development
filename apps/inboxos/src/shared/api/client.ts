@@ -28,6 +28,16 @@ function redirectToLogin() {
   }
 }
 
+// Screen 6 — the active clinic the operator is working in, sent on every
+// authenticated request so the server scopes it to that clinic (clinic switching).
+// Falls back to the user's own clinic; the server ignores a non-admin trying to
+// name a clinic that isn't theirs, so this is only an escalation path for admins.
+function activeClinicHeader(): Record<string, string> {
+  const { activeClinicId, user } = authSnapshot()
+  const clinicId = activeClinicId ?? user?.clinicId
+  return clinicId ? { 'x-clinic-id': clinicId } : {}
+}
+
 // Single in-flight refresh shared by concurrent 401s, so we never stampede /auth/refresh.
 let refreshing: Promise<string | null> | null = null
 
@@ -65,7 +75,10 @@ export interface ApiOptions {
 async function request<T>(path: string, opts: ApiOptions = {}, isRetry = false): Promise<T> {
   const { accessToken } = authSnapshot()
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (!opts.anonymous && accessToken) headers['authorization'] = `Bearer ${accessToken}`
+  if (!opts.anonymous && accessToken) {
+    headers['authorization'] = `Bearer ${accessToken}`
+    Object.assign(headers, activeClinicHeader())
+  }
 
   const res = await fetch(`${API_BASE}${path}`, {
     method: opts.method ?? 'GET',
@@ -101,7 +114,10 @@ async function request<T>(path: string, opts: ApiOptions = {}, isRetry = false):
 async function download(path: string, filename: string, isRetry = false): Promise<void> {
   const { accessToken } = authSnapshot()
   const headers: Record<string, string> = {}
-  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`
+  if (accessToken) {
+    headers['authorization'] = `Bearer ${accessToken}`
+    Object.assign(headers, activeClinicHeader())
+  }
 
   const res = await fetch(`${API_BASE}${path}`, { method: 'GET', headers })
 
@@ -132,7 +148,10 @@ async function download(path: string, filename: string, isRetry = false): Promis
 async function blobUrl(path: string, isRetry = false): Promise<string> {
   const { accessToken } = authSnapshot()
   const headers: Record<string, string> = {}
-  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`
+  if (accessToken) {
+    headers['authorization'] = `Bearer ${accessToken}`
+    Object.assign(headers, activeClinicHeader())
+  }
 
   const res = await fetch(`${API_BASE}${path}`, { method: 'GET', headers })
 
@@ -153,7 +172,10 @@ async function blobUrl(path: string, isRetry = false): Promise<string> {
 async function upload<T>(path: string, form: FormData, isRetry = false): Promise<T> {
   const { accessToken } = authSnapshot()
   const headers: Record<string, string> = {}
-  if (accessToken) headers['authorization'] = `Bearer ${accessToken}`
+  if (accessToken) {
+    headers['authorization'] = `Bearer ${accessToken}`
+    Object.assign(headers, activeClinicHeader())
+  }
 
   const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form })
 

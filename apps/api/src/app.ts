@@ -54,7 +54,8 @@ export async function buildApp() {
     if (isAllowed) reply.header('access-control-allow-origin', origin)
     reply.header('vary', 'Origin')
     reply.header('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS')
-    reply.header('access-control-allow-headers', 'content-type,authorization')
+    // x-clinic-id carries the panel's active clinic (Screen 6 — clinic switching).
+    reply.header('access-control-allow-headers', 'content-type,authorization,x-clinic-id')
     if (request.method === 'OPTIONS') {
       reply.status(204).send()
     }

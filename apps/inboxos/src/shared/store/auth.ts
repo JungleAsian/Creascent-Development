@@ -11,6 +11,14 @@ interface AuthState {
   refreshToken: string | null
   user: AuthUser | null
   language: PanelLanguage
+  /**
+   * Screen 6 — the clinic the operator is currently working in. Defaults to the
+   * user's own clinic on login; an ia_studio_admin may switch it to operate any
+   * clinic's inbox/calendar. The api client sends it as the X-Clinic-Id header so
+   * the server scopes every clinic request to it (non-admins are pinned server-side
+   * to their own clinic, so the header is only an escalation path for admins).
+   */
+  activeClinicId: string | null
   /** Hydration guard — false until persisted state has loaded on the client. */
   hydrated: boolean
   setSession: (data: {
@@ -21,6 +29,7 @@ interface AuthState {
   }) => void
   setAccessToken: (token: string) => void
   setLanguage: (language: PanelLanguage) => void
+  setActiveClinicId: (clinicId: string) => void
   logout: () => void
 }
 
@@ -31,12 +40,16 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       user: null,
       language: DEFAULT_LANGUAGE,
+      activeClinicId: null,
       hydrated: false,
       setSession: ({ accessToken, refreshToken, user, language }) =>
-        set((s) => ({ accessToken, refreshToken, user, language: language ?? s.language })),
+        // A fresh login always resets the active clinic to the user's own clinic —
+        // an admin's previous switch must not carry over to the next session.
+        set((s) => ({ accessToken, refreshToken, user, language: language ?? s.language, activeClinicId: user.clinicId })),
       setAccessToken: (accessToken) => set({ accessToken }),
       setLanguage: (language) => set({ language }),
-      logout: () => set({ accessToken: null, refreshToken: null, user: null }),
+      setActiveClinicId: (activeClinicId) => set({ activeClinicId }),
+      logout: () => set({ accessToken: null, refreshToken: null, user: null, activeClinicId: null }),
     }),
     {
       name: 'docmee-auth',

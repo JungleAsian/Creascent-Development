@@ -72,6 +72,17 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
     return { clinics: clinics.map(redactClinic) }
   })
 
+  // ── The caller's own clinic (Screen 6 — any authenticated role) ──
+  // Drives the panel's tenant banner so a secretary / doctor always sees which
+  // clinic they are working in. Scoped to the JWT's clinic, never the switched
+  // active clinic, so it always names the tenant the user actually belongs to.
+  app.get('/current', async (request, reply) => {
+    const clinicId = request.user!.clinicId
+    const clinic = await withDb(async (sql) => createClinicsRepository(sql).findById(clinicId))
+    if (!clinic) return reply.code(404).send({ error: 'Clinic not found' })
+    return { clinic: redactClinic(clinic) }
+  })
+
   // ── Create a clinic (IA Studio) ──
   app.post('/', { preHandler: requireRole('ia_studio_admin') }, async (request, reply) => {
     const parsed = validate(createSchema, request.body, reply)
