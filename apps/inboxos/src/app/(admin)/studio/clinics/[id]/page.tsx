@@ -11,6 +11,7 @@ import { api, ApiError, API_BASE } from '@/shared/api/client'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { LicenseBadge } from '@/shared/components/LicenseBadge'
 import { WEEKDAYS, toBusinessHours } from '@/shared/businessHours'
+import { tonePreview, SAFETY_RULE_KEYS } from '@/shared/botPreview'
 import { formatDateTime } from '@/shared/format'
 import type {
   BotLanguage,
@@ -150,12 +151,15 @@ function GeneralSection({ clinic }: { clinic: Clinic }) {
 }
 
 function BotConfigSection({ clinic }: { clinic: Clinic }) {
-  const { t } = useI18n()
+  const { t, language: panelLanguage } = useI18n()
   const settings = clinic.settings as ClinicSettings
   const [tone, setTone] = useState<BotTone>(settings.botTone ?? 'professional')
   const [language, setLanguage] = useState<BotLanguage>(settings.botLanguage ?? 'auto')
   const [rules, setRules] = useState(settings.clinicRules ?? '')
   const save = useSaveClinic(clinic.id)
+  // The preview reflects the BOT's configured language; on 'auto' it mirrors the
+  // patient, so we show one example in the operator's panel language.
+  const previewLanguage = language === 'auto' ? panelLanguage : language
 
   const dirty =
     tone !== (settings.botTone ?? 'professional') ||
@@ -192,6 +196,9 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
         })}
       </div>
 
+      {/* Live tone preview (Req 26/27) — a sample exchange in the selected tone + language. */}
+      <TonePreviewCard tone={tone} language={previewLanguage} showAutoNote={language === 'auto'} />
+
       <div className="mt-4">
         <p className="mb-1 text-xs font-medium text-gray-500">{t('bot.language.title')}</p>
         <select
@@ -208,6 +215,10 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
         <p className="mt-1 text-xs text-gray-400">{t('bot.language.hint')}</p>
       </div>
 
+      {/* Non-removable safety rules (Req 20) — presented before the editable rules so
+          it is unmistakable that these are always enforced on top of clinic rules. */}
+      <SafetyRulesCard />
+
       <div className="mt-4">
         <p className="mb-1 text-xs font-medium text-gray-500">{t('bot.rules.title')}</p>
         <textarea
@@ -222,6 +233,79 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
 
       <SaveBar dirty={dirty} pending={save.isPending} saved={save.isSuccess && !dirty} onSave={onSave} />
     </Section>
+  )
+}
+
+// Sample patient/bot exchange that re-renders as the tone or language changes.
+function TonePreviewCard({
+  tone,
+  language,
+  showAutoNote,
+}: {
+  tone: BotTone
+  language: 'es' | 'en'
+  showAutoNote: boolean
+}) {
+  const { t } = useI18n()
+  const sample = tonePreview(tone, language)
+  return (
+    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+      <p className="mb-2 text-xs font-medium text-gray-500">{t('bot.preview.title')}</p>
+      <div className="space-y-1.5">
+        <div className="flex justify-start">
+          <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-white px-3 py-1.5 text-sm shadow-sm dark:bg-gray-800">
+            <span className="mb-0.5 block text-[10px] font-medium uppercase text-gray-400">
+              {t('bot.preview.patient')}
+            </span>
+            {sample.patient}
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-indigo-600 px-3 py-1.5 text-sm text-white">
+            <span className="mb-0.5 block text-[10px] font-medium uppercase text-indigo-200">
+              {t('bot.preview.bot')}
+            </span>
+            {sample.bot}
+          </div>
+        </div>
+      </div>
+      {showAutoNote && <p className="mt-2 text-[11px] text-gray-400">{t('bot.preview.autoNote')}</p>}
+    </div>
+  )
+}
+
+// Read-only presentation of the always-enforced safety rules (Req 20). The enforcing
+// logic lives in @docmee/agents (clinic-bot system prompt + outbound medical-safety
+// screen); this card only states the guarantee and makes clear it cannot be removed.
+function SafetyRulesCard() {
+  const { t } = useI18n()
+  return (
+    <div className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/40">
+      <div className="mb-2 flex items-center gap-2">
+        <span aria-hidden className="text-emerald-600 dark:text-emerald-400">
+          🔒
+        </span>
+        <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+          {t('bot.safety.title')}
+        </span>
+        <span className="rounded-full border border-emerald-400 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-700 dark:border-emerald-700 dark:text-emerald-300">
+          {t('bot.safety.locked')}
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {SAFETY_RULE_KEYS.map((key) => (
+          <li key={key} className="flex gap-2 text-xs text-emerald-900 dark:text-emerald-200">
+            <span aria-hidden className="text-emerald-500">
+              ✓
+            </span>
+            <span>{t(key)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+        {t('bot.safety.subtitle')}
+      </p>
+    </div>
   )
 }
 
