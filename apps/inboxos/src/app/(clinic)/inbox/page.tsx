@@ -9,7 +9,7 @@
 // is opened, then the conversation takes over (with a Back affordance) and the
 // contextual panels move behind a Details slide-over. From md up it stays the
 // classic three-pane desktop grid.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ConversationList } from '@/shared/components/ConversationList'
 import { ConversationView } from '@/shared/components/ConversationView'
 import { TagsPanel } from '@/shared/components/TagsPanel'
@@ -29,6 +29,14 @@ export default function InboxPage() {
     setSelectedId(id)
     setPanelsOpen(false)
   }
+
+  // Deep-link from the Alerts center (Screen 11): /inbox?c=<conversationId> opens
+  // that thread on load. Read once from the URL on mount (no useSearchParams, so the
+  // route stays statically prerenderable and needs no Suspense boundary).
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('c')
+    if (c) setSelectedId(c)
+  }, [])
 
   // Key every conversation-scoped panel by the thread id so React remounts them
   // on switch — otherwise local state (the reply draft, AI summary/suggestions,

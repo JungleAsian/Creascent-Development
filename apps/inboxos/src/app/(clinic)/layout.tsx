@@ -27,6 +27,8 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
     const role = user?.role
     const base: NavLink[] = []
     if (can(role, 'inbox')) base.push({ href: '/inbox', label: t('nav.inbox') })
+    // Alerts center (Screen 11) — available to everyone who can see the inbox.
+    if (can(role, 'inbox')) base.push({ href: '/alerts', label: t('nav.alerts') })
     if (can(role, 'calendar')) base.push({ href: '/calendar', label: t('nav.calendar') })
     if (can(role, 'metrics')) base.push({ href: '/metrics', label: t('nav.metrics') })
     // Req 40: the advanced analytics dashboard is additionally gated behind a
