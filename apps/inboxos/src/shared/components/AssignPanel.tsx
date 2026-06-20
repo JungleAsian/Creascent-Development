@@ -60,7 +60,7 @@ export function AssignPanel({ conversationId }: { conversationId: string }) {
             type="button"
             onClick={() => assignMutation.mutate(undefined)}
             disabled={assignMutation.isPending || conversation?.assignedTo === user?.id}
-            className="w-full rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            className="w-full rounded-md bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
           >
             {t('assign.toMe')}
           </button>
@@ -73,7 +73,7 @@ export function AssignPanel({ conversationId }: { conversationId: string }) {
                 if (e.target.value) assignMutation.mutate(e.target.value)
               }}
               disabled={assignMutation.isPending}
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-teal-500 dark:border-gray-700 dark:bg-gray-800"
             >
               <option value="" disabled>
                 {t('assign.choose')}

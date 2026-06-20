@@ -1,30 +1,39 @@
 'use client'
 
-// Conversation list (left column). TanStack Query with a 10s refetch so the
-// secretary sees new inbound messages without a manual refresh. Supports a status
-// filter and a "mine" toggle (assigned_to = current user).
+// Conversation list (left column) — the operational queue. TanStack Query with a
+// 10s refetch so the secretary sees new inbound messages without a manual refresh.
+// Threads the workers flagged as a possible emergency (red) or urgent/upset (amber)
+// float to the top under a "Needs attention · Safety" header so they are
+// unmistakable while scanning a dense queue (Req 20). Supports a free-text search on
+// the contact handle, a channel filter, a status filter and an assignee filter.
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { useI18n } from '../hooks/useI18n'
 import { useTeam } from '../hooks/useTeam'
-import { relativeTime } from '../format'
+import { avatarLabel, relativeTime } from '../format'
 import { assessSafety, safetyRank, type SafetyLevel } from '../safety'
+import { conversationMode } from '../conversationMode'
 import { filterConversations, type ChannelFilter } from '../conversationFilter'
 import type { Channel, Conversation, ConversationStatus } from '../types'
 
-// Req 20: row treatment per safety severity — a coloured left rail + a badge so an
-// emergency or urgent thread is unmistakable while scanning the queue, not buried
-// in the tag panel. Critical = red, warning = amber.
-const SAFETY_ROW: Record<SafetyLevel, { rail: string; badge: string; labelKey: 'safety.critical.list' | 'safety.warning.list' }> = {
+// Req 20: row treatment per safety severity — a coloured left rail + a tinted row +
+// a badge so an emergency or urgent thread is unmistakable while scanning the queue.
+// Critical = red, warning = amber.
+const SAFETY_ROW: Record<
+  SafetyLevel,
+  { rail: string; row: string; badge: string; labelKey: 'safety.critical.list' | 'safety.warning.list' }
+> = {
   critical: {
-    rail: 'border-l-4 border-l-red-600',
+    rail: 'border-l-red-500',
+    row: 'bg-red-50/70 dark:bg-red-950/30',
     badge: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
     labelKey: 'safety.critical.list',
   },
   warning: {
-    rail: 'border-l-4 border-l-amber-500',
+    rail: 'border-l-amber-500',
+    row: 'bg-amber-50/70 dark:bg-amber-950/20',
     badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
     labelKey: 'safety.warning.list',
   },
@@ -40,12 +49,13 @@ const STATUSES: ConversationStatus[] = [
   'archived',
 ]
 
-// Channel indicator (Req 4): which platform the thread arrived on. Channel names
-// are proper nouns, so the label is language-neutral (no i18n key needed).
-const CHANNEL_INDICATOR: Record<Channel, { label: string; icon: string; className: string }> = {
-  whatsapp: { label: 'WhatsApp', icon: '🟢', className: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-  messenger: { label: 'Messenger', icon: '🔵', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-  instagram: { label: 'Instagram', icon: '🟣', className: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300' },
+// Req 4 — channel indicator. The avatar carries a small coloured badge in the
+// platform's brand colour (WhatsApp green, Messenger blue, Instagram pink), echoed
+// by the filter chips. Channel names are proper nouns → language-neutral labels.
+const CHANNEL: Record<Channel, { label: string; glyph: string; badge: string; dot: string }> = {
+  whatsapp: { label: 'WhatsApp', glyph: '✆', badge: 'bg-green-500', dot: 'bg-green-500' },
+  messenger: { label: 'Messenger', glyph: 'f', badge: 'bg-blue-500', dot: 'bg-blue-500' },
+  instagram: { label: 'Instagram', glyph: '◉', badge: 'bg-pink-600', dot: 'bg-pink-600' },
 }
 
 const STATUS_BADGE: Record<ConversationStatus, string> = {
@@ -77,8 +87,6 @@ export function ConversationList({
   const [status, setStatus] = useState<ConversationStatus | 'all'>('all')
   // Req 2 — role-specific default view: a doctor lands on the threads assigned to
   // them (their own escalations), while secretaries/admins see the full queue.
-  // Reserved values never collide with a uuid, so this is a pure UI default the
-  // user can still change with the assignee picker.
   const [assignee, setAssignee] = useState<AssigneeFilter>(role === 'doctor' ? 'mine' : 'all')
   // Find-a-thread affordances (client-side over the loaded set — the list isn't
   // server-paginated): free-text search on the contact handle + a channel filter.
@@ -91,7 +99,6 @@ export function ConversationList({
     queryFn: () => {
       const params = new URLSearchParams()
       if (status !== 'all') params.set('status', status)
-      // Resolve the assignee filter to the `assigned_to` query param the API expects.
       const assignedTo =
         assignee === 'all' ? null : assignee === 'mine' ? (userId ?? null) : assignee
       if (assignedTo) params.set('assigned_to', assignedTo)
@@ -104,8 +111,8 @@ export function ConversationList({
   const filtersActive = search.trim() !== '' || channel !== 'all'
 
   // Apply the search/channel filter, then float safety-critical / urgent threads to
-  // the top of the queue (stable within each severity band, so recency order is
-  // preserved otherwise) — Req 20.
+  // the top (stable within each severity band, so recency order is preserved
+  // otherwise) — Req 20.
   const conversations = useMemo(() => {
     return filterConversations(allRows, search, channel)
       .map((c, i) => ({ c, i, rank: safetyRank(assessSafety(c.tags).level) }))
@@ -113,33 +120,57 @@ export function ConversationList({
       .map((x) => x.c)
   }, [allRows, search, channel])
 
+  // Split into the safety queue and the rest so each gets its own group header.
+  const safetyRows = conversations.filter((c) => assessSafety(c.tags).level)
+  const normalRows = conversations.filter((c) => !assessSafety(c.tags).level)
+
+  function clearFilters() {
+    setSearch('')
+    setChannel('all')
+  }
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 p-3 dark:border-gray-800">
-        <h2 className="mb-2 text-sm font-semibold">{t('conv.title')}</h2>
+    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
+      <div className="border-b border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-base font-bold">{t('conv.title')}</h2>
+          {!query.isLoading && (
+            <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[11px] font-bold text-white">
+              {t('conv.countOpen', { n: String(conversations.length) })}
+            </span>
+          )}
+        </div>
+
         {/* Find a thread by patient handle (client-side over the loaded set). */}
         <div className="relative mb-2">
+          <span aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+            🔎
+          </span>
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('conv.search')}
             aria-label={t('conv.search')}
-            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+            className="w-full rounded-lg border border-gray-300 py-1.5 pl-8 pr-2.5 text-xs outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-gray-700 dark:bg-gray-800"
           />
         </div>
+
         {/* Channel filter (Req 4) — narrow the queue to one platform. */}
-        <div className="mb-2 flex flex-wrap gap-1">
+        <div className="mb-2 flex flex-wrap gap-1.5">
           <FilterChip active={channel === 'all'} onClick={() => setChannel('all')}>
             {t('conv.filter.allChannels')}
           </FilterChip>
-          {(Object.keys(CHANNEL_INDICATOR) as Channel[]).map((ch) => (
+          {(Object.keys(CHANNEL) as Channel[]).map((ch) => (
             <FilterChip key={ch} active={channel === ch} onClick={() => setChannel(ch)}>
-              {CHANNEL_INDICATOR[ch].icon} {CHANNEL_INDICATOR[ch].label}
+              <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${CHANNEL[ch].dot}`} />
+              {CHANNEL[ch].label}
             </FilterChip>
           ))}
         </div>
-        <div className="flex flex-wrap gap-1">
+
+        {/* Status + assignee row. */}
+        <div className="flex flex-wrap gap-1.5">
           <FilterChip active={status === 'all'} onClick={() => setStatus('all')}>
             {t('conv.filter.all')}
           </FilterChip>
@@ -154,7 +185,7 @@ export function ConversationList({
           <select
             value={assignee}
             onChange={(e) => setAssignee(e.target.value as AssigneeFilter)}
-            className="min-w-0 flex-1 truncate rounded-md border border-gray-300 px-2 py-1 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+            className="min-w-0 flex-1 truncate rounded-lg border border-gray-300 px-2 py-1 text-xs outline-none focus:border-teal-500 dark:border-gray-700 dark:bg-gray-800"
           >
             <option value="all">{t('conv.filter.allAssignees')}</option>
             <option value="mine">{t('conv.filter.mine')}</option>
@@ -172,84 +203,211 @@ export function ConversationList({
 
       <div className="flex-1 overflow-y-auto">
         {query.isLoading ? (
-          <p className="p-4 text-sm text-gray-400">{t('common.loading')}</p>
-        ) : conversations.length === 0 ? (
-          filtersActive ? (
-            <div className="p-4 text-sm text-gray-400">
-              <p>{t('conv.noMatch')}</p>
+          <ListSkeleton />
+        ) : query.isError ? (
+          query.error instanceof ApiError && query.error.status === 403 ? (
+            // Permission-denied — e.g. an admin switched into a clinic they can't
+            // read. Distinct from a transient error: a retry won't help, so we offer
+            // none and explain instead.
+            <div className="flex flex-col items-center gap-2 p-6 text-center">
+              <span aria-hidden className="grid h-12 w-12 place-items-center rounded-xl bg-gray-100 text-xl text-gray-500 dark:bg-gray-800">
+                🔒
+              </span>
+              <p className="text-sm font-semibold">{t('common.forbidden.title')}</p>
+              <p className="text-xs text-gray-500">{t('common.forbidden.body')}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 p-6 text-center">
+              <span aria-hidden className="grid h-12 w-12 place-items-center rounded-xl bg-red-100 text-xl text-red-600 dark:bg-red-950/50">
+                ⚠
+              </span>
+              <p className="text-sm font-semibold">{t('common.error')}</p>
               <button
                 type="button"
-                onClick={() => {
-                  setSearch('')
-                  setChannel('all')
-                }}
-                className="mt-2 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                onClick={() => query.refetch()}
+                className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
               >
-                {t('conv.clearFilters')}
+                ↻ {t('common.retry')}
+              </button>
+            </div>
+          )
+        ) : conversations.length === 0 ? (
+          filtersActive ? (
+            <div className="flex flex-col items-center gap-2 p-6 text-center">
+              <span aria-hidden className="grid h-12 w-12 place-items-center rounded-xl bg-gray-100 text-xl text-gray-400 dark:bg-gray-800">
+                🔍
+              </span>
+              <p className="text-sm font-semibold">{t('conv.noMatch')}</p>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                ✕ {t('conv.clearFilters')}
               </button>
             </div>
           ) : (
-            <p className="p-4 text-sm text-gray-400">{t('conv.empty')}</p>
+            <div className="flex flex-col items-center gap-2 p-6 text-center">
+              <span aria-hidden className="grid h-12 w-12 place-items-center rounded-xl bg-teal-50 text-xl text-teal-600 dark:bg-teal-950/40">
+                📭
+              </span>
+              <p className="text-sm font-semibold">{t('conv.empty')}</p>
+            </div>
           )
         ) : (
           <ul>
-            {conversations.map((c) => {
-              const safety = assessSafety(c.tags).level
-              const row = safety ? SAFETY_ROW[safety] : null
-              return (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(c.id)}
-                  className={`flex w-full flex-col gap-1 border-b border-gray-100 px-3 py-2.5 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 ${
-                    row ? row.rail : ''
-                  } ${selectedId === c.id ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium">{c.channelContactHandle}</span>
-                    <span className="shrink-0 text-xs text-gray-400">{relativeTime(c.lastMessageAt)}</span>
-                  </div>
-                  {row && (
-                    <span
-                      className={`inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${row.badge}`}
-                    >
-                      ⚠ {t(row.labelKey)}
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_INDICATOR[c.channel].className}`}
-                      title={CHANNEL_INDICATOR[c.channel].label}
-                    >
-                      {CHANNEL_INDICATOR[c.channel].icon} {CHANNEL_INDICATOR[c.channel].label}
-                    </span>
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[c.status]}`}>
-                      {t(`conv.status.${c.status}` as const)}
-                    </span>
-                    {c.assignedTo === userId ? (
-                      <span className="text-[10px] text-indigo-600 dark:text-indigo-400">
-                        {t('conv.assignedToMe')}
-                      </span>
-                    ) : c.assignedTo ? (
-                      <span className="truncate text-[10px] text-gray-500">
-                        {t('conv.assignedTo', {
-                          name:
-                            members.find((m) => m.id === c.assignedTo)?.fullName ??
-                            members.find((m) => m.id === c.assignedTo)?.email ??
-                            c.assignedTo,
-                        })}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-gray-400">{t('conv.unassigned')}</span>
-                    )}
-                  </div>
-                </button>
+            {safetyRows.length > 0 && (
+              <li>
+                <GroupLabel danger>⚠ {t('conv.group.safety')}</GroupLabel>
               </li>
-              )
-            })}
+            )}
+            {safetyRows.map((c) => (
+              <ThreadRow
+                key={c.id}
+                conversation={c}
+                selected={selectedId === c.id}
+                onSelect={onSelect}
+                members={members}
+                userId={userId}
+              />
+            ))}
+            {normalRows.length > 0 && (
+              <li>
+                <GroupLabel>{t('conv.group.open')}</GroupLabel>
+              </li>
+            )}
+            {normalRows.map((c) => (
+              <ThreadRow
+                key={c.id}
+                conversation={c}
+                selected={selectedId === c.id}
+                onSelect={onSelect}
+                members={members}
+                userId={userId}
+              />
+            ))}
           </ul>
         )}
       </div>
+    </div>
+  )
+}
+
+function GroupLabel({ children, danger }: { children: React.ReactNode; danger?: boolean }) {
+  return (
+    <div
+      className={`px-3 pb-1 pt-3 text-[10.5px] font-extrabold uppercase tracking-wider ${
+        danger ? 'text-red-600 dark:text-red-400' : 'text-gray-400'
+      }`}
+    >
+      {children}
+    </div>
+  )
+}
+
+function ThreadRow({
+  conversation: c,
+  selected,
+  onSelect,
+  members,
+  userId,
+}: {
+  conversation: Conversation
+  selected: boolean
+  onSelect: (id: string) => void
+  members: ReturnType<typeof useTeam>
+  userId: string | undefined
+}) {
+  const { t } = useI18n()
+  const safety = assessSafety(c.tags).level
+  const row = safety ? SAFETY_ROW[safety] : null
+  const mode = conversationMode(c.status)
+  const ch = CHANNEL[c.channel]
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(c.id)}
+        className={`flex w-full gap-2.5 border-b border-l-[3px] border-gray-100 px-3 py-2.5 text-left transition hover:bg-gray-100/70 dark:border-gray-800 dark:hover:bg-gray-800/50 ${
+          row ? `${row.rail} ${row.row}` : 'border-l-transparent'
+        } ${selected ? 'border-l-teal-600 bg-teal-50 dark:bg-teal-950/40' : ''}`}
+      >
+        {/* Avatar with a channel badge. */}
+        <span className="relative shrink-0">
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-gray-200 text-[13px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200">
+            {avatarLabel(c.channelContactHandle)}
+          </span>
+          <span
+            aria-hidden
+            title={ch.label}
+            className={`absolute -bottom-0.5 -right-0.5 grid h-[17px] w-[17px] place-items-center rounded-full border-2 border-white text-[9px] font-bold text-white dark:border-gray-900 ${ch.badge}`}
+          >
+            {ch.glyph}
+          </span>
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="flex-1 truncate text-[13.5px] font-bold">{c.channelContactHandle}</span>
+            <span className="shrink-0 text-[11px] text-gray-400">{relativeTime(c.lastMessageAt)}</span>
+          </span>
+
+          <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {row && (
+              <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold ${row.badge}`}>
+                ⚠ {t(row.labelKey)}
+              </span>
+            )}
+            <span
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                mode === 'human'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+              }`}
+            >
+              {mode === 'human' ? '●' : '✦'} {mode === 'human' ? t('view.mode.human') : t('view.mode.bot')}
+            </span>
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[c.status]}`}>
+              {t(`conv.status.${c.status}` as const)}
+            </span>
+            {c.assignedTo === userId ? (
+              <span className="text-[10px] font-medium text-teal-700 dark:text-teal-400">
+                {t('conv.assignedToMe')}
+              </span>
+            ) : c.assignedTo ? (
+              <span className="truncate text-[10px] text-gray-500">
+                {t('conv.assignedTo', {
+                  name:
+                    members.find((m) => m.id === c.assignedTo)?.fullName ??
+                    members.find((m) => m.id === c.assignedTo)?.email ??
+                    c.assignedTo,
+                })}
+              </span>
+            ) : (
+              <span className="text-[10px] text-gray-400">{t('conv.unassigned')}</span>
+            )}
+          </span>
+        </span>
+      </button>
+    </li>
+  )
+}
+
+// Loading skeleton — mirrors the row shape (avatar + two lines) so the queue's
+// silhouette is recognisable while it loads.
+function ListSkeleton() {
+  return (
+    <div className="animate-pulse">
+      {[60, 80, 70, 85, 55].map((w, i) => (
+        <div key={i} className="flex gap-2.5 border-b border-gray-100 px-3 py-2.5 dark:border-gray-800">
+          <div className="h-10 w-10 shrink-0 rounded-full bg-gray-200 dark:bg-gray-800" />
+          <div className="flex-1 space-y-2 pt-1">
+            <div className="h-2.5 rounded bg-gray-200 dark:bg-gray-800" style={{ width: `${w}%` }} />
+            <div className="h-2.5 w-2/5 rounded bg-gray-200 dark:bg-gray-800" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -267,10 +425,10 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-2.5 py-1 text-xs ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition ${
         active
-          ? 'bg-indigo-600 text-white'
-          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+          ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+          : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
       }`}
     >
       {children}

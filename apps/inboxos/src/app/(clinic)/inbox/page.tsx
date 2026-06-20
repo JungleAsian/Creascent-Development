@@ -12,14 +12,18 @@
 import { useEffect, useState } from 'react'
 import { ConversationList } from '@/shared/components/ConversationList'
 import { ConversationView } from '@/shared/components/ConversationView'
+import { PatientCard } from '@/shared/components/PatientCard'
+import { LifecyclePanel } from '@/shared/components/LifecyclePanel'
 import { TagsPanel } from '@/shared/components/TagsPanel'
 import { NotesPanel } from '@/shared/components/NotesPanel'
 import { AssignPanel } from '@/shared/components/AssignPanel'
 import { AssistantPanel } from '@/shared/components/AssistantPanel'
 import { useI18n } from '@/shared/hooks/useI18n'
+import { useOnline } from '@/shared/hooks/useOnline'
 
 export default function InboxPage() {
   const { t } = useI18n()
+  const online = useOnline()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [panelsOpen, setPanelsOpen] = useState(false)
 
@@ -44,17 +48,37 @@ export default function InboxPage() {
   // the wrong recipient.
   const panels = selectedId ? (
     <>
+      <PatientCard key={`patient-${selectedId}`} conversationId={selectedId} />
+      <AssignPanel key={`assign-${selectedId}`} conversationId={selectedId} />
+      <LifecyclePanel key={`lifecycle-${selectedId}`} conversationId={selectedId} />
       <TagsPanel key={`tags-${selectedId}`} conversationId={selectedId} />
       <AssistantPanel key={`assistant-${selectedId}`} conversationId={selectedId} />
       <NotesPanel key={`notes-${selectedId}`} conversationId={selectedId} />
-      <AssignPanel key={`assign-${selectedId}`} conversationId={selectedId} />
     </>
   ) : (
     <p className="p-4 text-sm text-gray-400">{t('view.empty')}</p>
   )
 
   return (
-    <div className="grid h-full grid-cols-1 md:grid-cols-[18rem_1fr_18rem]">
+    <div className="flex h-full flex-col">
+      {/* Offline / disconnected banner — a required operational state: when the
+          browser loses its network, a reply can't reach the patient, so make it
+          unmistakable across the whole inbox (drafts stay in local component state). */}
+      {!online && (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          <span aria-hidden className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+          </span>
+          <span className="font-semibold">{t('conn.offline.title')}</span>
+          <span className="hidden min-w-0 truncate opacity-90 sm:inline">— {t('conn.offline.body')}</span>
+        </div>
+      )}
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[18rem_1fr_18rem]">
       {/* Conversation list — full width on mobile until a thread is opened. */}
       <div
         className={`${selectedId ? 'hidden md:block' : 'block'} overflow-hidden border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900`}
@@ -99,6 +123,7 @@ export default function InboxPage() {
       {/* Contextual panels — static third column on desktop. */}
       <div className="hidden overflow-y-auto border-l border-gray-200 bg-white md:block dark:border-gray-800 dark:bg-gray-900">
         {panels}
+      </div>
       </div>
 
       {/* …and the same panels as a right-hand slide-over drawer on mobile. */}

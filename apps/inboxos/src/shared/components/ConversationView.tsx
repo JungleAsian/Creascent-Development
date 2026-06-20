@@ -4,12 +4,13 @@
 // the AI bot or a human secretary is driving the thread, a send box, and
 // resolve/reopen actions. Reopen creates a NEW conversation (Decision 4) and the
 // view follows the caller to it via onConversationChange.
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { useI18n } from '../hooks/useI18n'
-import { formatDateTime } from '../format'
+import { avatarLabel, formatDateTime, formatDay, formatTime, relativeTime } from '../format'
+import { conversationMode } from '../conversationMode'
 import { AssignControl } from './AssignControl'
 import { QuickReplyPicker } from './QuickReplyPicker'
 import { TemplatePicker } from './TemplatePicker'
@@ -23,6 +24,7 @@ import type { Tag } from '../types'
 import type {
   Appointment,
   AppointmentStatus,
+  Channel,
   Conversation,
   ConversationStatus,
   Message,
@@ -37,6 +39,14 @@ const APPT_BADGE: Record<AppointmentStatus, string> = {
   cancelled: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
   completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   no_show: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+}
+
+// Req 4 — channel brand colours for the thread header (the small coloured dot +
+// channel name beside the contact). Mirrors the list's channel badge.
+const CHANNEL_META: Record<Channel, { label: string; dot: string; text: string }> = {
+  whatsapp: { label: 'WhatsApp', dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400' },
+  messenger: { label: 'Messenger', dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400' },
+  instagram: { label: 'Instagram', dot: 'bg-pink-600', text: 'text-pink-600 dark:text-pink-400' },
 }
 
 const ROLE_LABEL: Record<MessageRole, 'view.role.user' | 'view.role.agent' | 'view.role.assistant' | 'view.role.system'> = {
@@ -96,8 +106,8 @@ export function ConversationView({
   const messages = messagesQuery.data?.messages ?? []
   const closed = isClosedStatus(conversation?.status)
   // The bot drives an open thread; once a human is assigned or it's escalated, a
-  // secretary is in control.
-  const humanMode = conversation?.status === 'assigned' || conversation?.status === 'handoff'
+  // secretary is in control (shared helper so the list pill and this view agree).
+  const humanMode = conversationMode(conversation?.status) === 'human'
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -255,6 +265,27 @@ export function ConversationView({
     sendMediaMutation.mutate(form)
   }
 
+  // Permission-denied — the selected thread belongs to a clinic/role the operator
+  // can't read (e.g. an admin switched clinics, or a deep-link to a foreign thread).
+  // A retry won't help, so show a dedicated locked state instead of the queue.
+  if (
+    conversationQuery.error instanceof ApiError &&
+    (conversationQuery.error.status === 403 || conversationQuery.error.status === 404)
+  ) {
+    const forbidden = conversationQuery.error.status === 403
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+        <span aria-hidden className="grid h-14 w-14 place-items-center rounded-2xl bg-gray-100 text-2xl text-gray-500 dark:bg-gray-800">
+          {forbidden ? '🔒' : '🔎'}
+        </span>
+        <p className="text-sm font-semibold">
+          {forbidden ? t('common.forbidden.title') : t('common.error')}
+        </p>
+        {forbidden && <p className="max-w-xs text-xs text-gray-500">{t('common.forbidden.body')}</p>}
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Req 20: patient-safety banner — the loudest element in the thread when the
@@ -263,19 +294,49 @@ export function ConversationView({
           collapsed on mobile). */}
       <SafetyBanner conversationId={conversationId} />
 
-      {/* Header + mode rail */}
-      <div className="border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center justify-between gap-2 px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{conversation?.channelContactHandle ?? '…'}</p>
-            <p className="text-xs capitalize text-gray-400">{conversation?.channel}</p>
+      {/* Header */}
+      <div className="border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex items-center gap-3 px-4 py-3">
+          {/* Patient avatar. */}
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gray-200 text-[13px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200">
+            {avatarLabel(conversation?.channelContactHandle)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-[15px] font-bold">{conversation?.channelContactHandle ?? '…'}</h3>
+              {/* Mode pill (Req 5/6) — who is driving the thread. */}
+              <span
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  humanMode
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+                }`}
+              >
+                {humanMode ? '●' : '✦'} {humanMode ? t('view.mode.human') : t('view.mode.bot')}
+              </span>
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-gray-400">
+              {conversation && (
+                <span className={`inline-flex items-center gap-1 font-bold ${CHANNEL_META[conversation.channel].text}`}>
+                  <span aria-hidden className={`h-2 w-2 rounded-full ${CHANNEL_META[conversation.channel].dot}`} />
+                  {CHANNEL_META[conversation.channel].label}
+                </span>
+              )}
+              {conversation?.lastMessageAt && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{t('view.lastSeen', { time: relativeTime(conversation.lastMessageAt) })}</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex shrink-0 items-center gap-2">
             <AssignControl conversationId={conversationId} />
             {conversation?.patientId && (
               <Link
                 href={`/inbox/${conversationId}/patient`}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
               >
                 {t('patient.title')}
               </Link>
@@ -286,7 +347,7 @@ export function ConversationView({
                 value={conversation.status}
                 onChange={(e) => statusMutation.mutate(e.target.value as ConversationStatus)}
                 disabled={statusMutation.isPending}
-                className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                className="rounded-lg border border-gray-300 px-2 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
               >
                 {(MANUAL_STATUSES.includes(conversation.status)
                   ? MANUAL_STATUSES
@@ -298,13 +359,24 @@ export function ConversationView({
                 ))}
               </select>
             )}
+            {/* Req 5: one-click return to the bot while a human owns the thread. */}
+            {conversation && humanMode && !closed && (
+              <button
+                type="button"
+                onClick={() => resumeBotMutation.mutate()}
+                disabled={resumeBotMutation.isPending}
+                className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-60"
+              >
+                ↩ {resumeBotMutation.isPending ? t('view.mode.resuming') : t('view.mode.resumeBot')}
+              </button>
+            )}
             {conversation &&
             (closed ? (
               <button
                 type="button"
                 onClick={() => reopenMutation.mutate()}
                 disabled={reopenMutation.isPending}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
               >
                 {t('view.reopen')}
               </button>
@@ -313,70 +385,84 @@ export function ConversationView({
                 type="button"
                 onClick={() => closeMutation.mutate()}
                 disabled={closeMutation.isPending}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
               >
                 {t('view.close')}
               </button>
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2 px-4 pb-2 text-xs">
-          <span className="font-medium text-gray-500">{t('view.mode.title')}:</span>
-          <span
-            className={`rounded-full px-2 py-0.5 font-medium ${
-              humanMode
-                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
-            }`}
-          >
-            {humanMode ? t('view.mode.human') : t('view.mode.bot')}
-          </span>
-          <span className="text-gray-400">{humanMode ? t('view.mode.humanHint') : t('view.mode.botHint')}</span>
-          {/* Req 5: while a human owns the thread, offer a one-click return to the bot
-              (the counterpart to the takeover that fired when the secretary replied). */}
-          {humanMode && !closed && (
-            <button
-              type="button"
-              onClick={() => resumeBotMutation.mutate()}
-              disabled={resumeBotMutation.isPending}
-              className="ml-auto rounded-full border border-indigo-300 px-2 py-0.5 font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-            >
-              {resumeBotMutation.isPending ? t('view.mode.resuming') : t('view.mode.resumeBot')}
-            </button>
-          )}
-        </div>
         {conversation?.patientId && (
           <ApptSummary conversationId={conversationId} patientId={conversation.patientId} />
         )}
       </div>
 
+      {/* Req 5/6 — full-width mode strip directly under the header. The single
+          loudest, always-visible cue for WHO is driving the thread: violet when the
+          bot is auto-answering, emerald when a human has taken over (bot paused).
+          Makes the handoff state unmistakable without scrolling to the composer. */}
+      {conversation && !closed && (
+        <div
+          className={`flex shrink-0 items-center gap-2 px-4 py-2 text-[12px] font-medium ${
+            humanMode
+              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'
+              : 'bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-200'
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`h-2 w-2 shrink-0 rounded-full ${humanMode ? 'bg-emerald-500' : 'bg-violet-500'}`}
+          />
+          <span className="min-w-0 flex-1 truncate">
+            {humanMode ? t('view.modeStrip.human') : t('view.modeStrip.bot')}
+          </span>
+          {humanMode && (
+            <span className="hidden shrink-0 text-[11px] opacity-80 sm:inline">
+              {t('view.modeStrip.humanRight')}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-950">
         {messagesQuery.isLoading ? (
           <p className="text-sm text-gray-400">{t('common.loading')}</p>
         ) : messages.length === 0 ? (
           <p className="text-sm text-gray-400">{t('view.noMessages')}</p>
         ) : (
-          messages.map((m) => {
-            const ind = deliveryIndicator(m)
-            return (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                roleLabel={t(ROLE_LABEL[m.role])}
-                voiceLabel={t('view.voiceNote')}
-                flagLabel={t('view.flagResponse')}
-                flaggedLabel={t('view.flagged')}
-                flagged={flaggedIds.has(m.id)}
-                flagging={flagMutation.isPending && flagMutation.variables?.id === m.id}
-                onFlag={() => flagMutation.mutate(m)}
-                delivery={ind ? { glyph: ind.glyph, tone: ind.tone, label: t(ind.labelKey) } : null}
-                language={language}
-                conversationId={conversationId}
-                imageLabel={t('view.image')}
-              />
-            )
-          })
+          (() => {
+            // Req 5: mark the single moment the first human agent took the thread over
+            // from the bot, rendered as a centred timeline marker.
+            const firstAgentIdx = messages.findIndex((x) => x.role === 'agent')
+            return messages.map((m, i) => {
+              const prev = messages[i - 1]
+              const newDay =
+                !prev ||
+                new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()
+              const ind = deliveryIndicator(m)
+              return (
+                <Fragment key={m.id}>
+                  {newDay && <DaySeparator label={formatDay(m.createdAt, language, t('view.today'))} />}
+                  {i === firstAgentIdx && <CenterMarker>↪ {t('view.handoff')}</CenterMarker>}
+                  <MessageBubble
+                    message={m}
+                    roleLabel={t(ROLE_LABEL[m.role])}
+                    voiceLabel={t('view.voiceNote')}
+                    flagLabel={t('view.flagResponse')}
+                    flaggedLabel={t('view.flagged')}
+                    flagged={flaggedIds.has(m.id)}
+                    flagging={flagMutation.isPending && flagMutation.variables?.id === m.id}
+                    onFlag={() => flagMutation.mutate(m)}
+                    delivery={ind ? { glyph: ind.glyph, tone: ind.tone, label: t(ind.labelKey) } : null}
+                    language={language}
+                    conversationId={conversationId}
+                    imageLabel={t('view.image')}
+                  />
+                </Fragment>
+              )
+            })
+          })()
         )}
       </div>
 
@@ -386,7 +472,10 @@ export function ConversationView({
           {t('view.closedNotice')}
         </p>
       ) : (
-        <div className="border-t border-gray-200 dark:border-gray-800">
+        <div className="border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          {/* Req 5/6 — the bot-paused cue now lives in the always-visible mode strip
+              under the header (with the one-click Return-to-bot in the header
+              actions), so the composer stays clean (matches the mockup). */}
           {/* Req 3: the reply is now delivered to the patient over the channel, so a
               failed send (expired token, send outside the 24h window) surfaces here —
               the draft is preserved so the secretary can retry. */}
@@ -479,12 +568,12 @@ export function ConversationView({
                 placeholder={t('view.placeholder')}
                 enterKeyHint="send"
                 autoCapitalize="sentences"
-                className="min-w-0 flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+                className="min-w-0 flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-gray-700 dark:bg-gray-800"
               />
               <button
                 type="submit"
                 disabled={sendMutation.isPending || !draft.trim()}
-                className="shrink-0 rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                className="shrink-0 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
               >
                 {sendMutation.isPending ? t('view.sending') : t('view.send')}
               </button>
@@ -595,6 +684,28 @@ const DELIVERY_TONE: Record<DeliveryTone, string> = {
   failed: 'text-red-600 dark:text-red-400',
 }
 
+// A centred day pill between message groups.
+function DaySeparator({ label }: { label: string }) {
+  return (
+    <div className="my-3 flex justify-center">
+      <span className="rounded-full bg-gray-200 px-2.5 py-0.5 text-[11px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+        {label}
+      </span>
+    </div>
+  )
+}
+
+// A centred timeline marker (e.g. the bot→human handoff).
+function CenterMarker({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="my-3 flex justify-center">
+      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+        {children}
+      </span>
+    </div>
+  )
+}
+
 function MessageBubble({
   message,
   roleLabel,
@@ -624,8 +735,10 @@ function MessageBubble({
 }) {
   // Patient messages on the left; clinic (agent/bot/system) on the right.
   const fromPatient = message.role === 'user'
+  const isBot = message.role === 'assistant'
+  const isHuman = message.role === 'agent'
   // Only the bot's own replies can be flagged as a bad response (Req 29).
-  const canFlag = message.role === 'assistant'
+  const canFlag = isBot
   // Voice note (Req 8): a transcribed audio message shows a 🎤 marker above its
   // transcript so the secretary knows the patient spoke rather than typed.
   const isVoiceNote = message.contentType === 'audio'
@@ -633,31 +746,32 @@ function MessageBubble({
   // is the caption shown beneath it.
   const isImage = isImageMessage(message)
   const transcript = message.transcription ?? message.content
+
+  // Bubble skin per author: patient = plain white card (left); bot = white card with
+  // a violet rail; human secretary = the teal brand bubble; system = a muted card.
+  const skin = fromPatient
+    ? 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700'
+    : isBot
+      ? 'bg-white text-gray-900 border border-violet-100 border-l-[3px] border-l-violet-500 rounded-br-sm dark:bg-gray-800 dark:text-gray-100 dark:border-violet-900/60'
+      : isHuman
+        ? 'bg-teal-600 text-white rounded-br-sm'
+        : 'bg-gray-100 text-gray-600 border border-gray-200 dark:bg-gray-800/60 dark:text-gray-300 dark:border-gray-700'
+  const metaTone = isHuman ? 'text-teal-50/90' : 'text-gray-400'
+
   return (
     <div className={`group flex ${fromPatient ? 'justify-start' : 'justify-end'}`}>
-      <div
-        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-          fromPatient
-            ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-            : message.role === 'assistant'
-              ? 'bg-indigo-100 text-indigo-950 dark:bg-indigo-900/50 dark:text-indigo-100'
-              : 'bg-indigo-600 text-white'
-        }`}
-      >
-        <div className="mb-0.5 flex items-center gap-2 text-[10px] opacity-70">
-          <span>{roleLabel}</span>
-          <span>{formatDateTime(message.createdAt, language)}</span>
-          {delivery && (
-            <span
-              className={`ml-auto flex items-center gap-1 font-semibold ${DELIVERY_TONE[delivery.tone]}`}
-              title={delivery.label}
-            >
-              <span aria-hidden>{delivery.glyph}</span>
-              {delivery.tone === 'failed' && <span>{delivery.label}</span>}
-              <span className="sr-only">{delivery.label}</span>
-            </span>
-          )}
-        </div>
+      <div className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-[13px] shadow-sm ${skin} ${flagged ? 'outline outline-2 outline-red-500' : ''}`}>
+        {/* Author chip (Req 5/6) — name the bot vs the human who replied. */}
+        {(isBot || isHuman) && (
+          <div
+            className={`mb-1 flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wide ${
+              isBot ? 'text-violet-600 dark:text-violet-400' : 'text-teal-50'
+            }`}
+          >
+            <span aria-hidden>{isBot ? '✦' : '●'}</span>
+            <span>{roleLabel}</span>
+          </div>
+        )}
         {isVoiceNote && (
           <div className="mb-1 flex items-center gap-1 text-[11px] font-medium opacity-80">
             <span aria-hidden>🎤</span>
@@ -665,23 +779,27 @@ function MessageBubble({
           </div>
         )}
         {isImage && (
-          <MessageImage
-            conversationId={conversationId}
-            messageId={message.id}
-            alt={imageLabel}
-          />
+          <MessageImage conversationId={conversationId} messageId={message.id} alt={imageLabel} />
         )}
         {/* Image messages show their caption (if any) below the image; non-image
             messages show their text/transcript. */}
-        {(!isImage || transcript) && (
-          <p className="whitespace-pre-wrap break-words">{transcript}</p>
-        )}
-        {canFlag && (
-          <div className="mt-1 text-right">
-            {flagged ? (
-              <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
-                ⚑ {flaggedLabel}
-              </span>
+        {(!isImage || transcript) && <p className="whitespace-pre-wrap break-words">{transcript}</p>}
+
+        <div className={`mt-1 flex items-center gap-1.5 text-[10.5px] ${metaTone}`}>
+          <span>{formatTime(message.createdAt, language)}</span>
+          {delivery && (
+            <span
+              className={`flex items-center gap-1 font-semibold ${isHuman && delivery.tone !== 'failed' ? 'text-teal-50' : DELIVERY_TONE[delivery.tone]}`}
+              title={delivery.label}
+            >
+              <span aria-hidden>{delivery.glyph}</span>
+              {delivery.tone === 'failed' && <span>{delivery.label}</span>}
+              <span className="sr-only">{delivery.label}</span>
+            </span>
+          )}
+          {canFlag &&
+            (flagged ? (
+              <span className="ml-auto font-semibold text-red-600 dark:text-red-400">⚑ {flaggedLabel}</span>
             ) : (
               <button
                 type="button"
@@ -689,13 +807,12 @@ function MessageBubble({
                 disabled={flagging}
                 title={flagLabel}
                 aria-label={flagLabel}
-                className="text-[10px] font-medium text-gray-400 opacity-100 transition hover:text-red-600 focus-visible:opacity-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 dark:hover:text-red-400"
+                className="ml-auto font-medium text-gray-400 opacity-100 transition hover:text-red-600 focus-visible:opacity-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 dark:hover:text-red-400"
               >
                 ⚑ {flagLabel}
               </button>
-            )}
-          </div>
-        )}
+            ))}
+        </div>
       </div>
     </div>
   )

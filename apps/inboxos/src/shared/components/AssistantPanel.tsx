@@ -41,7 +41,7 @@ interface NextStepResponse {
 }
 
 // Visual emphasis per recommended action. Safety + human-escalation are loud so a
-// secretary can't miss them; the rest are calm indigo. Keys map to assistant.action.*.
+// secretary can't miss them; the rest are calm violet. Keys map to assistant.action.*.
 const ACTION_STYLE: Record<NextStepAction, { box: string; dot: string; icon: string }> = {
   urgent_safety: {
     box: 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200',
@@ -54,23 +54,23 @@ const ACTION_STYLE: Record<NextStepAction, { box: string; dot: string; icon: str
     icon: '🙋',
   },
   book_appointment: {
-    box: 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200',
-    dot: 'bg-indigo-500',
+    box: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200',
+    dot: 'bg-violet-500',
     icon: '📅',
   },
   confirm_details: {
-    box: 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200',
-    dot: 'bg-indigo-500',
+    box: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200',
+    dot: 'bg-violet-500',
     icon: '✅',
   },
   request_info: {
-    box: 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200',
-    dot: 'bg-indigo-500',
+    box: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200',
+    dot: 'bg-violet-500',
     icon: '❓',
   },
   answer_question: {
-    box: 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200',
-    dot: 'bg-indigo-500',
+    box: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200',
+    dot: 'bg-violet-500',
     icon: '💬',
   },
   follow_up_later: {
@@ -145,7 +145,7 @@ export function AssistantPanel({ conversationId }: { conversationId: string }) {
         ✨ {t('assistant.title')}
       </h3>
 
-      <p className="mb-2 rounded-md bg-indigo-50 px-2 py-1.5 text-[11px] font-medium text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
+      <p className="mb-2 rounded-md bg-violet-50 px-2 py-1.5 text-[11px] font-medium text-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
         {t('assistant.warning')}
       </p>
 
@@ -170,7 +170,7 @@ export function AssistantPanel({ conversationId }: { conversationId: string }) {
           type="button"
           onClick={() => suggestions.mutate()}
           disabled={suggestions.isPending}
-          className="rounded-md bg-indigo-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="rounded-md bg-violet-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
         >
           {suggestions.isPending ? t('assistant.working') : t('assistant.suggest')}
         </button>
@@ -233,7 +233,7 @@ export function AssistantPanel({ conversationId }: { conversationId: string }) {
                   <button
                     type="button"
                     onClick={() => insert(s, idx)}
-                    className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                    className="text-[10px] font-semibold text-violet-600 hover:underline dark:text-violet-400"
                   >
                     {insertedIdx === idx ? t('assistant.inserted') : t('assistant.insert')}
                   </button>

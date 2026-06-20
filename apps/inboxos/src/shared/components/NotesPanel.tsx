@@ -114,7 +114,7 @@ export function NotesPanel({ conversationId }: { conversationId: string }) {
                       value={editDraft}
                       onChange={(e) => setEditDraft(e.target.value)}
                       rows={2}
-                      className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900"
+                      className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-teal-500 dark:border-gray-700 dark:bg-gray-900"
                     />
                     <div className="flex gap-1.5">
                       <button
@@ -147,7 +147,7 @@ export function NotesPanel({ conversationId }: { conversationId: string }) {
                       <button
                         type="button"
                         onClick={() => startEdit(n)}
-                        className="text-[10px] font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                        className="text-[10px] font-medium text-teal-700 hover:underline dark:text-teal-400"
                       >
                         {t('notes.edit')}
                       </button>
@@ -174,7 +174,7 @@ export function NotesPanel({ conversationId }: { conversationId: string }) {
           onChange={(e) => setDraft(e.target.value)}
           rows={2}
           placeholder={t('notes.placeholder')}
-          className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+          className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-xs outline-none focus:border-teal-500 dark:border-gray-700 dark:bg-gray-800"
         />
         <button
           type="submit"
