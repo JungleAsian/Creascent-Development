@@ -69,6 +69,15 @@ export interface ConversationsRepository {
    * list, not only in the open conversation's tag panel).
    */
   listTagNamesByClinic(clinicId: string): Promise<Array<{ conversationId: string; name: string }>>
+  /**
+   * The single most recent message of every conversation in a clinic, in one query
+   * (DISTINCT ON the conversation, newest first). Lets the conversation-list endpoint
+   * show a last-message preview per row without an N+1 fetch — `content` is the raw
+   * text (the caller renders a placeholder for audio/image content types).
+   */
+  listLastMessageByClinic(
+    clinicId: string,
+  ): Promise<Array<{ conversationId: string; content: string; contentType: string; role: string }>>
   /** Distinct tags linked to any of a patient's conversations (patient history view). */
   listTagsForPatient(clinicId: string, patientId: string): Promise<ConversationTag[]>
   /** Resolve a clinic tag by its name (case-sensitive), or null. */
@@ -203,6 +212,19 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         JOIN conversation_tags t ON t.id = l.tag_id
         JOIN conversations c ON c.id = l.conversation_id
         WHERE c.clinic_id = ${clinicId}
+      `
+    },
+
+    async listLastMessageByClinic(clinicId) {
+      return sql<Array<{ conversationId: string; content: string; contentType: string; role: string }>>`
+        SELECT DISTINCT ON (m.conversation_id)
+          m.conversation_id AS "conversationId",
+          m.content,
+          m.content_type AS "contentType",
+          m.role
+        FROM conversation_messages m
+        WHERE m.clinic_id = ${clinicId}
+        ORDER BY m.conversation_id, m.created_at DESC
       `
     },
 

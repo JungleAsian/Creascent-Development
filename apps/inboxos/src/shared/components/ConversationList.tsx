@@ -135,8 +135,16 @@ export function ConversationList({
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-base font-bold">{t('conv.title')}</h2>
           {!query.isLoading && (
-            <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[11px] font-bold text-white">
+            <span className="text-[11px] text-gray-400">
               {t('conv.countOpen', { n: String(conversations.length) })}
+              {safetyRows.length > 0 && (
+                <>
+                  {' · '}
+                  <span className="font-bold text-red-600 dark:text-red-400">
+                    {t('conv.countUrgent', { n: String(safetyRows.length) })}
+                  </span>
+                </>
+              )}
             </span>
           )}
         </div>
@@ -293,6 +301,19 @@ export function ConversationList({
   )
 }
 
+// Render the preview text for a row's last message. Media (voice/image) can't be
+// shown inline in the list, so they get a glyph + label; text-bearing types show
+// their content; a thread with no messages yet shows a muted placeholder.
+function previewText(
+  lastMessage: Conversation['lastMessage'],
+  t: ReturnType<typeof useI18n>['t'],
+): string {
+  if (!lastMessage) return t('conv.preview.none')
+  if (lastMessage.contentType === 'audio') return `🎤 ${t('conv.preview.voice')}`
+  if (lastMessage.contentType === 'image') return `🖼 ${t('conv.preview.image')}`
+  return lastMessage.content || t('conv.preview.none')
+}
+
 function GroupLabel({ children, danger }: { children: React.ReactNode; danger?: boolean }) {
   return (
     <div
@@ -351,6 +372,12 @@ function ThreadRow({
           <span className="flex items-center gap-2">
             <span className="flex-1 truncate text-[13.5px] font-bold">{c.channelContactHandle}</span>
             <span className="shrink-0 text-[11px] text-gray-400">{relativeTime(c.lastMessageAt)}</span>
+          </span>
+
+          {/* Last-message preview (Req 4) — audio/image render a labelled placeholder
+              since the row can't show the media itself. */}
+          <span className="mt-0.5 block truncate text-[12.5px] text-gray-500 dark:text-gray-400">
+            {previewText(c.lastMessage, t)}
           </span>
 
           <span className="mt-1.5 flex flex-wrap items-center gap-1.5">

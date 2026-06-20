@@ -152,7 +152,21 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
         if (list) list.push(name)
         else tagsByConversation.set(conversationId, [name])
       }
-      return filtered.map((c) => ({ ...c, tags: tagsByConversation.get(c.id) ?? [] }))
+
+      // Req 4/35: attach each thread's most recent message so the list row can show
+      // a preview (the inbox's row preview line). One DISTINCT ON query, not an
+      // N+1 per row — mirrors the tag-name fan-in above.
+      const lastMessageRows = await repo.listLastMessageByClinic(clinicId)
+      const lastByConversation = new Map<string, { content: string; contentType: string; role: string }>()
+      for (const { conversationId, content, contentType, role } of lastMessageRows) {
+        lastByConversation.set(conversationId, { content, contentType, role })
+      }
+
+      return filtered.map((c) => ({
+        ...c,
+        tags: tagsByConversation.get(c.id) ?? [],
+        lastMessage: lastByConversation.get(c.id) ?? null,
+      }))
     })
     return { conversations }
   })

@@ -241,6 +241,17 @@ vi.mock('@docmee/db', () => ({
             { conversationId: 'mine-1', name: 'urgent' },
           ]
         : [],
+    // Req 4/35: last message per conversation, attached to the list response so each
+    // row can show a preview line.
+    listLastMessageByClinic: async (clinicId: string) =>
+      [...store.messages.values()]
+        .filter((m) => m.clinicId === clinicId)
+        .map((m) => ({
+          conversationId: m.conversationId as string,
+          content: (m.content as string) ?? '',
+          contentType: (m.contentType as string) ?? 'text',
+          role: (m.role as string) ?? 'user',
+        })),
     findById: async (clinicId: string, id: string) => {
       const c = store.conversations.get(id)
       return c && c.clinicId === clinicId ? c : null
@@ -421,6 +432,18 @@ describe('conversation routes', () => {
     expect(open.tags).toEqual(expect.arrayContaining(['emergency', 'appointment']))
     const untagged = body.conversations.find((c: { id: string }) => c.id === 'theirs-1')
     expect(untagged.tags).toEqual([])
+  })
+
+  it('GET /conversations attaches each conversation\'s last message (Req 4 — list preview)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/conversations', headers: auth })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    // open-1 has messages in the store → a lastMessage object is attached.
+    const open = body.conversations.find((c: { id: string }) => c.id === 'open-1')
+    expect(open.lastMessage).toMatchObject({ contentType: expect.any(String) })
+    // theirs-1 has no messages → lastMessage is null.
+    const noMessages = body.conversations.find((c: { id: string }) => c.id === 'theirs-1')
+    expect(noMessages.lastMessage).toBeNull()
   })
 
   // ── Assigned conversation views (Rev1 #12) ──

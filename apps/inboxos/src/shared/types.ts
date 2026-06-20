@@ -44,6 +44,14 @@ export interface Conversation {
   // list can flag urgent/safety threads without a per-row fetch. Absent on the
   // single-conversation detail endpoint (the tag panel fetches those separately).
   tags?: string[]
+  // Req 4/35: the thread's most recent message, attached by GET /conversations so
+  // the list row can render a preview line. `null` when the thread has no messages
+  // yet; absent on the single-conversation detail endpoint.
+  lastMessage?: {
+    content: string
+    contentType: ContentType
+    role: MessageRole
+  } | null
   createdAt: string
   updatedAt: string
 }
