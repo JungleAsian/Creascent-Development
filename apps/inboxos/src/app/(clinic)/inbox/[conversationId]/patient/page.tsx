@@ -107,7 +107,7 @@ export default function PatientHistoryPage({
     .at(-1)
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold">{t('patient.title')}</h1>
         <Link href="/inbox" className="text-xs text-gray-500 hover:text-indigo-600">
@@ -369,8 +369,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return (
     <div className="flex justify-between gap-3 border-b border-gray-100 py-1 dark:border-gray-800">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className={`font-medium ${danger ? 'text-red-600 dark:text-red-400' : ''}`}>{value}</dd>
+      <dt className="shrink-0 text-gray-500">{label}</dt>
+      <dd
+        className={`min-w-0 break-words text-right font-medium ${danger ? 'text-red-600 dark:text-red-400' : ''}`}
+      >
+        {value}
+      </dd>
     </div>
   )
 }

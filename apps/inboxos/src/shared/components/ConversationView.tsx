@@ -371,76 +371,90 @@ export function ConversationView({
               ⚠ {t('view.attachInvalid')}
             </p>
           )}
-          <form onSubmit={onSend} className="flex items-end gap-2 p-3">
-            <QuickReplyPicker
-              onPick={(content) => setDraft((d) => (d.trim() ? `${d}\n${content}` : content))}
-            />
-            {conversation?.channel === 'whatsapp' && (
-              <TemplatePicker
-                conversationId={conversationId}
-                onPick={(templateId) => sendTemplateMutation.mutate(templateId)}
-                disabled={sendTemplateMutation.isPending}
+          {/* Req 39 (mobile): on a phone the pickers + attach + textarea + send can't
+              share one row at ~375px — the textarea ends up unusably narrow. Stack to a
+              wrapping tool toolbar above a full-width input row on small screens, and
+              restore the classic single row from sm up. */}
+          <form onSubmit={onSend} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-end">
+            {/* Tool toolbar — wraps under itself on a narrow screen instead of squeezing
+                the composer. Stays inline at the front of the row on desktop. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <QuickReplyPicker
+                onPick={(content) => setDraft((d) => (d.trim() ? `${d}\n${content}` : content))}
               />
-            )}
-            {/* Req 3: offer the patient a tappable reply-button menu (WhatsApp only). */}
-            {conversation?.channel === 'whatsapp' && (
-              <InteractivePicker
-                onSend={(body, buttons) => sendInteractiveMutation.mutate({ body, buttons })}
-                disabled={sendInteractiveMutation.isPending}
-              />
-            )}
-            {/* Req 3: offer a single-select LIST menu for >3 options (WhatsApp only). */}
-            {conversation?.channel === 'whatsapp' && (
-              <ListPicker
-                onSend={(body, button, sections) =>
-                  sendListMutation.mutate({ body, button, sections })
-                }
-                disabled={sendListMutation.isPending}
-              />
-            )}
-            {/* Req 3: attach an image (WhatsApp only — Messenger/Instagram attachment
-                upload is a separate mechanism). */}
-            {conversation?.channel === 'whatsapp' && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  className="hidden"
-                  onChange={onAttach}
+              {conversation?.channel === 'whatsapp' && (
+                <TemplatePicker
+                  conversationId={conversationId}
+                  onPick={(templateId) => sendTemplateMutation.mutate(templateId)}
+                  disabled={sendTemplateMutation.isPending}
                 />
-                <button
-                  type="button"
-                  title={t('view.attachImage')}
-                  aria-label={t('view.attachImage')}
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sendMediaMutation.isPending}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                >
-                  📎
-                </button>
-              </>
-            )}
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  onSend(e)
-                }
-              }}
-              rows={2}
-              placeholder={t('view.placeholder')}
-              className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
-            />
-            <button
-              type="submit"
-              disabled={sendMutation.isPending || !draft.trim()}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {sendMutation.isPending ? t('view.sending') : t('view.send')}
-            </button>
+              )}
+              {/* Req 3: offer the patient a tappable reply-button menu (WhatsApp only). */}
+              {conversation?.channel === 'whatsapp' && (
+                <InteractivePicker
+                  onSend={(body, buttons) => sendInteractiveMutation.mutate({ body, buttons })}
+                  disabled={sendInteractiveMutation.isPending}
+                />
+              )}
+              {/* Req 3: offer a single-select LIST menu for >3 options (WhatsApp only). */}
+              {conversation?.channel === 'whatsapp' && (
+                <ListPicker
+                  onSend={(body, button, sections) =>
+                    sendListMutation.mutate({ body, button, sections })
+                  }
+                  disabled={sendListMutation.isPending}
+                />
+              )}
+              {/* Req 3: attach an image (WhatsApp only — Messenger/Instagram attachment
+                  upload is a separate mechanism). */}
+              {conversation?.channel === 'whatsapp' && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    className="hidden"
+                    onChange={onAttach}
+                  />
+                  <button
+                    type="button"
+                    title={t('view.attachImage')}
+                    aria-label={t('view.attachImage')}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendMediaMutation.isPending}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                  >
+                    📎
+                  </button>
+                </>
+              )}
+            </div>
+            {/* Input row — full width on mobile so the draft and a comfortable-tap Send
+                button each get room; rejoins the tool row from sm up. */}
+            <div className="flex items-end gap-2 sm:min-w-0 sm:flex-1">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    onSend(e)
+                  }
+                }}
+                rows={2}
+                placeholder={t('view.placeholder')}
+                enterKeyHint="send"
+                autoCapitalize="sentences"
+                className="min-w-0 flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"
+              />
+              <button
+                type="submit"
+                disabled={sendMutation.isPending || !draft.trim()}
+                className="shrink-0 rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {sendMutation.isPending ? t('view.sending') : t('view.send')}
+              </button>
+            </div>
           </form>
         </div>
       )}
