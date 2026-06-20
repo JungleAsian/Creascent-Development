@@ -35,9 +35,11 @@ function startDaemon() {
     return
   }
   const daemonEntry = path.join(sentinelRoot, 'daemon.ts')
-  // Launch via `pnpm exec tsx` from the tools root so the local tsx binary resolves
-  // for the detached child (bare `tsx` is not on PATH).
-  const child = spawn('pnpm', ['exec', 'tsx', daemonEntry], { cwd: toolsRoot, detached: true, stdio: 'ignore', shell: process.platform === 'win32' })
+  // Spawn node + the tsx CLI directly. The previous `pnpm exec tsx` variant ran
+  // through a shell wrapper whose exit killed the detached child on Windows, so
+  // the daemon never stayed up. node+tsx detached+unref keeps it alive.
+  const tsxCli = path.join(toolsRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+  const child = spawn(process.execPath, [tsxCli, daemonEntry], { cwd: toolsRoot, detached: true, stdio: 'ignore', windowsHide: true })
   child.unref()
   console.log('Sentinel daemon starting…')
 }

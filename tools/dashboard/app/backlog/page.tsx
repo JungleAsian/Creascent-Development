@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { StatusDot } from '../status-dot'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
@@ -29,11 +30,18 @@ function countBy(rows: Task[], key: keyof Pick<Task, 'status' | 'priority' | 'ph
   }, {})
 }
 
-function priorityTone(priority: string) {
-  if (priority === 'critical' || priority === 'high') return 'bg-red-950/30 text-red-200 border-red-800'
-  if (priority === 'medium') return 'bg-amber-950/30 text-amber-200 border-amber-800'
-  if (priority === 'infrastructure') return 'bg-blue-900 text-blue-100 border-slate-700'
-  return 'bg-slate-800 text-slate-300 border-slate-700'
+function priorityDotTone(priority: string) {
+  if (priority === 'critical' || priority === 'high') return 'red' as const
+  if (priority === 'medium') return 'amber' as const
+  if (priority === 'infrastructure') return 'sky' as const
+  return 'slate' as const
+}
+
+function statusDotTone(status: string) {
+  if (status === 'done') return 'green' as const
+  if (status === 'blocked') return 'red' as const
+  if (status === 'in-progress') return 'amber' as const
+  return 'slate' as const
 }
 
 function statusTone(status: string) {
@@ -105,10 +113,10 @@ export default function BacklogPage({ searchParams }: PageProps) {
                     <p className="text-xs text-slate-500">#{row.id} · {row.phase}</p>
                     <h3 className="mt-1 text-sm font-semibold text-slate-100">{row.title}</h3>
                   </div>
-                  <span className={`shrink-0 rounded border px-2 py-1 text-xs ${priorityTone(row.priority)}`}>{row.priority}</span>
+                  <StatusDot tone={priorityDotTone(row.priority)} label={`Priority: ${row.priority}`} />
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className={`rounded px-2 py-1 text-xs ${statusTone(row.status)}`}>{row.status}</span>
+                  <StatusDot tone={statusDotTone(row.status)} label={`Status: ${row.status}`} />
                   <form action="/api/actions" method="post">
                     <input type="hidden" name="action" value="backlog-done" />
                     <input type="hidden" name="id" value={row.id} />
@@ -168,8 +176,8 @@ export default function BacklogPage({ searchParams }: PageProps) {
               <tr key={row.id} className="bg-slate-950/60">
                 <td className="p-3 font-mono text-xs text-slate-400">#{row.id}</td>
                 <td className="p-3 font-mono">{row.phase}</td>
-                <td className="p-3"><span className={`rounded border px-2 py-1 text-xs ${priorityTone(row.priority)}`}>{row.priority}</span></td>
-                <td className="p-3"><span className={`rounded px-2 py-1 text-xs ${statusTone(row.status)}`}>{row.status}</span></td>
+                <td className="p-3"><StatusDot tone={priorityDotTone(row.priority)} label={`Priority: ${row.priority}`} /></td>
+                <td className="p-3"><StatusDot tone={statusDotTone(row.status)} label={`Status: ${row.status}`} /></td>
                 <td className="p-3">{row.title}</td>
                 <td className="p-3 text-right">
                   <form action="/api/actions" method="post">
