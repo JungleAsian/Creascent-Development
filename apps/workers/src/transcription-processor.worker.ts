@@ -77,6 +77,13 @@ export async function processTranscriptionJob(job: Job): Promise<void> {
     return
   }
 
+  // Req 8: an empty transcript (silence / non-speech audio) is dropped silently —
+  // don't persist a blank inbox message or wake the bot with an empty turn.
+  if (!result.text || result.text.trim() === '') {
+    console.info('[transcription] empty transcript dropped', { messageId: payload.messageId })
+    return
+  }
+
   // 3. Cost tracking: surface audio minutes for the runtime cost ledger
   //    (mirrors `pnpm tool cost log --provider deepgram --minutes N`).
   console.info('[transcription] deepgram usage', {
