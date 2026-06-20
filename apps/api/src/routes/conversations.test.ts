@@ -232,6 +232,15 @@ vi.mock('@docmee/db', () => ({
   createConversationsRepository: () => ({
     listByClinic: async (clinicId: string) =>
       [...store.conversations.values()].filter((c) => c.clinicId === clinicId),
+    // Req 20: tag names per conversation, attached to the list response.
+    listTagNamesByClinic: async (clinicId: string) =>
+      clinicId === 'c-1'
+        ? [
+            { conversationId: 'open-1', name: 'emergency' },
+            { conversationId: 'open-1', name: 'appointment' },
+            { conversationId: 'mine-1', name: 'urgent' },
+          ]
+        : [],
     findById: async (clinicId: string, id: string) => {
       const c = store.conversations.get(id)
       return c && c.clinicId === clinicId ? c : null
@@ -381,6 +390,16 @@ describe('conversation routes', () => {
     expect(body.conversations.map((c: { id: string }) => c.id)).toEqual(
       expect.arrayContaining(['old-1', 'open-1', 'mine-1', 'theirs-1']),
     )
+  })
+
+  it('GET /conversations attaches each conversation\'s tag names (Req 20 — safety triage)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/conversations', headers: auth })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    const open = body.conversations.find((c: { id: string }) => c.id === 'open-1')
+    expect(open.tags).toEqual(expect.arrayContaining(['emergency', 'appointment']))
+    const untagged = body.conversations.find((c: { id: string }) => c.id === 'theirs-1')
+    expect(untagged.tags).toEqual([])
   })
 
   // ── Assigned conversation views (Rev1 #12) ──

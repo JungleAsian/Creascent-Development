@@ -10,7 +10,24 @@ import { useAuthStore } from '../store/auth'
 import { useI18n } from '../hooks/useI18n'
 import { useTeam } from '../hooks/useTeam'
 import { relativeTime } from '../format'
+import { assessSafety, safetyRank, type SafetyLevel } from '../safety'
 import type { Channel, Conversation, ConversationStatus } from '../types'
+
+// Req 20: row treatment per safety severity — a coloured left rail + a badge so an
+// emergency or urgent thread is unmistakable while scanning the queue, not buried
+// in the tag panel. Critical = red, warning = amber.
+const SAFETY_ROW: Record<SafetyLevel, { rail: string; badge: string; labelKey: 'safety.critical.list' | 'safety.warning.list' }> = {
+  critical: {
+    rail: 'border-l-4 border-l-red-600',
+    badge: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+    labelKey: 'safety.critical.list',
+  },
+  warning: {
+    rail: 'border-l-4 border-l-amber-500',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    labelKey: 'safety.warning.list',
+  },
+}
 
 const STATUSES: ConversationStatus[] = [
   'open',
@@ -78,7 +95,15 @@ export function ConversationList({
     },
   })
 
-  const conversations = useMemo(() => query.data?.conversations ?? [], [query.data])
+  // Float safety-critical / urgent threads to the top of the queue (stable within
+  // each severity band, so recency order is preserved otherwise) — Req 20.
+  const conversations = useMemo(() => {
+    const rows = query.data?.conversations ?? []
+    return rows
+      .map((c, i) => ({ c, i, rank: safetyRank(assessSafety(c.tags).level) }))
+      .sort((a, b) => b.rank - a.rank || a.i - b.i)
+      .map((x) => x.c)
+  }, [query.data])
 
   return (
     <div className="flex h-full flex-col">
@@ -122,19 +147,29 @@ export function ConversationList({
           <p className="p-4 text-sm text-gray-400">{t('conv.empty')}</p>
         ) : (
           <ul>
-            {conversations.map((c) => (
+            {conversations.map((c) => {
+              const safety = assessSafety(c.tags).level
+              const row = safety ? SAFETY_ROW[safety] : null
+              return (
               <li key={c.id}>
                 <button
                   type="button"
                   onClick={() => onSelect(c.id)}
                   className={`flex w-full flex-col gap-1 border-b border-gray-100 px-3 py-2.5 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 ${
-                    selectedId === c.id ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''
-                  }`}
+                    row ? row.rail : ''
+                  } ${selectedId === c.id ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium">{c.channelContactHandle}</span>
                     <span className="shrink-0 text-xs text-gray-400">{relativeTime(c.lastMessageAt)}</span>
                   </div>
+                  {row && (
+                    <span
+                      className={`inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${row.badge}`}
+                    >
+                      ⚠ {t(row.labelKey)}
+                    </span>
+                  )}
                   <div className="flex items-center gap-1.5">
                     <span
                       className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_INDICATOR[c.channel].className}`}
@@ -164,7 +199,8 @@ export function ConversationList({
                   </div>
                 </button>
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
       </div>

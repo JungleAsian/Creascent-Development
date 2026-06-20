@@ -17,6 +17,8 @@ import { InteractivePicker } from './InteractivePicker'
 import { ListPicker } from './ListPicker'
 import { deliveryIndicator, type DeliveryTone } from '../delivery'
 import { isImageMessage, messageMediaPath } from '../media'
+import { assessSafety, type SafetyLevel } from '../safety'
+import type { Tag } from '../types'
 import type {
   Appointment,
   AppointmentStatus,
@@ -230,6 +232,12 @@ export function ConversationView({
 
   return (
     <div className="flex h-full flex-col">
+      {/* Req 20: patient-safety banner — the loudest element in the thread when the
+          workers have flagged a possible emergency or an urgent/upset patient, so a
+          secretary can't miss it (the tag chips alone live in a side panel that's
+          collapsed on mobile). */}
+      <SafetyBanner conversationId={conversationId} />
+
       {/* Header + mode rail */}
       <div className="border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center justify-between gap-2 px-4 py-3">
@@ -458,6 +466,51 @@ export function ConversationView({
           </form>
         </div>
       )}
+    </div>
+  )
+}
+
+// Req 20: full-width patient-safety banner. Reuses the same ['tags', id] query as
+// the TagsPanel (TanStack dedupes it) so it reflects worker-applied flags live and
+// updates the instant a secretary clears the tag. Renders nothing when no safety
+// tag is set. Critical (possible emergency) is red; warning (urgent/upset) is amber.
+const SAFETY_BANNER: Record<
+  SafetyLevel,
+  { box: string; icon: string; titleKey: 'safety.critical.title' | 'safety.warning.title'; bodyKey: 'safety.critical.body' | 'safety.warning.body' }
+> = {
+  critical: {
+    box: 'border-red-600 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/50 dark:text-red-200',
+    icon: '🚨',
+    titleKey: 'safety.critical.title',
+    bodyKey: 'safety.critical.body',
+  },
+  warning: {
+    box: 'border-amber-500 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-200',
+    icon: '⚠',
+    titleKey: 'safety.warning.title',
+    bodyKey: 'safety.warning.body',
+  },
+}
+
+function SafetyBanner({ conversationId }: { conversationId: string }) {
+  const { t } = useI18n()
+  const tagsQuery = useQuery({
+    queryKey: ['tags', conversationId],
+    queryFn: () => api.get<{ tags: Tag[] }>(`/conversations/${conversationId}/tags`),
+  })
+  const level = assessSafety(tagsQuery.data?.tags?.map((tg) => tg.name)).level
+  if (!level) return null
+  const b = SAFETY_BANNER[level]
+  return (
+    <div
+      role="alert"
+      className={`flex shrink-0 items-start gap-2 border-b-2 px-4 py-2.5 text-sm ${b.box}`}
+    >
+      <span aria-hidden className="text-base leading-tight">{b.icon}</span>
+      <div className="min-w-0">
+        <p className="font-semibold">{t(b.titleKey)}</p>
+        <p className="text-xs opacity-90">{t(b.bodyKey)}</p>
+      </div>
     </div>
   )
 }

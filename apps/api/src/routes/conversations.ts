@@ -135,12 +135,24 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
       const repo = createConversationsRepository(sql)
       const rows = await repo.listByClinic(clinicId, parsed.data.status as ConversationStatus | undefined)
       const assignedTo = parsed.data.assigned_to
-      if (!assignedTo) return rows
-      // `unassigned` is a reserved sentinel for "no assignee"; any other value is a
-      // user id (filter assigned work by user — Rev1 #35).
-      return assignedTo === 'unassigned'
-        ? rows.filter((c) => c.assignedTo == null)
-        : rows.filter((c) => c.assignedTo === assignedTo)
+      const filtered = !assignedTo
+        ? rows
+        : assignedTo === 'unassigned'
+          ? // `unassigned` is a reserved sentinel for "no assignee"; any other value
+            // is a user id (filter assigned work by user — Rev1 #35).
+            rows.filter((c) => c.assignedTo == null)
+          : rows.filter((c) => c.assignedTo === assignedTo)
+
+      // Req 20: attach each conversation's tag names so the list can flag urgent /
+      // safety threads at a glance. One grouped query instead of an N+1 per row.
+      const tagRows = await repo.listTagNamesByClinic(clinicId)
+      const tagsByConversation = new Map<string, string[]>()
+      for (const { conversationId, name } of tagRows) {
+        const list = tagsByConversation.get(conversationId)
+        if (list) list.push(name)
+        else tagsByConversation.set(conversationId, [name])
+      }
+      return filtered.map((c) => ({ ...c, tags: tagsByConversation.get(c.id) ?? [] }))
     })
     return { conversations }
   })

@@ -62,6 +62,13 @@ export interface ConversationsRepository {
   listTags(clinicId: string): Promise<ConversationTag[]>
   /** Tags currently linked to one conversation. */
   listTagsForConversation(clinicId: string, conversationId: string): Promise<ConversationTag[]>
+  /**
+   * Every (conversationId, tag name) pair for a clinic, in one query. Lets the
+   * conversation-list endpoint surface safety/urgent flags per row for triage
+   * without an N+1 fetch (Req 20 — urgent/emergency must be unmistakable in the
+   * list, not only in the open conversation's tag panel).
+   */
+  listTagNamesByClinic(clinicId: string): Promise<Array<{ conversationId: string; name: string }>>
   /** Distinct tags linked to any of a patient's conversations (patient history view). */
   listTagsForPatient(clinicId: string, patientId: string): Promise<ConversationTag[]>
   /** Resolve a clinic tag by its name (case-sensitive), or null. */
@@ -186,6 +193,16 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         JOIN conversation_tag_links l ON l.tag_id = t.id
         WHERE t.clinic_id = ${clinicId} AND l.conversation_id = ${conversationId}
         ORDER BY t.name
+      `
+    },
+
+    async listTagNamesByClinic(clinicId) {
+      return sql<Array<{ conversationId: string; name: string }>>`
+        SELECT l.conversation_id, t.name
+        FROM conversation_tag_links l
+        JOIN conversation_tags t ON t.id = l.tag_id
+        JOIN conversations c ON c.id = l.conversation_id
+        WHERE c.clinic_id = ${clinicId}
       `
     },
 

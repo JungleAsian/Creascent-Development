@@ -37,6 +37,10 @@ export interface Conversation {
   iaProfileId: string | null
   lastMessageAt: string | null
   metadata: Record<string, unknown>
+  // Req 20: tag names linked to the thread, attached by GET /conversations so the
+  // list can flag urgent/safety threads without a per-row fetch. Absent on the
+  // single-conversation detail endpoint (the tag panel fetches those separately).
+  tags?: string[]
   createdAt: string
   updatedAt: string
 }

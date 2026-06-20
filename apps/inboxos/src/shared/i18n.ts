@@ -108,6 +108,15 @@ const es: Dict = {
   'tags.empty': 'Sin etiquetas',
   'tags.add': 'Agregar etiqueta',
 
+  // Req 20 — safety triage banners / list flags.
+  'safety.critical.list': 'Posible emergencia',
+  'safety.warning.list': 'Atención prioritaria',
+  'safety.critical.title': 'Posible emergencia médica',
+  'safety.critical.body':
+    'El bot detectó una posible emergencia. Atiende a este paciente de inmediato y, si corresponde, indícale llamar a los servicios de emergencia.',
+  'safety.warning.title': 'Requiere atención prioritaria',
+  'safety.warning.body': 'Este paciente necesita atención humana antes que el resto de la fila.',
+
   'notes.title': 'Notas internas',
   'notes.placeholder': 'Escribe una nota interna…',
   'notes.empty': 'Sin notas',
@@ -825,6 +834,15 @@ const en: Dict = {
   'tags.placeholder': 'New tag…',
   'tags.empty': 'No tags',
   'tags.add': 'Add tag',
+
+  // Req 20 — safety triage banners / list flags.
+  'safety.critical.list': 'Possible emergency',
+  'safety.warning.list': 'Priority attention',
+  'safety.critical.title': 'Possible medical emergency',
+  'safety.critical.body':
+    'The bot detected a possible emergency. Attend to this patient immediately and, if appropriate, tell them to call emergency services.',
+  'safety.warning.title': 'Needs priority attention',
+  'safety.warning.body': 'This patient needs a human before the rest of the queue.',
 
   'notes.title': 'Internal notes',
   'notes.placeholder': 'Write an internal note…',
