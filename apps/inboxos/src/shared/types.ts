@@ -2,6 +2,8 @@
 // @docmee/db row types) — kept local so the Next app has no workspace dependency
 // on the database package.
 
+import type { ClinicRule } from './clinicRules'
+
 export type PanelRole = 'secretary' | 'doctor' | 'clinic_admin' | 'ia_studio_admin'
 export type PanelLanguage = 'es' | 'en'
 
@@ -350,7 +352,10 @@ export type BusinessHours = Record<string, DayHours>
 export interface ClinicSettings {
   botTone?: BotTone
   botLanguage?: BotLanguage
+  // Flat string the agents layer reads — recompiled from the ACTIVE rules below.
   clinicRules?: string
+  // Structured editor state (text + active flag, incl. inactive rules) — Screen 8.
+  clinicRulesList?: ClinicRule[]
   businessHours?: BusinessHours
   googleCalendar?: { calendarId?: string } & Record<string, unknown>
   googleSheets?: { spreadsheetId?: string; sheetName?: string; enabled?: boolean } & Record<

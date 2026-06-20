@@ -12,6 +12,12 @@ import { useI18n } from '@/shared/hooks/useI18n'
 import { LicenseBadge } from '@/shared/components/LicenseBadge'
 import { WEEKDAYS, toBusinessHours } from '@/shared/businessHours'
 import { tonePreview, SAFETY_RULE_KEYS } from '@/shared/botPreview'
+import {
+  compileActiveRules,
+  parseClinicRules,
+  rulesChanged,
+  type ClinicRule,
+} from '@/shared/clinicRules'
 import { formatDateTime } from '@/shared/format'
 import type {
   BotLanguage,
@@ -155,7 +161,11 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
   const settings = clinic.settings as ClinicSettings
   const [tone, setTone] = useState<BotTone>(settings.botTone ?? 'professional')
   const [language, setLanguage] = useState<BotLanguage>(settings.botLanguage ?? 'auto')
-  const [rules, setRules] = useState(settings.clinicRules ?? '')
+  // Clinic rules as a structured list with a per-rule active/inactive toggle
+  // (Screen 8 brief). Compare against the freshly-parsed persisted list each render
+  // so the section flips back to "saved" after the clinic refetches.
+  const persistedRules = parseClinicRules(settings)
+  const [rules, setRules] = useState<ClinicRule[]>(persistedRules)
   const save = useSaveClinic(clinic.id)
   // The preview reflects the BOT's configured language; on 'auto' it mirrors the
   // patient, so we show one example in the operator's panel language.
@@ -164,11 +174,29 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
   const dirty =
     tone !== (settings.botTone ?? 'professional') ||
     language !== (settings.botLanguage ?? 'auto') ||
-    rules !== (settings.clinicRules ?? '')
+    rulesChanged(rules, persistedRules)
+
+  function updateRule(id: string, patch: Partial<ClinicRule>) {
+    setRules((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+  function deleteRule(id: string) {
+    setRules((rs) => rs.filter((r) => r.id !== id))
+  }
+  function addRule(text: string) {
+    setRules((rs) => [...rs, { id: crypto.randomUUID(), text: text.trim(), active: true }])
+  }
 
   function onSave() {
     save.mutate({
-      settings: { ...clinic.settings, botTone: tone, botLanguage: language, clinicRules: rules },
+      settings: {
+        ...clinic.settings,
+        botTone: tone,
+        botLanguage: language,
+        // The bot reads the flat string; recompile it from the ACTIVE rules so an
+        // inactive rule disappears from the prompt without losing its text.
+        clinicRules: compileActiveRules(rules),
+        clinicRulesList: rules,
+      },
     })
   }
 
@@ -219,16 +247,41 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
           it is unmistakable that these are always enforced on top of clinic rules. */}
       <SafetyRulesCard />
 
+      {/* Clinic-rule editor (Req 27) — each rule toggles active/inactive; only active
+          rules reach the bot. Sits below the always-on safety rules. */}
       <div className="mt-4">
-        <p className="mb-1 text-xs font-medium text-gray-500">{t('bot.rules.title')}</p>
-        <textarea
-          value={rules}
-          onChange={(e) => setRules(e.target.value)}
-          rows={4}
-          placeholder={t('bot.rules.placeholder')}
-          className={`w-full resize-none ${inputCls}`}
-        />
-        <p className="mt-1 text-xs text-gray-400">{t('bot.rules.hint')}</p>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-gray-500">{t('bot.rules.title')}</p>
+          {rules.length > 0 && (
+            <span className="text-[11px] text-gray-400">
+              {t('bot.rules.activeCount', {
+                active: rules.filter((r) => r.active).length,
+                total: rules.length,
+              })}
+            </span>
+          )}
+        </div>
+        <p className="mb-2 text-xs text-gray-400">{t('bot.rules.hint')}</p>
+
+        {rules.length === 0 ? (
+          <p className="rounded-md border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-400 dark:border-gray-700">
+            {t('bot.rules.empty')}
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {rules.map((rule) => (
+              <RuleRow
+                key={rule.id}
+                rule={rule}
+                onToggle={() => updateRule(rule.id, { active: !rule.active })}
+                onChangeText={(text) => updateRule(rule.id, { text })}
+                onDelete={() => deleteRule(rule.id)}
+              />
+            ))}
+          </ul>
+        )}
+
+        <AddRuleForm onAdd={addRule} />
       </div>
 
       <SaveBar dirty={dirty} pending={save.isPending} saved={save.isSuccess && !dirty} onSave={onSave} />
@@ -306,6 +359,126 @@ function SafetyRulesCard() {
         {t('bot.safety.subtitle')}
       </p>
     </div>
+  )
+}
+
+// One editable clinic rule with an active/inactive toggle. An inactive rule is dimmed
+// and carries an "Inactive" badge — it stays in the list for later but is excluded
+// from what the bot sees (compileActiveRules drops it on save).
+function RuleRow({
+  rule,
+  onToggle,
+  onChangeText,
+  onDelete,
+}: {
+  rule: ClinicRule
+  onToggle: () => void
+  onChangeText: (text: string) => void
+  onDelete: () => void
+}) {
+  const { t } = useI18n()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(rule.text)
+
+  function commit() {
+    const next = draft.trim()
+    if (next !== '' && next !== rule.text) onChangeText(next)
+    else setDraft(rule.text)
+    setEditing(false)
+  }
+
+  return (
+    <li
+      className={`flex items-start gap-2 rounded-lg border p-2 ${
+        rule.active
+          ? 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'
+          : 'border-gray-200 bg-gray-50 opacity-70 dark:border-gray-800 dark:bg-gray-950/40'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={rule.active}
+        title={rule.active ? t('bot.rules.deactivate') : t('bot.rules.activate')}
+        className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+          rule.active
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+            : 'bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+        }`}
+      >
+        {rule.active ? t('bot.rules.active') : t('bot.rules.inactive')}
+      </button>
+
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') {
+              setDraft(rule.text)
+              setEditing(false)
+            }
+          }}
+          className={`min-w-0 flex-1 ${inputCls}`}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(rule.text)
+            setEditing(true)
+          }}
+          className="min-w-0 flex-1 break-words text-left text-sm hover:text-indigo-600"
+        >
+          {rule.text}
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={onDelete}
+        title={t('common.delete')}
+        aria-label={t('common.delete')}
+        className="mt-0.5 shrink-0 rounded-md border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+      >
+        ✕
+      </button>
+    </li>
+  )
+}
+
+// Add a new clinic rule to the list. New rules start active.
+function AddRuleForm({ onAdd }: { onAdd: (text: string) => void }) {
+  const { t } = useI18n()
+  const [text, setText] = useState('')
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (text.trim()) {
+      onAdd(text)
+      setText('')
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-2 flex gap-2">
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={t('bot.rules.placeholder')}
+        className={`min-w-0 flex-1 ${inputCls}`}
+      />
+      <button
+        type="submit"
+        disabled={!text.trim()}
+        className="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+      >
+        {t('bot.rules.add')}
+      </button>
+    </form>
   )
 }
 
