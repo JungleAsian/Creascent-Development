@@ -30,12 +30,16 @@ export default function InboxPage() {
     setPanelsOpen(false)
   }
 
+  // Key every conversation-scoped panel by the thread id so React remounts them
+  // on switch — otherwise local state (the reply draft, AI summary/suggestions,
+  // a half-typed note) bleeds into the next patient's thread and can be sent to
+  // the wrong recipient.
   const panels = selectedId ? (
     <>
-      <TagsPanel conversationId={selectedId} />
-      <AssistantPanel conversationId={selectedId} />
-      <NotesPanel conversationId={selectedId} />
-      <AssignPanel conversationId={selectedId} />
+      <TagsPanel key={`tags-${selectedId}`} conversationId={selectedId} />
+      <AssistantPanel key={`assistant-${selectedId}`} conversationId={selectedId} />
+      <NotesPanel key={`notes-${selectedId}`} conversationId={selectedId} />
+      <AssignPanel key={`assign-${selectedId}`} conversationId={selectedId} />
     </>
   ) : (
     <p className="p-4 text-sm text-gray-400">{t('view.empty')}</p>
@@ -74,7 +78,7 @@ export default function InboxPage() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
-              <ConversationView conversationId={selectedId} onConversationChange={select} />
+              <ConversationView key={selectedId} conversationId={selectedId} onConversationChange={select} />
             </div>
           </>
         ) : (
