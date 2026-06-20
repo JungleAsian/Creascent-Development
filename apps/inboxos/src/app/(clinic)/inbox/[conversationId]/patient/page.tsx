@@ -19,6 +19,7 @@ import type {
   ConversationStatus,
   Note,
   Patient,
+  PatientStatus,
   Tag,
 } from '@/shared/types'
 
@@ -28,6 +29,16 @@ const APPT_BADGE: Record<AppointmentStatus, string> = {
   cancelled: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
   completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   no_show: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+}
+
+// Req 16 (returning-patient signal): the bot/scheduling worker promotes a patient
+// to 'returning' once they have prior history, so the secretary can tell a known
+// patient apart from a brand-new first contact at a glance. 'returning' is the
+// reassuring positive case (emerald); 'new' is neutral; 'archived' is muted.
+const PATIENT_STATUS_BADGE: Record<PatientStatus, string> = {
+  new: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+  returning: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  archived: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
 }
 
 const CONV_BADGE: Record<ConversationStatus, string> = {
@@ -249,7 +260,17 @@ function ProfileSection({ patient, waId }: { patient: Patient; waId: string }) {
   const optedOut = meta.optedOut === true
 
   return (
-    <Section title={t('patient.profile')}>
+    <Section
+      title={t('patient.profile')}
+      action={
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${PATIENT_STATUS_BADGE[patient.status]}`}
+          title={t(`patient.status.${patient.status}.hint` as const)}
+        >
+          {t(`patient.status.${patient.status}` as const)}
+        </span>
+      }
+    >
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
         <Row label={t('patient.name')} value={patient.fullName ?? '—'} />
         <Row label={t('patient.waId')} value={waId} />
@@ -357,10 +378,21 @@ function ApptGroup({
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      <h2 className="mb-3 text-sm font-semibold">{title}</h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {action}
+      </div>
       {children}
     </section>
   )
