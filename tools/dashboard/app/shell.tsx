@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useTransition, type MouseEvent } from 'react'
 import { SpanishTranslator } from './spanish-translator'
 
 type DashboardShellProps = {
@@ -180,6 +180,8 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
   const [metrics, setMetrics] = useState<ProjectMetrics | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [mobileGroup, setMobileGroup] = useState<string | null>(null)
+  const [navPending, startNav] = useTransition()
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null)
   const refreshInFlight = useRef(false)
@@ -287,7 +289,20 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
 
   useEffect(() => {
     setMobileGroup(null)
+    setPendingHref(null)
   }, [pathname])
+
+  // Route nav clicks through a transition so we can show an immediate loading
+  // affordance (top progress bar + per-item spinner) instead of the UI looking
+  // frozen while the next route's server component streams.
+  function handleNavClick(event: MouseEvent<HTMLAnchorElement>, href: string) {
+    if (event.defaultPrevented) return
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    if (href === pathname) return
+    event.preventDefault()
+    setPendingHref(href)
+    startNav(() => router.push(href))
+  }
 
   function toggleTheme() {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -346,6 +361,14 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
             {icon ?? <path d="M12 5v14M5 12h14" />}
           </svg>
         )}
+      </span>
+    )
+  }
+
+  function navSpinner() {
+    return (
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-cyan-300/50 bg-cyan-400/15">
+        <span className="devtools-loading-spinner devtools-loading-spinner-sm" aria-hidden="true" />
       </span>
     )
   }
@@ -415,6 +438,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
   return (
     <SpanishTranslator language={language}>
     <div className={`theme-${theme} app-shell flex min-h-screen text-slate-100`}>
+      <div className={`nav-progress ${navPending ? 'nav-progress-active' : ''}`} role="progressbar" aria-hidden={!navPending} aria-label="Loading next page" />
       <aside className="app-sidebar hidden h-screen w-20 shrink-0 overflow-visible border-r p-3 md:block">
         <div className="mb-5 flex flex-col items-center gap-2">
           <Link href="/" className="grid h-11 w-11 shrink-0 place-items-center rounded-md border border-cyan-400/40 bg-cyan-400/10 text-cyan-100" title="Docmee DevTools" aria-label="Docmee DevTools home">
@@ -454,9 +478,11 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
                         role="menuitem"
                         title={displayLabel}
                         aria-label={displayLabel}
+                        aria-busy={pendingHref === href}
+                        onClick={(event) => handleNavClick(event, href)}
                         className={`app-sidebar-submenu-link flex min-h-10 items-center gap-2 rounded-md px-2.5 py-2 text-sm ${active ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                       >
-                        {navIconFor(label, active)}
+                        {pendingHref === href ? navSpinner() : navIconFor(label, active)}
                         <span className="min-w-0 truncate">{displayLabel}</span>
                       </Link>
                     )
@@ -476,7 +502,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
               <div className="truncate text-xs leading-4 text-slate-500">Current workspace</div>
               <div className="max-w-full whitespace-normal text-sm font-medium leading-5 text-slate-200">{labelFor(currentLabel)}</div>
             </div>
-            <Link href="/ready" className={`shrink-0 rounded-md border px-2.5 py-1.5 text-xs sm:hidden ${readyCritical > 0 ? 'border-red-700/70 text-red-200' : 'border-emerald-700/70 text-emerald-200'}`}>
+            <Link href="/ready" onClick={(event) => handleNavClick(event, '/ready')} className={`shrink-0 rounded-md border px-2.5 py-1.5 text-xs sm:hidden ${readyCritical > 0 ? 'border-red-700/70 text-red-200' : 'border-emerald-700/70 text-emerald-200'}`}>
               {readyText}
             </Link>
           </div>
@@ -519,6 +545,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
           </Link>
           <Link
             href="/install-monitor"
+            onClick={(event) => handleNavClick(event, '/install-monitor')}
             className={`heartbeat-pill flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${heartbeatTone(heartbeat?.heartbeat?.status)}`}
             title={heartbeat?.run?.message ?? 'Build heartbeat status'}
             aria-label={buildHeartbeatText}
@@ -533,6 +560,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
           </Link>
           <Link
             href="/rev1-coverage"
+            onClick={(event) => handleNavClick(event, '/rev1-coverage')}
             className={`heartbeat-pill flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${heartbeatTone(heartbeat?.featureHeartbeat?.status)}`}
             title={heartbeat?.featureRun?.message ?? 'Feature development heartbeat status'}
             aria-label={featureHeartbeatText}
@@ -546,6 +574,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
           </Link>
           <Link
             href="/docmee-audit"
+            onClick={(event) => handleNavClick(event, '/docmee-audit')}
             className={`heartbeat-pill flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${heartbeatTone(heartbeat?.uiHeartbeat?.status)}`}
             title={heartbeat?.uiRun?.message ?? 'UI development heartbeat status'}
             aria-label={uiHeartbeatText}
@@ -581,6 +610,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
           </button>
           <Link
             href="/cost"
+            onClick={(event) => handleNavClick(event, '/cost')}
             className="topbar-cost-pill heartbeat-pill flex min-h-11 max-w-full items-center gap-2 rounded-md border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 hover:text-white"
             title={`Build total includes backend + frontend. Backend ${shortMoney(metrics?.backendCost)} / ${shortNumber(metrics?.backendTokens)} tokens · Frontend ${shortMoney(metrics?.frontendCost)} / ${shortNumber(metrics?.frontendTokens)} tokens · Current phase ${metrics?.phase?.current ?? heartbeat?.run?.phase ?? 'unknown'}`}
           >
@@ -592,7 +622,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
             <span className="hidden 2xl:inline">{shortNumber(metrics?.totalTokens)} tokens</span>
             <span className="rounded bg-slate-950/40 px-1.5 py-0.5 font-mono text-xs text-cyan-100">{metrics?.phase?.current ?? heartbeat?.run?.phase ?? 'P--'}</span>
           </Link>
-          <Link href="/ready" className={readyCritical > 0 ? 'hidden min-h-11 rounded-md border border-red-700/70 px-3 py-2 text-sm text-red-200 hover:bg-red-950/50 sm:inline-flex sm:items-center' : 'hidden min-h-11 rounded-md border border-emerald-700/70 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-950/40 sm:inline-flex sm:items-center'}>
+          <Link href="/ready" onClick={(event) => handleNavClick(event, '/ready')} className={readyCritical > 0 ? 'hidden min-h-11 rounded-md border border-red-700/70 px-3 py-2 text-sm text-red-200 hover:bg-red-950/50 sm:inline-flex sm:items-center' : 'hidden min-h-11 rounded-md border border-emerald-700/70 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-950/40 sm:inline-flex sm:items-center'}>
             {readyText}
           </Link>
           <button
@@ -658,11 +688,12 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
                     key={href}
                     href={href}
                     role="menuitem"
-                    onClick={() => setMobileGroup(null)}
+                    aria-busy={pendingHref === href}
+                    onClick={(event) => handleNavClick(event, href)}
                     className={`relative flex min-h-12 items-center gap-2 rounded-md px-2.5 py-2 text-sm ${active ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30' : 'text-slate-300 hover:bg-slate-800'}`}
                   >
                     {label === 'Ready' && readyCritical > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />}
-                    <span className="scale-90">{navIconFor(label, active)}</span>
+                    <span className="scale-90">{pendingHref === href ? navSpinner() : navIconFor(label, active)}</span>
                     <span className="min-w-0 truncate">{labelFor(label)}</span>
                   </Link>
                 )
