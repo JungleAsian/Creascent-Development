@@ -13,6 +13,7 @@ import {
   createPatientsRepository,
   createUsersRepository,
 } from '@docmee/db'
+import { encryptValue } from '@docmee/shared'
 import { withDb } from '../lib/db.js'
 import { validate } from '../lib/validate.js'
 import { resolveClinicScope } from '../lib/scope.js'
@@ -104,10 +105,15 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
       if (!parsed.ok) return
       const clinicId = resolveClinicScope(request, request.params.id)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+      // Encrypt Meta Page tokens at rest (the columns are named *_encrypted but the
+      // values were stored in plaintext). Mirrors the doctors/calendar token pattern.
+      const data = { ...parsed.data }
+      if (data.messengerPageAccessToken) data.messengerPageAccessToken = encryptValue(data.messengerPageAccessToken)
+      if (data.instagramPageAccessToken) data.instagramPageAccessToken = encryptValue(data.instagramPageAccessToken)
       const clinic = await withDb(async (sql) => {
         const repo = createClinicsRepository(sql)
         if (!(await repo.findById(clinicId))) return null
-        return repo.update(clinicId, parsed.data)
+        return repo.update(clinicId, data)
       })
       if (!clinic) return reply.code(404).send({ error: 'Clinic not found' })
       return { clinic: redactClinic(clinic) }

@@ -23,7 +23,21 @@ import {
   createMessageTemplatesRepository,
 } from '@docmee/db'
 import type { ConversationStatus } from '@docmee/db'
+import { decryptValue } from '@docmee/shared'
 import { withDb } from '../lib/db.js'
+
+// Meta Page tokens are now stored encrypted (iv:tag:ciphertext). Decrypt for use,
+// but tolerate any legacy plaintext token (no colon-triple) so existing rows still
+// send until the clinic re-saves and they get encrypted.
+function readMetaToken(stored: string | null | undefined): string | null {
+  if (!stored) return null
+  if (stored.split(':').length !== 3) return stored
+  try {
+    return decryptValue(stored)
+  } catch {
+    return null
+  }
+}
 import { fetchWhatsAppMedia } from '../lib/whatsapp-media.js'
 import {
   sendWhatsAppText,
@@ -351,10 +365,10 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
           // Messenger/Instagram tokens live on the clinic row (Req 33/34).
           const clinic = await createClinicsRepository(sql).findById(clinicId)
           if (convo.channel === 'messenger') {
-            const token = clinic?.messengerEnabled ? clinic.messengerPageAccessTokenEncrypted : null
+            const token = clinic?.messengerEnabled ? readMetaToken(clinic.messengerPageAccessTokenEncrypted) : null
             if (token) send = (text) => sendMessengerText(token, recipient, text)
           } else {
-            const token = clinic?.instagramEnabled ? clinic.instagramPageAccessTokenEncrypted : null
+            const token = clinic?.instagramEnabled ? readMetaToken(clinic.instagramPageAccessTokenEncrypted) : null
             if (token) send = (text) => sendInstagramText(token, recipient, text)
           }
         } else {

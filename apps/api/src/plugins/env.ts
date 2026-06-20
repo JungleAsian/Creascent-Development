@@ -23,6 +23,22 @@ const schema = z.object({
 
 export type Env = z.infer<typeof schema>
 
+const DEV_JWT_SECRET = 'dev-access-secret-change-me'
+const DEV_JWT_REFRESH_SECRET = 'dev-refresh-secret-change-me'
+
 export function parseEnv(): Env {
-  return schema.parse(process.env)
+  const env = schema.parse(process.env)
+  // Fail closed in production: the dev JWT fallbacks are committed in the repo,
+  // so booting with them (or empty values) would let anyone forge an admin token
+  // for any clinic. Dev/test still use the defaults.
+  if (env.NODE_ENV === 'production') {
+    const weak: string[] = []
+    if (!process.env['JWT_SECRET'] || env.JWT_SECRET === DEV_JWT_SECRET) weak.push('JWT_SECRET')
+    if (!process.env['JWT_REFRESH_SECRET'] || env.JWT_REFRESH_SECRET === DEV_JWT_REFRESH_SECRET) weak.push('JWT_REFRESH_SECRET')
+    if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) weak.push('JWT_SECRET and JWT_REFRESH_SECRET must differ')
+    if (weak.length > 0) {
+      throw new Error(`Refusing to boot in production with missing/default JWT secrets: ${weak.join(', ')}.`)
+    }
+  }
+  return env
 }
