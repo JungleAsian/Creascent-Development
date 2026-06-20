@@ -45,7 +45,11 @@ export async function buildApp() {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean)
-    const isAllowed = origin && (allowedOrigins.includes(origin) || /^http:\/\/100\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/.test(origin))
+    // The Tailscale CGNAT reflection is a dev convenience (panel runs on 100.x).
+    // In production only the explicit CORS_ORIGINS allowlist (https domains) is
+    // trusted — don't reflect arbitrary http Tailscale origins.
+    const tailscaleDevOrigin = env.NODE_ENV !== 'production' && /^http:\/\/100\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/.test(origin ?? '')
+    const isAllowed = origin && (allowedOrigins.includes(origin) || tailscaleDevOrigin)
     if (isAllowed) reply.header('access-control-allow-origin', origin)
     reply.header('vary', 'Origin')
     reply.header('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS')

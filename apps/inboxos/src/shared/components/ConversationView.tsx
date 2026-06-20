@@ -609,7 +609,8 @@ function MessageBubble({
                 onClick={onFlag}
                 disabled={flagging}
                 title={flagLabel}
-                className="text-[10px] font-medium text-gray-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100 disabled:opacity-60 dark:hover:text-red-400"
+                aria-label={flagLabel}
+                className="text-[10px] font-medium text-gray-400 opacity-100 transition hover:text-red-600 focus-visible:opacity-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 dark:hover:text-red-400"
               >
                 ⚑ {flagLabel}
               </button>

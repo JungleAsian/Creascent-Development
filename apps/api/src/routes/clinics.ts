@@ -110,9 +110,20 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
       const data = { ...parsed.data }
       if (data.messengerPageAccessToken) data.messengerPageAccessToken = encryptValue(data.messengerPageAccessToken)
       if (data.instagramPageAccessToken) data.instagramPageAccessToken = encryptValue(data.instagramPageAccessToken)
+      const isStudioAdmin = request.user?.role === 'ia_studio_admin'
       const clinic = await withDb(async (sql) => {
         const repo = createClinicsRepository(sql)
-        if (!(await repo.findById(clinicId))) return null
+        const existing = await repo.findById(clinicId)
+        if (!existing) return null
+        // Merge settings onto the existing blob instead of replacing it, so a PATCH
+        // can't wipe license/credential keys it didn't include. Only ia_studio_admin
+        // may set the protected license_key via the generic settings object.
+        if (data.settings) {
+          const incoming: Record<string, unknown> = { ...data.settings }
+          if (!isStudioAdmin) delete incoming.license_key
+          const current = (existing.settings as Record<string, unknown> | null | undefined) ?? {}
+          data.settings = { ...current, ...incoming }
+        }
         return repo.update(clinicId, data)
       })
       if (!clinic) return reply.code(404).send({ error: 'Clinic not found' })

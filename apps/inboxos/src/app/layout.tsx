@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { Providers } from './providers'
 import { ServiceWorkerRegister } from './sw-register'
+import { HtmlLangSync } from './html-lang-sync'
 
 export const metadata: Metadata = {
   title: 'Docmee InboxOS',
@@ -32,7 +33,10 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <body className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-        <Providers>{children}</Providers>
+        <Providers>
+          <HtmlLangSync />
+          {children}
+        </Providers>
         <ServiceWorkerRegister />
       </body>
     </html>
