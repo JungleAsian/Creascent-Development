@@ -17,13 +17,21 @@ type Props = {
   phaseId?: string
   size?: 'sm' | 'md' | 'lg'
   showLabel?: boolean
+  percent?: number
+  state?: GaugeState
+  label?: string
+  message?: string
+  centerText?: string
 }
 
 let sharedData: MonitorData | null = null
 let sharedTimer: ReturnType<typeof setInterval> | null = null
+let inFlight = false
 const listeners = new Set<(data: MonitorData | null) => void>()
 
 async function refreshSharedData() {
+  if (inFlight) return
+  inFlight = true
   try {
     const response = await fetch('/api/install-monitor/status', { cache: 'no-store' })
     if (!response.ok) return
@@ -31,13 +39,15 @@ async function refreshSharedData() {
     for (const listener of listeners) listener(sharedData)
   } catch {
     // Keep the last known gauge state on transient dashboard polling failures.
+  } finally {
+    inFlight = false
   }
 }
 
 function subscribe(listener: (data: MonitorData | null) => void) {
   listeners.add(listener)
   listener(sharedData)
-  void refreshSharedData()
+  if (!sharedData) void refreshSharedData()
   if (!sharedTimer) sharedTimer = setInterval(refreshSharedData, 3000)
   return () => {
     listeners.delete(listener)
@@ -92,17 +102,23 @@ function sizeClass(size: Props['size']) {
   return 'h-16 w-16 text-xs'
 }
 
-export function BuildProgressGauge({ phaseId, size = 'md', showLabel = true }: Props) {
+export function BuildProgressGauge({ phaseId, size = 'md', showLabel = true, percent: percentOverride, state: stateOverride, label: labelOverride, message, centerText }: Props) {
+  // A gauge with explicit percent + state is fully controlled by props, so it
+  // never needs live monitor data. Skipping the subscription avoids a fetch per
+  // instance — pages that render dozens of gauges (e.g. the deployment lanes)
+  // would otherwise stampede /api/install-monitor/status on mount.
+  const controlled = percentOverride !== undefined && stateOverride !== undefined
   const [data, setData] = useState<MonitorData | null>(null)
 
   useEffect(() => {
+    if (controlled) return
     return subscribe(setData)
-  }, [])
+  }, [controlled])
 
-  const state = data ? gaugeState(data, phaseId) : 'stopped'
-  const percent = data ? percentFor(data, state, phaseId) : 0
+  const state = stateOverride ?? (data ? gaugeState(data, phaseId) : 'stopped')
+  const percent = percentOverride ?? (data ? percentFor(data, state, phaseId) : 0)
   const color = colorFor(state)
-  const label = labelFor(state)
+  const label = labelOverride ?? labelFor(state)
   const pulse = state === 'progressing' ? 'animate-pulse' : ''
   const background = useMemo(() => `conic-gradient(${color} ${percent * 3.6}deg, rgba(100,116,139,.28) 0deg)`, [color, percent])
 
@@ -115,13 +131,13 @@ export function BuildProgressGauge({ phaseId, size = 'md', showLabel = true }: P
         title={`${label}${phaseId ? ` ${phaseId}` : ''}`}
       >
         <div className="grid h-full w-full place-items-center rounded-full bg-slate-950 font-semibold text-slate-100">
-          {phaseId ? phaseId.replace('P', '') : `${percent}%`}
+          {centerText ?? (phaseId ? phaseId.replace('P', '') : `${percent}%`)}
         </div>
       </div>
       {showLabel && (
         <div className="min-w-0">
           <div className="text-sm font-medium" style={{ color }}>{label}</div>
-          <div className="truncate text-xs text-slate-500">{data?.run.message ?? 'Waiting for heartbeat'}</div>
+          <div className="truncate text-xs text-slate-500">{message ?? data?.run.message ?? 'Waiting for heartbeat'}</div>
         </div>
       )}
     </div>

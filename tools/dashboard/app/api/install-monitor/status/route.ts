@@ -8,6 +8,8 @@ const logsRoot = path.join(toolsRoot, 'logs')
 const claudeRoot = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
 const sessionWindowMs = 5 * 60 * 60 * 1000
 const heartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
+const featureHeartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
+const uiHeartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
 
 const phases = [
   ['P01', 'Repository Foundation'],
@@ -108,21 +110,47 @@ function updateHeartbeatSamples(status: string, heartbeatAgeMs: number | null) {
   return heartbeatSamples
 }
 
+function updateFeatureHeartbeatSamples(status: string, heartbeatAgeMs: number | null) {
+  featureHeartbeatSamples.push({ at: new Date().toISOString(), status, ageMs: heartbeatAgeMs, value: sampleValue(status) })
+  while (featureHeartbeatSamples.length > 80) featureHeartbeatSamples.shift()
+  return featureHeartbeatSamples
+}
+
+function updateUiHeartbeatSamples(status: string, heartbeatAgeMs: number | null) {
+  uiHeartbeatSamples.push({ at: new Date().toISOString(), status, ageMs: heartbeatAgeMs, value: sampleValue(status) })
+  while (uiHeartbeatSamples.length > 80) uiHeartbeatSamples.shift()
+  return uiHeartbeatSamples
+}
+
 function tokenTotal(usage?: Record<string, number>) {
   if (!usage) return 0
   return Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0) + Number(usage.cache_creation_input_tokens ?? 0) + Number(usage.cache_read_input_tokens ?? 0)
 }
 
+type UsageEvent = { timestamp: number; tokens: number }
+let usageEventsCache: { at: number; events: UsageEvent[] } | null = null
+const usageCacheTtlMs = 60 * 1000
+
 function claudeUsageEvents() {
   const projectsRoot = path.join(claudeRoot, 'projects')
-  const byRequest = new Map<string, { timestamp: number; tokens: number }>()
+  // Only the current rolling session block matters, so transcripts untouched
+  // for longer than the session window cannot contribute and are skipped. This
+  // bounds the scan to recently-active sessions instead of the whole corpus.
+  const freshAfter = Date.now() - sessionWindowMs
+  const byRequest = new Map<string, UsageEvent>()
   try {
     for (const project of fs.readdirSync(projectsRoot, { withFileTypes: true })) {
       if (!project.isDirectory()) continue
       const projectRoot = path.join(projectsRoot, project.name)
       for (const entry of fs.readdirSync(projectRoot, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
-        for (const line of fs.readFileSync(path.join(projectRoot, entry.name), 'utf8').split(/\r?\n/)) {
+        const entryPath = path.join(projectRoot, entry.name)
+        try {
+          if (fs.statSync(entryPath).mtimeMs < freshAfter) continue
+        } catch {
+          continue
+        }
+        for (const line of fs.readFileSync(entryPath, 'utf8').split(/\r?\n/)) {
           if (!line.trim()) continue
           try {
             const item = JSON.parse(line) as { timestamp?: string; requestId?: string; uuid?: string; message?: { usage?: Record<string, number> } }
@@ -140,6 +168,16 @@ function claudeUsageEvents() {
     // Claude logs are optional.
   }
   return Array.from(byRequest.values()).sort((left, right) => left.timestamp - right.timestamp)
+}
+
+// The scan above walks every recently-active transcript on disk; cache it so a
+// burst of dashboard polls reuses one result instead of re-parsing each time.
+function cachedClaudeUsageEvents() {
+  const now = Date.now()
+  if (usageEventsCache && now - usageEventsCache.at < usageCacheTtlMs) return usageEventsCache.events
+  const events = claudeUsageEvents()
+  usageEventsCache = { at: now, events }
+  return events
 }
 
 function activeUsageBlock(events: Array<{ timestamp: number }>, durationMs: number, now = Date.now()) {
@@ -185,17 +223,32 @@ function phaseRows() {
 }
 
 export function GET() {
-  const run = readJson<{ pid?: number; phase?: string; status?: string; startedAt?: string; heartbeatAt?: string; resumeAt?: string; message?: string }>('build-run.json', { status: 'idle' })
+  type RunState = { pid?: number; phase?: string; workflow?: string; status?: string; startedAt?: string; heartbeatAt?: string; resumeAt?: string; message?: string }
+  const run = readJson<RunState>('build-run.json', { status: 'idle' })
+  const featureRun = readJson<RunState>('feature-run.json', { status: 'idle', workflow: 'features-development' })
+  const uiRun = readJson<RunState>('ui-run.json', { status: 'idle', workflow: 'ui-development', phase: 'UI-DEVELOPMENT' })
   const ready = readJson<{ ready?: boolean; summary?: { pass?: number; warning?: number; critical?: number }; createdAt?: string }>('ready.json', { ready: false, summary: { pass: 0, warning: 0, critical: 1 } })
   const start = readJson<{ ready?: boolean; phase?: string; createdAt?: string; steps?: unknown[] }>('start-readiness.json', { ready: false, steps: [] })
   const rows = phaseRows()
-  const active = rows.find((row) => ['in-progress', 'paused', 'gates-running', 'pushing'].includes(row.buildStatus)) || rows.find((row) => row.phaseStatus === 'in-progress') || rows.find((row) => row.phaseStatus !== 'done') || rows[0]
+  const active = rows.find((row) => ['in-progress', 'paused', 'gates-running', 'pushing'].includes(row.buildStatus))
+    || rows.find((row) => row.phaseStatus === 'in-progress')
+    || rows.find((row) => row.phaseStatus !== 'done')
+    || rows.at(-1)
+    || rows[0]
   const live = isAlive(run.pid) && ['starting', 'running', 'paused'].includes(run.status ?? '')
+  const featureLive = isAlive(featureRun.pid) && ['starting', 'running', 'paused'].includes(featureRun.status ?? '')
+  const uiLive = isAlive(uiRun.pid) && ['starting', 'running', 'paused'].includes(uiRun.status ?? '')
   const heartbeatAgeMs = run.heartbeatAt ? Date.now() - new Date(run.heartbeatAt).getTime() : null
+  const featureHeartbeatAgeMs = featureRun.heartbeatAt ? Date.now() - new Date(featureRun.heartbeatAt).getTime() : null
+  const uiHeartbeatAgeMs = uiRun.heartbeatAt ? Date.now() - new Date(uiRun.heartbeatAt).getTime() : null
   const heartbeat = heartbeatStatus(run, live, heartbeatAgeMs, active)
+  const featureHeartbeat = heartbeatStatus(featureRun, featureLive, featureHeartbeatAgeMs)
+  const uiHeartbeat = heartbeatStatus(uiRun, uiLive, uiHeartbeatAgeMs)
   const done = rows.filter((row) => row.phaseStatus === 'done' || row.buildStatus === 'complete').length
+  const total = rows.length
+  const safeDone = Math.min(done, total)
   const logName = latestPhaseLog()
-  const events = claudeUsageEvents()
+  const events = cachedClaudeUsageEvents()
   const sessionBlock = activeUsageBlock(events, sessionWindowMs)
   const sessionUsage = sessionBlock ? usageTotals(events, sessionBlock.startedAt, sessionBlock.resetAt) : { tokens: 0, messages: 0 }
 
@@ -204,6 +257,12 @@ export function GET() {
     live,
     run: { ...run, heartbeatAgeMs },
     heartbeat: { status: heartbeat, samples: updateHeartbeatSamples(heartbeat, heartbeatAgeMs) },
+    featureLive,
+    featureRun: { ...featureRun, heartbeatAgeMs: featureHeartbeatAgeMs },
+    featureHeartbeat: { status: featureHeartbeat, samples: updateFeatureHeartbeatSamples(featureHeartbeat, featureHeartbeatAgeMs) },
+    uiLive,
+    uiRun: { ...uiRun, heartbeatAgeMs: uiHeartbeatAgeMs },
+    uiHeartbeat: { status: uiHeartbeat, samples: updateUiHeartbeatSamples(uiHeartbeat, uiHeartbeatAgeMs) },
     ready: {
       ok: Boolean(ready.ready),
       pass: ready.summary?.pass || 0,
@@ -218,9 +277,9 @@ export function GET() {
     },
     active,
     progress: {
-      done,
-      total: rows.length,
-      percent: Math.round((done / rows.length) * 100),
+      done: safeDone,
+      total,
+      percent: total ? Math.round((safeDone / total) * 100) : 0,
       failed: rows.filter((row) => row.buildStatus === 'failed').length
     },
     claudeUsage: {
