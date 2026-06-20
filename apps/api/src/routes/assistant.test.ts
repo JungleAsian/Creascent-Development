@@ -23,6 +23,10 @@ vi.mock('@docmee/agents', () => ({
     suggestions: ['Draft one', 'Draft two'],
     sources: [{ title: 'Pricing FAQ', similarity: 0.92 }],
   })),
+  suggestNextStep: vi.fn(async () => ({
+    action: 'book_appointment',
+    rationale: 'Patient wants a Friday slot.',
+  })),
 }))
 vi.mock('@docmee/shared', () => ({
   encryptValue: (v: string) => `enc:${v}`,
@@ -146,6 +150,36 @@ describe('internal AI assistant routes', () => {
       method: 'POST',
       url: '/conversations/nope/assist/suggestions',
       headers: authHeader('clinic_admin'),
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('POST /assist/next-step as ia_studio_admin → 403 (not an inbox role)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/conv-1/assist/next-step',
+      headers: authHeader('ia_studio_admin'),
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('POST /assist/next-step → 200 returns action + rationale (secretary)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/conv-1/assist/next-step',
+      headers: authHeader('secretary'),
+    })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.action).toBe('book_appointment')
+    expect(body.rationale).toBe('Patient wants a Friday slot.')
+  })
+
+  it('POST /assist/next-step on unknown conversation → 404', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/conversations/nope/assist/next-step',
+      headers: authHeader('secretary'),
     })
     expect(res.statusCode).toBe(404)
   })

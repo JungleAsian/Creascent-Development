@@ -18,6 +18,7 @@ import { ListPicker } from './ListPicker'
 import { deliveryIndicator, type DeliveryTone } from '../delivery'
 import { isImageMessage, messageMediaPath } from '../media'
 import { assessSafety, type SafetyLevel } from '../safety'
+import { useComposerStore } from '../store/composer'
 import type { Tag } from '../types'
 import type {
   Appointment,
@@ -70,6 +71,16 @@ export function ConversationView({
   const [attachError, setAttachError] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Screen 5: accept an AI draft from the AssistantPanel into the reply box. The
+  // panel pushes a per-conversation insert request through the composer store; we
+  // append it to the current draft (so a half-typed message isn't clobbered) and
+  // focus the box for the secretary to edit before sending. nonce-guarded so a
+  // re-render never re-applies the same request.
+  const pendingInsert = useComposerStore((s) => s.pending)
+  const clearInsert = useComposerStore((s) => s.clearInsert)
+  const appliedNonce = useRef(0)
 
   const conversationQuery = useQuery({
     queryKey: ['conversation', conversationId],
@@ -91,6 +102,20 @@ export function ConversationView({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages.length])
+
+  useEffect(() => {
+    if (
+      pendingInsert &&
+      pendingInsert.conversationId === conversationId &&
+      pendingInsert.nonce !== appliedNonce.current
+    ) {
+      appliedNonce.current = pendingInsert.nonce
+      const text = pendingInsert.text
+      setDraft((d) => (d.trim() ? `${d}\n${text}` : text))
+      clearInsert()
+      textareaRef.current?.focus()
+    }
+  }, [pendingInsert, conversationId, clearInsert])
 
   const sendMutation = useMutation({
     mutationFn: (content: string) =>
@@ -441,6 +466,7 @@ export function ConversationView({
                 button each get room; rejoins the tool row from sm up. */}
             <div className="flex items-end gap-2 sm:min-w-0 sm:flex-1">
               <textarea
+                ref={textareaRef}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {

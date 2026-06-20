@@ -19,6 +19,7 @@ import type { Clinic, Patient } from '@docmee/db'
 import {
   summarizeConversation,
   suggestReplies,
+  suggestNextStep,
   searchKb,
   detectLanguage,
   type AssistantMessage,
@@ -117,6 +118,26 @@ const assistantRoute: FastifyPluginAsync = async (app) => {
         },
       )
       return { suggestions: result.suggestions, sources: result.sources }
+    },
+  )
+
+  // ── Recommend the secretary's next operational step ──
+  app.post<{ Params: { id: string } }>(
+    '/:id/assist/next-step',
+    { preHandler: requireRole('secretary', 'doctor', 'clinic_admin') },
+    async (request, reply) => {
+      const clinicId = resolveClinicScope(request)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const ctx = await loadContext(clinicId, request.params.id)
+      if (!ctx || !ctx.clinic) return reply.code(404).send({ error: 'Conversation not found' })
+
+      const language = resolveLanguage(ctx.clinic, ctx.patient, ctx.messages)
+      const result = await suggestNextStep(ctx.messages, language, {
+        searchKb: async () => [],
+        complete: claudeComplete,
+      })
+      return { action: result.action, rationale: result.rationale }
     },
   )
 }

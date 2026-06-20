@@ -191,3 +191,99 @@ export async function suggestReplies(
     sources: kbMatches.map((m) => ({ title: m.title, similarity: m.similarity })),
   }
 }
+
+// ── Suggest next step ──────────────────────────────────────────────────────
+//
+// The third assistant pillar (alongside summarize + draft): recommend the single
+// best OPERATIONAL next action for the secretary, not patient-facing copy. The
+// model must pick exactly one of a fixed, panel-localized action vocabulary so the
+// UI can render an unambiguous, colour-coded recommendation; the rationale is the
+// staff-only "why". Like every assistant output this is advisory — it never acts.
+
+/** The fixed set of operational next steps the panel can render + localize. */
+export const NEXT_STEP_ACTIONS = [
+  'urgent_safety', // possible emergency / safety concern — act immediately
+  'escalate_human', // needs a human/doctor or is sensitive — keep human in control
+  'book_appointment', // patient wants to book or reschedule — open the calendar
+  'confirm_details', // confirm a pending/known appointment or detail
+  'request_info', // need more from the patient before proceeding
+  'answer_question', // patient asked something answerable — draft a reply
+  'follow_up_later', // nothing to do now; waiting on the patient / a later touch
+  'resolve', // nothing left to do — the thread can be resolved
+] as const
+
+export type NextStepAction = (typeof NEXT_STEP_ACTIONS)[number]
+
+/** Fallback when the model returns an unknown / missing action. */
+export const DEFAULT_NEXT_STEP: NextStepAction = 'answer_question'
+
+export interface NextStepResult {
+  action: NextStepAction
+  /** Staff-only one/two-sentence justification. May be empty. */
+  rationale: string
+}
+
+function isNextStepAction(value: string): value is NextStepAction {
+  return (NEXT_STEP_ACTIONS as readonly string[]).includes(value)
+}
+
+function buildNextStepSystemPrompt(language: Language): string {
+  return [
+    'You are an internal assistant for a medical clinic, helping a human secretary decide what to do next in a patient conversation.',
+    'Recommend exactly ONE next operational step for the SECRETARY (not a message to the patient).',
+    'Choose the single most appropriate action key from this list:',
+    '- urgent_safety: the patient may have a medical emergency or safety concern; act immediately.',
+    '- escalate_human: the matter needs a doctor or a human decision, or is sensitive; keep a human in control.',
+    '- book_appointment: the patient wants to book or reschedule an appointment; open the calendar.',
+    '- confirm_details: confirm a pending or known appointment / detail with the patient.',
+    '- request_info: more information is needed from the patient before proceeding.',
+    '- answer_question: the patient asked something answerable; draft a reply.',
+    '- follow_up_later: nothing to do right now; you are waiting on the patient or a later touch-point.',
+    '- resolve: nothing is left to do; the conversation can be resolved.',
+    'Prefer urgent_safety or escalate_human whenever there is any doubt about patient safety.',
+    'Reply in EXACTLY this format, nothing else:',
+    'ACTION: <one action key from the list>',
+    `WHY: <one or two short sentences for the secretary, in ${language === 'es' ? 'Spanish' : 'English'}>`,
+  ].join('\n')
+}
+
+/**
+ * Parse the model's ACTION/WHY response into a validated recommendation. Tolerant
+ * of casing, surrounding prose and a missing WHY; an unknown or absent action
+ * falls back to {@link DEFAULT_NEXT_STEP} so the panel always has something to show.
+ */
+export function parseNextStep(raw: string): NextStepResult {
+  const text = raw.trim()
+  const actionMatch = text.match(/ACTION:\s*([a-z_]+)/i)
+  const candidate = actionMatch?.[1]?.toLowerCase() ?? ''
+  const action: NextStepAction = isNextStepAction(candidate) ? candidate : DEFAULT_NEXT_STEP
+
+  const whyMatch = text.match(/WHY:\s*([\s\S]+)/i)
+  let rationale = whyMatch?.[1]?.trim() ?? ''
+  // No WHY label: use whatever is left after stripping the ACTION line, so a model
+  // that ignored the format still yields a usable note instead of a blank panel.
+  if (rationale === '') {
+    rationale = text
+      .replace(/ACTION:\s*[a-z_]+/i, '')
+      .replace(/^WHY:\s*/i, '')
+      .trim()
+  }
+  return { action, rationale }
+}
+
+/**
+ * Recommend the secretary's next operational step. Reads only the conversation (no
+ * KB) and returns a validated action + rationale for the panel. Advisory only — it
+ * never sends a message or changes the conversation.
+ */
+export async function suggestNextStep(
+  messages: AssistantMessage[],
+  language: Language,
+  deps: InboxAssistantDeps,
+): Promise<NextStepResult> {
+  const transcript = renderTranscript(messages, language)
+  const system = buildNextStepSystemPrompt(language)
+  const user = transcript === '' ? '(no messages yet)' : transcript
+  const raw = await deps.complete(system, user, 200)
+  return parseNextStep(raw)
+}

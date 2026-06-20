@@ -3,8 +3,11 @@ import {
   renderTranscript,
   lastPatientMessage,
   parseSuggestions,
+  parseNextStep,
   summarizeConversation,
   suggestReplies,
+  suggestNextStep,
+  DEFAULT_NEXT_STEP,
   type AssistantMessage,
 } from '../assistant/inbox-assistant.js'
 
@@ -122,5 +125,57 @@ describe('suggestReplies', () => {
     expect(searchKb).not.toHaveBeenCalled()
     expect(result.sources).toEqual([])
     expect(result.suggestions).toEqual(['draft'])
+  })
+})
+
+describe('parseNextStep', () => {
+  it('parses a well-formed ACTION/WHY response', () => {
+    const out = parseNextStep('ACTION: book_appointment\nWHY: The patient asked for a Friday slot.')
+    expect(out).toEqual({
+      action: 'book_appointment',
+      rationale: 'The patient asked for a Friday slot.',
+    })
+  })
+
+  it('is tolerant of casing and surrounding prose', () => {
+    const out = parseNextStep('Sure!\naction: Escalate_Human\nwhy: Needs a doctor.')
+    expect(out.action).toBe('escalate_human')
+    expect(out.rationale).toBe('Needs a doctor.')
+  })
+
+  it('falls back to the default action for an unknown key', () => {
+    const out = parseNextStep('ACTION: do_a_backflip\nWHY: nope')
+    expect(out.action).toBe(DEFAULT_NEXT_STEP)
+  })
+
+  it('uses leftover text as the rationale when WHY is missing', () => {
+    const out = parseNextStep('ACTION: resolve\nEverything is handled.')
+    expect(out.action).toBe('resolve')
+    expect(out.rationale).toBe('Everything is handled.')
+  })
+
+  it('defaults the action when none is present (e.g. the LLM stub)', () => {
+    const out = parseNextStep('STUB_RESPONSE')
+    expect(out.action).toBe(DEFAULT_NEXT_STEP)
+    expect(out.rationale).toBe('STUB_RESPONSE')
+  })
+})
+
+describe('suggestNextStep', () => {
+  it('reads only the conversation (no KB) and returns a validated recommendation', async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValue('ACTION: confirm_details\nWHY: La cita del viernes está pendiente.')
+    const searchKb = vi.fn()
+    const result = await suggestNextStep(convo, 'es', { complete, searchKb })
+
+    expect(searchKb).not.toHaveBeenCalled() // next step never touches the KB
+    expect(result.action).toBe('confirm_details')
+    expect(result.rationale).toBe('La cita del viernes está pendiente.')
+
+    const [system, user] = complete.mock.calls[0]!
+    expect(system).toContain('urgent_safety')
+    expect(system).toContain('Spanish')
+    expect(user).toContain('Paciente: Hola')
   })
 })
