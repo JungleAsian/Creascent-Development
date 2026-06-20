@@ -57,3 +57,26 @@ describe('knowledge.repository — per-doctor FAQ scope (Req 30)', () => {
     expect(chunks.map((c) => c.doctorId)).toEqual([null, 'doc-1'])
   })
 })
+
+describe('knowledge.repository — Screen 7 (training state + entry editor)', () => {
+  it('documentTrainingStats counts chunks and embedded chunks per document', async () => {
+    const { sql, lastQuery, lastValues } = fakeSql()
+    await createKnowledgeRepository(sql).documentTrainingStats('clinic-1')
+    const q = lastQuery()
+    expect(q).toContain('GROUP BY document_id')
+    expect(q).toContain("(metadata -> 'embedding') ? 'v'")
+    expect(lastValues()).toContain('clinic-1')
+  })
+
+  it('updateDocument COALESCEs each editable field and returns the row', async () => {
+    const { sql, lastQuery, lastValues } = fakeSql()
+    const doc = await createKnowledgeRepository(sql).updateDocument('clinic-1', 'doc-x', {
+      title: 'New title',
+      content: 'New body',
+      documentType: 'policy',
+    })
+    expect(lastQuery()).toContain('UPDATE knowledge_documents')
+    expect(lastValues()).toEqual(expect.arrayContaining(['New title', 'New body', 'policy', 'clinic-1', 'doc-x']))
+    expect(doc.id).toBe('doc-x')
+  })
+})

@@ -293,8 +293,18 @@ export interface KnowledgeDocument {
   content: string
   documentType: DocumentType
   status: DocumentStatus
-  /** Per-doctor FAQ scope (Req 30): metadata.doctorId limits the doc to one doctor. */
-  metadata?: { doctorId?: string | null } & Record<string, unknown>
+  /** Per-doctor FAQ scope (Req 30): metadata.doctorId limits the doc to one doctor.
+   *  source/ocr (set by the upload pipeline) drive the Screen 7 source-confidence badge. */
+  metadata?: {
+    doctorId?: string | null
+    source?: 'document' | 'manual'
+    ocr?: boolean
+    format?: string
+  } & Record<string, unknown>
+  /** Screen 7 training state — total chunks and how many already carry an embedding.
+   *  Attached by GET /clinics/:id/kb; absent on create/patch responses. */
+  chunkCount?: number
+  embeddedCount?: number
   createdAt: string
   updatedAt: string
 }

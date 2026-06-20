@@ -33,6 +33,17 @@ vi.mock('@docmee/db', () => ({
   createKnowledgeRepository: () => ({
     listDocuments: async (clinicId: string) =>
       [...store.docs.values()].filter((d) => d.clinicId === clinicId),
+    documentTrainingStats: async (clinicId: string) =>
+      [...store.docs.values()]
+        .filter((d) => d.clinicId === clinicId)
+        .map((d) => ({ documentId: d.id, chunkCount: 2, embeddedCount: 2 })),
+    updateDocument: async (clinicId: string, id: string, data: Record<string, unknown>) => {
+      const row = store.docs.get(id)!
+      if (data.title !== undefined) row.title = data.title
+      if (data.content !== undefined) row.content = data.content
+      if (data.documentType !== undefined) row.documentType = data.documentType
+      return row
+    },
     findDocument: async (clinicId: string, id: string) => {
       const row = store.docs.get(id)
       return row && row.clinicId === clinicId ? row : null
@@ -92,6 +103,13 @@ describe('KB routes (Req 30 — per-doctor FAQ scope)', () => {
     expect(JSON.parse(res.body).documents.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('GET attaches per-document training counts (Screen 7)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/clinics/c-1/kb', headers: secretaryAuth })
+    const doc = JSON.parse(res.body).documents.find((d: { id: string }) => d.id === 'kb-1')
+    expect(doc.chunkCount).toBe(2)
+    expect(doc.embeddedCount).toBe(2)
+  })
+
   it('GET without auth → 401', async () => {
     const res = await app.inject({ method: 'GET', url: '/clinics/c-1/kb' })
     expect(res.statusCode).toBe(401)
@@ -137,7 +155,21 @@ describe('KB routes (Req 30 — per-doctor FAQ scope)', () => {
     expect(res.statusCode).toBe(404)
   })
 
-  it('PATCH with neither status nor doctorId → 400', async () => {
+  it('PATCH edits the entry title and content (Screen 7 editor)', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/clinics/c-1/kb/kb-1',
+      headers: adminAuth,
+      payload: { title: 'Horarios actualizados', content: 'L-S 9-18', documentType: 'policy' },
+    })
+    expect(res.statusCode).toBe(200)
+    const doc = JSON.parse(res.body).document
+    expect(doc.title).toBe('Horarios actualizados')
+    expect(doc.content).toBe('L-S 9-18')
+    expect(doc.documentType).toBe('policy')
+  })
+
+  it('PATCH with no updatable field → 400', async () => {
     const res = await app.inject({ method: 'PATCH', url: '/clinics/c-1/kb/kb-1', headers: adminAuth, payload: {} })
     expect(res.statusCode).toBe(400)
   })

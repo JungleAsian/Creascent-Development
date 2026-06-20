@@ -22,14 +22,17 @@ const createSchema = z.object({
   doctorId: z.string().uuid().nullable().optional(),
 })
 
-// Either change the status, the doctor scope, or both — but at least one.
+// Edit an entry's content/status/scope (Screen 7 entry editor) — at least one field.
 const patchSchema = z
   .object({
+    title: z.string().min(1).optional(),
+    content: z.string().min(1).optional(),
+    documentType: z.enum(['faq', 'policy', 'service_info', 'custom']).optional(),
     status: z.enum(['active', 'draft', 'archived']).optional(),
     doctorId: z.string().uuid().nullable().optional(),
   })
-  .refine((d) => d.status !== undefined || d.doctorId !== undefined, {
-    message: 'Provide status or doctorId',
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
+    message: 'Provide at least one field to update',
   })
 
 const kbRoute: FastifyPluginAsync = async (app) => {
@@ -38,9 +41,20 @@ const kbRoute: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string } }>('/clinics/:id/kb', async (request, reply) => {
     const clinicId = resolveClinicScope(request, request.params.id)
     if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-    const documents = await withDb(async (sql) =>
-      createKnowledgeRepository(sql).listDocuments(clinicId),
-    )
+    // Attach each document's training progress (chunk + embedded-chunk counts) so the
+    // panel can show "trained / training / not indexed" without a per-document query.
+    const documents = await withDb(async (sql) => {
+      const repo = createKnowledgeRepository(sql)
+      const [docs, stats] = await Promise.all([
+        repo.listDocuments(clinicId),
+        repo.documentTrainingStats(clinicId),
+      ])
+      const byDoc = new Map(stats.map((s) => [s.documentId, s]))
+      return docs.map((d) => {
+        const s = byDoc.get(d.id)
+        return { ...d, chunkCount: s?.chunkCount ?? 0, embeddedCount: s?.embeddedCount ?? 0 }
+      })
+    })
     return { documents }
   })
 
@@ -84,7 +98,7 @@ const kbRoute: FastifyPluginAsync = async (app) => {
       if (!parsed.ok) return
       const clinicId = resolveClinicScope(request, request.params.id)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-      const { status, doctorId } = parsed.data
+      const { title, content, documentType, status, doctorId } = parsed.data
       const result = await withDb(async (sql) => {
         const repo = createKnowledgeRepository(sql)
         let document = await repo.findDocument(clinicId, request.params.entryId)
@@ -92,6 +106,13 @@ const kbRoute: FastifyPluginAsync = async (app) => {
         // A doctor-scoped FAQ (Req 30) must reference a doctor of THIS clinic.
         if (doctorId && !(await createDoctorsRepository(sql).findById(clinicId, doctorId))) {
           return { error: 'doctor_not_found' as const }
+        }
+        if (title !== undefined || content !== undefined || documentType !== undefined) {
+          document = await repo.updateDocument(clinicId, request.params.entryId, {
+            title,
+            content,
+            documentType,
+          })
         }
         if (status !== undefined) {
           document = await repo.updateDocumentStatus(clinicId, request.params.entryId, status)

@@ -39,6 +39,22 @@ export interface EmbeddedChunkRow {
   doctorId: string | null
 }
 
+/** Per-document training progress (Screen 7): how many chunks exist and how many
+ *  already carry an embedding. The bot can only retrieve embedded chunks, so this
+ *  drives the panel's "trained / training / not indexed" state. */
+export interface DocumentTrainingStat {
+  documentId: string
+  chunkCount: number
+  embeddedCount: number
+}
+
+/** Editable fields of an existing KB document (Screen 7 entry editor). */
+export interface UpdateDocumentInput {
+  title?: string
+  content?: string
+  documentType?: DocumentType
+}
+
 export interface CreateIaProfileInput {
   clinicId: string
   name: string
@@ -72,12 +88,16 @@ export interface KnowledgeRepository {
   listDocuments(clinicId: string): Promise<KnowledgeDocument[]>
   findDocument(clinicId: string, id: string): Promise<KnowledgeDocument | null>
   createDocument(data: CreateDocumentInput): Promise<KnowledgeDocument>
+  /** Edit an existing document's title / content / type (Screen 7 entry editor). */
+  updateDocument(clinicId: string, id: string, data: UpdateDocumentInput): Promise<KnowledgeDocument>
   updateDocumentStatus(clinicId: string, id: string, status: DocumentStatus): Promise<KnowledgeDocument>
   /** Scope a document to a doctor (Req 30), or pass null to make it clinic-wide. */
   setDocumentDoctor(clinicId: string, id: string, doctorId: string | null): Promise<KnowledgeDocument>
   deleteDocument(clinicId: string, id: string): Promise<void>
 
   listChunks(clinicId: string, documentId: string): Promise<KnowledgeChunk[]>
+  /** Per-document chunk + embedded-chunk counts for the whole clinic (training state). */
+  documentTrainingStats(clinicId: string): Promise<DocumentTrainingStat[]>
   /** Chunks of active documents that carry an embedding, for KB retrieval. */
   listEmbeddedChunks(clinicId: string): Promise<EmbeddedChunkRow[]>
   createChunk(data: CreateChunkInput): Promise<KnowledgeChunk>
@@ -130,6 +150,20 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
       return rows[0]!
     },
 
+    async updateDocument(clinicId, id, data) {
+      // COALESCE keeps any field the caller omitted; updated_at bumps via trigger.
+      const rows = await sql<KnowledgeDocument[]>`
+        UPDATE knowledge_documents SET
+          title         = COALESCE(${data.title        ?? null}, title),
+          content       = COALESCE(${data.content      ?? null}, content),
+          document_type = COALESCE(${data.documentType ?? null}, document_type)
+        WHERE clinic_id = ${clinicId} AND id = ${id}
+        RETURNING *
+      `
+      if (!rows[0]) throw new Error(`Document not found: ${id}`)
+      return rows[0]
+    },
+
     async updateDocumentStatus(clinicId, id, status) {
       const rows = await sql<KnowledgeDocument[]>`
         UPDATE knowledge_documents SET status = ${status}
@@ -165,6 +199,18 @@ export function createKnowledgeRepository(sql: Sql): KnowledgeRepository {
         SELECT * FROM knowledge_chunks
         WHERE clinic_id = ${clinicId} AND document_id = ${documentId}
         ORDER BY chunk_index
+      `
+    },
+
+    async documentTrainingStats(clinicId) {
+      // One grouped pass over the clinic's chunks — no per-document round trips.
+      return sql<DocumentTrainingStat[]>`
+        SELECT document_id AS document_id,
+               COUNT(*)::int AS chunk_count,
+               COUNT(*) FILTER (WHERE (metadata -> 'embedding') ? 'v')::int AS embedded_count
+        FROM knowledge_chunks
+        WHERE clinic_id = ${clinicId}
+        GROUP BY document_id
       `
     },
 
