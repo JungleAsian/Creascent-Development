@@ -37,13 +37,21 @@ const num = (value: string | number | null | undefined): number => {
 }
 
 export interface MetricsRepository {
-  dashboard(clinicId: string, timezone: string): Promise<MetricsDashboard>
+  /**
+   * @param windowDays Trailing window (in clinic-local days) for every "last N days"
+   *   aggregate below — the dashboard's period filter (Req 17). Defaults to 30; the
+   *   "today" cards always reflect the current local day regardless of the window.
+   */
+  dashboard(clinicId: string, timezone: string, windowDays?: number): Promise<MetricsDashboard>
 }
 
 export function createMetricsRepository(sql: Sql): MetricsRepository {
   return {
-    async dashboard(clinicId, timezone) {
+    async dashboard(clinicId, timezone, windowDays = 30) {
       const tz = timezone || 'UTC'
+      // Defence in depth: the API whitelists the window, but clamp here too so a
+      // direct caller can never inject a non-finite or unbounded interval.
+      const days = Math.min(365, Math.max(1, Math.round(Number(windowDays) || 30)))
 
       const [
         convToday,
@@ -84,7 +92,7 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
               LEAD(created_at) OVER (PARTITION BY conversation_id ORDER BY created_at) AS next_at,
               LEAD(role)       OVER (PARTITION BY conversation_id ORDER BY created_at) AS next_role
             FROM conversation_messages
-            WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+            WHERE clinic_id = ${clinicId} AND created_at >= NOW() - make_interval(days => ${days}::int)
           )
           SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (next_at - created_at))), 0) AS avg_seconds
           FROM ordered
@@ -98,7 +106,7 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
             to_char(date_trunc('day', created_at AT TIME ZONE ${tz}), 'YYYY-MM-DD') AS date,
             COUNT(*) AS count
           FROM conversations
-          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - make_interval(days => ${days}::int)
           GROUP BY 1
           ORDER BY 1 ASC
         `,
@@ -106,7 +114,7 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
           SELECT metadata->>'lastIntent' AS intent, COUNT(*) AS count
           FROM conversations
           WHERE clinic_id = ${clinicId}
-            AND created_at >= NOW() - INTERVAL '30 days'
+            AND created_at >= NOW() - make_interval(days => ${days}::int)
             AND metadata->>'lastIntent' IS NOT NULL
           GROUP BY 1
           ORDER BY count DESC
@@ -118,12 +126,12 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
             COUNT(*) FILTER (WHERE status = 'handoff' OR assigned_to IS NOT NULL)  AS transferred,
             COUNT(DISTINCT patient_id) FILTER (WHERE patient_id IS NOT NULL)        AS leads
           FROM conversations
-          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - make_interval(days => ${days}::int)
         `,
         sql<{ channel: string; count: string }[]>`
           SELECT channel, COUNT(*) AS count
           FROM conversations
-          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - make_interval(days => ${days}::int)
           GROUP BY channel
           ORDER BY count DESC
         `,
@@ -132,7 +140,7 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
           FROM conversations c
           JOIN appointments a ON a.conversation_id = c.id AND a.clinic_id = c.clinic_id
           WHERE c.clinic_id = ${clinicId}
-            AND c.created_at >= NOW() - INTERVAL '30 days'
+            AND c.created_at >= NOW() - make_interval(days => ${days}::int)
             AND a.status IN ('confirmed', 'completed')
         `,
         sql<[{ withInbound: string; noResponse: string }]>`
@@ -142,7 +150,7 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
               COUNT(*) FILTER (WHERE role = 'user')                  AS inbound,
               COUNT(*) FILTER (WHERE role IN ('assistant', 'agent')) AS replies
             FROM conversation_messages
-            WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+            WHERE clinic_id = ${clinicId} AND created_at >= NOW() - make_interval(days => ${days}::int)
             GROUP BY conversation_id
           )
           SELECT
@@ -156,7 +164,7 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
             EXTRACT(HOUR FROM created_at AT TIME ZONE ${tz})::int AS hour,
             COUNT(*) AS count
           FROM conversation_messages
-          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - INTERVAL '30 days'
+          WHERE clinic_id = ${clinicId} AND created_at >= NOW() - make_interval(days => ${days}::int)
           GROUP BY 1, 2
           ORDER BY 1, 2
         `,

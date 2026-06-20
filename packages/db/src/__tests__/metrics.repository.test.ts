@@ -65,6 +65,47 @@ describe('metrics.repository — dashboard (Req 17 basic metrics)', () => {
     expect(dashboard.topIntents).toEqual([{ intent: 'booking', count: 4 }])
   })
 
+  it('threads the window (period filter) through to the trailing-window queries as a bind value', async () => {
+    const seen: unknown[][] = []
+    const recordingSql = ((_strings: TemplateStringsArray, ...values: unknown[]) => {
+      seen.push(values)
+      return Promise.resolve([])
+    }) as unknown as Sql
+
+    await createMetricsRepository(recordingSql).dashboard('clinic-1', 'UTC', 7)
+    const all = seen.flat()
+    // The only numeric bind in the dashboard queries is the window, so its presence
+    // confirms the period filter reaches make_interval(days => $n) rather than a literal.
+    expect(all).toContain(7)
+    expect(all).not.toContain(30)
+  })
+
+  it('clamps an out-of-range or non-finite window instead of injecting an unbounded interval', async () => {
+    const seen: unknown[][] = []
+    const recordingSql = ((_strings: TemplateStringsArray, ...values: unknown[]) => {
+      seen.push(values)
+      return Promise.resolve([])
+    }) as unknown as Sql
+
+    await createMetricsRepository(recordingSql).dashboard('clinic-1', 'UTC', 99999)
+    expect(seen.flat()).toContain(365)
+
+    seen.length = 0
+    await createMetricsRepository(recordingSql).dashboard('clinic-1', 'UTC', Number.NaN)
+    expect(seen.flat()).toContain(30) // falls back to the default
+  })
+
+  it('defaults to a 30-day window when none is supplied (backward compatible)', async () => {
+    const seen: unknown[][] = []
+    const recordingSql = ((_strings: TemplateStringsArray, ...values: unknown[]) => {
+      seen.push(values)
+      return Promise.resolve([])
+    }) as unknown as Sql
+
+    await createMetricsRepository(recordingSql).dashboard('clinic-1', 'UTC')
+    expect(seen.flat()).toContain(30)
+  })
+
   it('returns zeroed rates when there is no activity (no divide-by-zero)', async () => {
     const empty = (() => Promise.resolve([])) as unknown as Sql
     const dashboard = await createMetricsRepository(empty).dashboard('clinic-1', 'UTC')

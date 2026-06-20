@@ -18,6 +18,8 @@ const PIE_COLORS = [
 ]
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// Req 17 (filters): period selector. Mirrors the API's ALLOWED_WINDOWS whitelist.
+const WINDOW_OPTIONS = [7, 30, 90]
 const pct = (n: number) => `${Math.round(n * 100)}%`
 
 export default function MetricsPage() {
@@ -28,6 +30,7 @@ export default function MetricsPage() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'ia_studio_admin'
   const [clinicId, setClinicId] = useState<string>(user?.clinicId ?? '')
+  const [windowDays, setWindowDays] = useState<number>(30)
 
   // IA Studio admins can pick any clinic; clinic admins are scoped to their own.
   const clinicsQuery = useQuery({
@@ -37,9 +40,10 @@ export default function MetricsPage() {
   })
 
   const metricsQuery = useQuery({
-    queryKey: ['metrics', clinicId],
+    queryKey: ['metrics', clinicId, windowDays],
     enabled: Boolean(clinicId),
-    queryFn: () => api.get<{ metrics: ClinicMetrics }>(`/clinics/${clinicId}/metrics`),
+    queryFn: () =>
+      api.get<{ metrics: ClinicMetrics }>(`/clinics/${clinicId}/metrics?window=${windowDays}`),
   })
   const m = metricsQuery.data?.metrics
 
@@ -55,22 +59,38 @@ export default function MetricsPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">{t('metrics.title')}</h1>
-        {isAdmin && (
+        <div className="flex flex-wrap items-center gap-3">
+          {isAdmin && (
+            <label className="flex items-center gap-2 text-xs">
+              <span className="text-gray-500">{t('metrics.selectClinic')}</span>
+              <select
+                value={clinicId}
+                onChange={(e) => setClinicId(e.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+              >
+                {(clinicsQuery.data?.clinics ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500">{t('metrics.selectClinic')}</span>
+            <span className="text-gray-500">{t('metrics.window')}</span>
             <select
-              value={clinicId}
-              onChange={(e) => setClinicId(e.target.value)}
+              value={windowDays}
+              onChange={(e) => setWindowDays(Number(e.target.value))}
               className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
             >
-              {(clinicsQuery.data?.clinics ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {WINDOW_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {t('metrics.windowOption', { days: d })}
                 </option>
               ))}
             </select>
           </label>
-        )}
+        </div>
       </div>
 
       {metricsQuery.isLoading ? (
@@ -87,7 +107,7 @@ export default function MetricsPage() {
           </div>
 
           <p className="-mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
-            {t('metrics.last30')}
+            {t('metrics.windowDays', { days: windowDays })}
           </p>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Card label={t('metrics.totalConversations')} value={String(m.totalConversations)} />
@@ -104,7 +124,11 @@ export default function MetricsPage() {
             empty={t('metrics.noData')}
             label={(c) => t(`metrics.channel.${c}` as Parameters<typeof t>[0]) || c}
           />
-          <BarChart data={m.conversationsPerDay} title={t('metrics.perDay')} empty={t('metrics.noData')} />
+          <BarChart
+            data={m.conversationsPerDay}
+            title={t('metrics.perDay')}
+            empty={t('metrics.noData')}
+          />
           <IntentPie data={m.topIntents} title={t('metrics.topIntents')} empty={t('metrics.noData')} />
           <Heatmap data={m.peakHours} title={t('metrics.peakHours')} empty={t('metrics.noData')} />
         </>
