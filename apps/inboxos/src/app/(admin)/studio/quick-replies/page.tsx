@@ -2,7 +2,10 @@
 
 // IA Studio — Quick reply template management (Gap #25). Pick a clinic, then list /
 // add / delete its canned replies. Secretaries pick from these in the composer.
-import { useState, type FormEvent } from 'react'
+// Screen 4 pass: error+retry state, search filter, count summary, and a note that
+// these are inserted into the draft for in-window replies (distinct from the
+// approved WhatsApp templates that can reach a patient outside the 24h window).
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
@@ -13,6 +16,7 @@ export default function QuickRepliesPage() {
   const { t } = useI18n()
   const qc = useQueryClient()
   const [clinicId, setClinicId] = useState('')
+  const [search, setSearch] = useState('')
 
   const key = ['quick-reply-templates', clinicId]
   const query = useQuery({
@@ -27,10 +31,15 @@ export default function QuickRepliesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   })
 
-  const templates = query.data?.templates ?? []
+  const all = query.data?.templates ?? []
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return all
+    return all.filter((tpl) => `${tpl.title} ${tpl.content}`.toLowerCase().includes(term))
+  }, [all, search])
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">{t('studio.quickReplies.title')}</h1>
         <ClinicSelect value={clinicId} onChange={setClinicId} label={t('studio.usage.selectClinic')} />
@@ -40,25 +49,58 @@ export default function QuickRepliesPage() {
         <p className="text-sm text-gray-400">{t('studio.quickReplies.selectClinic')}</p>
       ) : (
         <>
+          <p className="mb-3 text-xs text-gray-400">{t('studio.quickReplies.note')}</p>
           <NewTemplateForm clinicId={clinicId} />
 
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('studio.quickReplies.search')}
+            className="mb-3 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          />
+
           {query.isLoading ? (
-            <p className="text-sm text-gray-400">{t('common.loading')}</p>
-          ) : templates.length === 0 ? (
-            <p className="text-sm text-gray-400">{t('studio.quickReplies.empty')}</p>
-          ) : (
-            <ul className="space-y-2">
-              {templates.map((tpl) => (
-                <TemplateRow
-                  key={tpl.id}
-                  clinicId={clinicId}
-                  template={tpl}
-                  onDelete={() => {
-                    if (confirm(t('studio.quickReplies.deleteConfirm'))) deleteMutation.mutate(tpl.id)
-                  }}
+            <div className="space-y-2" aria-busy="true">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-14 animate-pulse rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                 />
               ))}
-            </ul>
+            </div>
+          ) : query.isError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm dark:border-red-900 dark:bg-red-950/40">
+              <p className="text-red-700 dark:text-red-300">{t('common.error')}</p>
+              <button
+                type="button"
+                onClick={() => query.refetch()}
+                className="mt-2 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40"
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          ) : all.length === 0 ? (
+            <p className="text-sm text-gray-400">{t('studio.quickReplies.empty')}</p>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-gray-400">{t('studio.quickReplies.emptyFilter')}</p>
+          ) : (
+            <>
+              <p className="mb-2 text-xs text-gray-400">
+                {t('studio.quickReplies.count', { n: filtered.length, m: all.length })}
+              </p>
+              <ul className="space-y-2">
+                {filtered.map((tpl) => (
+                  <TemplateRow
+                    key={tpl.id}
+                    clinicId={clinicId}
+                    template={tpl}
+                    onDelete={() => {
+                      if (confirm(t('studio.quickReplies.deleteConfirm'))) deleteMutation.mutate(tpl.id)
+                    }}
+                  />
+                ))}
+              </ul>
+            </>
           )}
         </>
       )}

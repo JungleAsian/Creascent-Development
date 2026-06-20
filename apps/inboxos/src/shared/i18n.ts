@@ -455,7 +455,12 @@ const es: Dict = {
   'studio.quickReplies.content': 'Contenido',
   'studio.quickReplies.add': 'Agregar plantilla',
   'studio.quickReplies.empty': 'No hay plantillas',
+  'studio.quickReplies.emptyFilter': 'Ninguna plantilla coincide con la búsqueda.',
   'studio.quickReplies.deleteConfirm': '¿Eliminar esta plantilla?',
+  'studio.quickReplies.search': 'Buscar respuestas rápidas…',
+  'studio.quickReplies.count': '{n} de {m} plantillas',
+  'studio.quickReplies.note':
+    'Se insertan en el cuadro de redacción para responder dentro de la ventana de 24 h. Para escribir fuera de esa ventana usa una plantilla de WhatsApp aprobada.',
 
   'metrics.title': 'Métricas',
   'metrics.selectClinic': 'Clínica',
@@ -590,6 +595,40 @@ const es: Dict = {
   'studio.templates.markApproved': 'Marcar aprobada',
   'studio.templates.markRejected': 'Marcar rechazada',
   'studio.templates.markPending': 'Marcar pendiente',
+  'studio.templates.search': 'Buscar por nombre o texto…',
+  'studio.templates.emptyFilter': 'Ninguna plantilla coincide con los filtros.',
+  'studio.templates.count': '{n} de {m} plantillas',
+  'studio.templates.variables': 'Variables',
+  'studio.templates.nameSuggest': 'Sugerir un nombre válido (minúsculas y guiones bajos)',
+  'studio.templates.metaTypeLabel': 'Categoría de Meta:',
+  'studio.templates.metaType.utility': 'Utilidad',
+  'studio.templates.metaType.marketing': 'Marketing',
+  'studio.templates.filter.allCategories': 'Todas las categorías',
+  'studio.templates.filter.allLanguages': 'Todos los idiomas',
+  'studio.templates.filter.allStatuses': 'Todos los estados',
+  'studio.templates.guidance.toggle': 'Cómo funcionan las plantillas de WhatsApp',
+  'studio.templates.guidance.window.title': 'Ventana de 24 horas',
+  'studio.templates.guidance.window.body':
+    'Solo puedes escribir libremente a un paciente dentro de las 24 h posteriores a su último mensaje. Fuera de esa ventana, Meta exige una plantilla aprobada.',
+  'studio.templates.guidance.approval.title': 'Aprobación de Meta',
+  'studio.templates.guidance.approval.body':
+    'Cada plantilla debe enviarse a Meta y ser aprobada antes de usarse. El envío es manual; aquí solo se registra el estado (pendiente / aprobada / rechazada).',
+  'studio.templates.guidance.vars.title': 'Variables {{1}}, {{2}}…',
+  'studio.templates.guidance.vars.body':
+    'Usa marcadores numerados y secuenciales empezando en {{1}}. No los pongas juntos ni al inicio o final del mensaje: Meta suele rechazarlos.',
+  'studio.templates.guidance.name.title': 'Nombre de la plantilla',
+  'studio.templates.guidance.name.body':
+    'El nombre solo admite minúsculas, números y guiones bajos (p. ej. confirmacion_de_cita). Usa el botón de sugerencia para corregirlo.',
+  'studio.templates.issue.body_empty': 'El cuerpo del mensaje no puede estar vacío.',
+  'studio.templates.issue.body_too_long': 'El cuerpo supera el límite de 1024 caracteres de Meta.',
+  'studio.templates.issue.vars_not_sequential':
+    'Las variables deben ser secuenciales desde {{1}} (sin huecos).',
+  'studio.templates.issue.vars_adjacent': 'Dos variables no pueden ir juntas; añade texto entre ellas.',
+  'studio.templates.issue.var_at_start': 'El mensaje no debería empezar con una variable.',
+  'studio.templates.issue.var_at_end': 'El mensaje no debería terminar con una variable.',
+  'studio.templates.issue.name_format':
+    'El nombre solo admite minúsculas, números y guiones bajos.',
+  'studio.templates.issue.name_too_long': 'El nombre supera el límite de 512 caracteres.',
 
   // P18 — Phase 3
   'nav.analytics': 'Analítica',
@@ -1368,7 +1407,12 @@ const en: Dict = {
   'studio.quickReplies.content': 'Content',
   'studio.quickReplies.add': 'Add template',
   'studio.quickReplies.empty': 'No templates',
+  'studio.quickReplies.emptyFilter': 'No quick reply matches your search.',
   'studio.quickReplies.deleteConfirm': 'Delete this template?',
+  'studio.quickReplies.search': 'Search quick replies…',
+  'studio.quickReplies.count': '{n} of {m} templates',
+  'studio.quickReplies.note':
+    'Inserted into the composer for replies within the 24h window. To message outside that window, use an approved WhatsApp template.',
 
   'metrics.title': 'Metrics',
   'metrics.selectClinic': 'Clinic',
@@ -1503,6 +1547,39 @@ const en: Dict = {
   'studio.templates.markApproved': 'Mark approved',
   'studio.templates.markRejected': 'Mark rejected',
   'studio.templates.markPending': 'Mark pending',
+  'studio.templates.search': 'Search by name or text…',
+  'studio.templates.emptyFilter': 'No template matches your filters.',
+  'studio.templates.count': '{n} of {m} templates',
+  'studio.templates.variables': 'Variables',
+  'studio.templates.nameSuggest': 'Suggest a valid name (lowercase and underscores)',
+  'studio.templates.metaTypeLabel': 'Meta category:',
+  'studio.templates.metaType.utility': 'Utility',
+  'studio.templates.metaType.marketing': 'Marketing',
+  'studio.templates.filter.allCategories': 'All categories',
+  'studio.templates.filter.allLanguages': 'All languages',
+  'studio.templates.filter.allStatuses': 'All statuses',
+  'studio.templates.guidance.toggle': 'How WhatsApp templates work',
+  'studio.templates.guidance.window.title': '24-hour window',
+  'studio.templates.guidance.window.body':
+    'You can only message a patient freely within 24h of their last message. Outside that window, Meta requires an approved template.',
+  'studio.templates.guidance.approval.title': 'Meta approval',
+  'studio.templates.guidance.approval.body':
+    'Every template must be submitted to Meta and approved before use. Submission is manual; this only records the status (pending / approved / rejected).',
+  'studio.templates.guidance.vars.title': 'Variables {{1}}, {{2}}…',
+  'studio.templates.guidance.vars.body':
+    'Use numbered, sequential placeholders starting at {{1}}. Don’t place them adjacent or at the very start or end — Meta often rejects those.',
+  'studio.templates.guidance.name.title': 'Template name',
+  'studio.templates.guidance.name.body':
+    'Names allow only lowercase letters, numbers and underscores (e.g. appointment_confirmation). Use the suggest button to fix one.',
+  'studio.templates.issue.body_empty': 'The message body cannot be empty.',
+  'studio.templates.issue.body_too_long': 'The body exceeds Meta’s 1024-character limit.',
+  'studio.templates.issue.vars_not_sequential':
+    'Variables must be sequential from {{1}} (no gaps).',
+  'studio.templates.issue.vars_adjacent': 'Two variables can’t be adjacent; add text between them.',
+  'studio.templates.issue.var_at_start': 'The message shouldn’t start with a variable.',
+  'studio.templates.issue.var_at_end': 'The message shouldn’t end with a variable.',
+  'studio.templates.issue.name_format': 'Names allow only lowercase letters, numbers and underscores.',
+  'studio.templates.issue.name_too_long': 'The name exceeds the 512-character limit.',
 
   // P18 — Phase 3
   'nav.analytics': 'Analytics',

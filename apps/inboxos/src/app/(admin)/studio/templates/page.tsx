@@ -1,14 +1,29 @@
 'use client'
 
-// IA Studio — WhatsApp message templates (Gap #29). Pick a clinic, register the
-// templates submitted to Meta and track their approval status. Submission to Meta
-// is manual; this only records status (pending | approved | rejected).
-import { useState, type FormEvent } from 'react'
+// Screen 4 (Quick replies & templates) — IA Studio WhatsApp message templates.
+// Pick a clinic, register the templates submitted to Meta and track approval
+// status (submission to Meta is manual; this records status only). This pass adds
+// the design-map depth: a collapsible WhatsApp-template guidance panel, live
+// variable + Meta-rule validation in the editor (shared/templateGuidance.ts),
+// search + category/language/status filters over the bilingual library, and the
+// error+retry / empty-for-filter states the global brief requires.
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { useI18n } from '@/shared/hooks/useI18n'
-import type { MessageTemplate, MessageTemplateCategory, MessageTemplateStatus } from '@/shared/types'
+import {
+  analyzeTemplate,
+  suggestTemplateName,
+  CATEGORY_META_TYPE,
+  TEMPLATE_BODY_MAX,
+  type TemplateAnalysis,
+} from '@/shared/templateGuidance'
+import type {
+  MessageTemplate,
+  MessageTemplateCategory,
+  MessageTemplateStatus,
+} from '@/shared/types'
 
 const CATEGORIES: MessageTemplateCategory[] = [
   'appointment_confirmation',
@@ -17,6 +32,7 @@ const CATEGORIES: MessageTemplateCategory[] = [
   'review_request',
 ]
 const STATUSES: MessageTemplateStatus[] = ['pending', 'approved', 'rejected']
+const LANGUAGES = ['es', 'en']
 
 const STATUS_BADGE: Record<MessageTemplateStatus, string> = {
   pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -28,6 +44,10 @@ export default function TemplatesPage() {
   const { t } = useI18n()
   const qc = useQueryClient()
   const [clinicId, setClinicId] = useState('')
+  const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState<MessageTemplateCategory | ''>('')
+  const [languageFilter, setLanguageFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<MessageTemplateStatus | ''>('')
 
   const key = ['message-templates', clinicId]
   const query = useQuery({
@@ -42,10 +62,20 @@ export default function TemplatesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   })
 
-  const templates = query.data?.templates ?? []
+  const all = query.data?.templates ?? []
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    return all.filter((tpl) => {
+      if (categoryFilter && tpl.category !== categoryFilter) return false
+      if (languageFilter && tpl.language !== languageFilter) return false
+      if (statusFilter && tpl.status !== statusFilter) return false
+      if (term && !`${tpl.name} ${tpl.body}`.toLowerCase().includes(term)) return false
+      return true
+    })
+  }, [all, search, categoryFilter, languageFilter, statusFilter])
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">{t('studio.templates.title')}</h1>
         <ClinicSelect value={clinicId} onChange={setClinicId} label={t('studio.usage.selectClinic')} />
@@ -55,52 +85,225 @@ export default function TemplatesPage() {
         <p className="text-sm text-gray-400">{t('studio.templates.selectClinic')}</p>
       ) : (
         <>
+          <GuidancePanel />
           <p className="mb-3 text-xs text-gray-400">{t('studio.templates.note')}</p>
           <NewTemplateForm clinicId={clinicId} />
 
-          {query.isLoading ? (
-            <p className="text-sm text-gray-400">{t('common.loading')}</p>
-          ) : templates.length === 0 ? (
-            <p className="text-sm text-gray-400">{t('studio.templates.empty')}</p>
-          ) : (
-            <ul className="space-y-2">
-              {templates.map((tpl) => (
-                <li
-                  key={tpl.id}
-                  className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{tpl.name}</p>
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500 dark:bg-gray-800">
-                      {t(`studio.templates.category.${tpl.category}` as const)}
-                    </span>
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500 dark:bg-gray-800">
-                      {tpl.language}
-                    </span>
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[tpl.status]}`}>
-                      {t(`studio.templates.status.${tpl.status}` as const)}
-                    </span>
-                    <select
-                      value={tpl.status}
-                      onChange={(e) =>
-                        statusMutation.mutate({ id: tpl.id, status: e.target.value as MessageTemplateStatus })
-                      }
-                      disabled={statusMutation.isPending}
-                      className="ml-auto rounded border border-gray-300 bg-transparent px-1 py-0.5 text-[10px] uppercase text-gray-500 dark:border-gray-700"
-                    >
-                      {STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <p className="mt-1.5 whitespace-pre-wrap break-words text-xs text-gray-500">{tpl.body}</p>
-                </li>
+          {/* Filter bar over the bilingual library. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('studio.templates.search')}
+              className="min-w-[10rem] flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+            />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as MessageTemplateCategory | '')}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option value="">{t('studio.templates.filter.allCategories')}</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {t(`studio.templates.category.${c}` as const)}
+                </option>
               ))}
-            </ul>
+            </select>
+            <select
+              value={languageFilter}
+              onChange={(e) => setLanguageFilter(e.target.value)}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option value="">{t('studio.templates.filter.allLanguages')}</option>
+              {LANGUAGES.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as MessageTemplateStatus | '')}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option value="">{t('studio.templates.filter.allStatuses')}</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {t(`studio.templates.status.${s}` as const)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {query.isLoading ? (
+            <div className="space-y-2" aria-busy="true">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-16 animate-pulse rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                />
+              ))}
+            </div>
+          ) : query.isError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm dark:border-red-900 dark:bg-red-950/40">
+              <p className="text-red-700 dark:text-red-300">{t('common.error')}</p>
+              <button
+                type="button"
+                onClick={() => query.refetch()}
+                className="mt-2 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40"
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          ) : all.length === 0 ? (
+            <p className="text-sm text-gray-400">{t('studio.templates.empty')}</p>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-gray-400">{t('studio.templates.emptyFilter')}</p>
+          ) : (
+            <>
+              <p className="mb-2 text-xs text-gray-400">
+                {t('studio.templates.count', { n: filtered.length, m: all.length })}
+              </p>
+              <ul className="space-y-2">
+                {filtered.map((tpl) => (
+                  <TemplateRow
+                    key={tpl.id}
+                    template={tpl}
+                    onStatus={(status) => statusMutation.mutate({ id: tpl.id, status })}
+                    statusBusy={statusMutation.isPending}
+                  />
+                ))}
+              </ul>
+            </>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+function TemplateRow({
+  template: tpl,
+  onStatus,
+  statusBusy,
+}: {
+  template: MessageTemplate
+  onStatus: (status: MessageTemplateStatus) => void
+  statusBusy: boolean
+}) {
+  const { t } = useI18n()
+  const analysis = useMemo(() => analyzeTemplate(tpl.body, tpl.name), [tpl.body, tpl.name])
+
+  return (
+    <li className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-medium">{tpl.name}</p>
+        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500 dark:bg-gray-800">
+          {t(`studio.templates.category.${tpl.category}` as const)}
+        </span>
+        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500 dark:bg-gray-800">
+          {tpl.language}
+        </span>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[tpl.status]}`}>
+          {t(`studio.templates.status.${tpl.status}` as const)}
+        </span>
+        <select
+          value={tpl.status}
+          onChange={(e) => onStatus(e.target.value as MessageTemplateStatus)}
+          disabled={statusBusy}
+          aria-label={t('studio.templates.status')}
+          className="ml-auto rounded border border-gray-300 bg-transparent px-1 py-0.5 text-[10px] uppercase text-gray-500 dark:border-gray-700"
+        >
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <VariableChips analysis={analysis} />
+      <IssueList analysis={analysis} />
+
+      <p className="mt-1.5 whitespace-pre-wrap break-words text-xs text-gray-500">{tpl.body}</p>
+    </li>
+  )
+}
+
+// Variable chips ({{1}}, {{2}}) so the admin sees exactly what Meta will substitute.
+function VariableChips({ analysis }: { analysis: TemplateAnalysis }) {
+  const { t } = useI18n()
+  if (analysis.variables.length === 0) return null
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      <span className="text-[10px] uppercase tracking-wide text-gray-400">
+        {t('studio.templates.variables')}
+      </span>
+      {analysis.variables.map((n) => (
+        <span
+          key={n}
+          className="rounded bg-indigo-100 px-1.5 py-0.5 font-mono text-[10px] text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+        >
+          {`{{${n}}}`}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// Meta-rule issues (error = will be rejected, warning = fragile) surfaced inline.
+function IssueList({ analysis }: { analysis: TemplateAnalysis }) {
+  const { t } = useI18n()
+  if (analysis.issues.length === 0) return null
+  return (
+    <ul className="mt-1.5 space-y-0.5">
+      {analysis.issues.map((issue) => (
+        <li
+          key={issue.code}
+          className={`flex items-start gap-1 text-[11px] ${
+            issue.severity === 'error'
+              ? 'text-red-600 dark:text-red-400'
+              : 'text-amber-600 dark:text-amber-400'
+          }`}
+        >
+          <span aria-hidden>{issue.severity === 'error' ? '⛔' : '⚠'}</span>
+          <span>{t(`studio.templates.issue.${issue.code}` as const)}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// Collapsible explainer covering the rules that trip up first-time template authors.
+function GuidancePanel() {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const items: Array<{ title: string; body: string }> = [
+    { title: t('studio.templates.guidance.window.title'), body: t('studio.templates.guidance.window.body') },
+    { title: t('studio.templates.guidance.approval.title'), body: t('studio.templates.guidance.approval.body') },
+    { title: t('studio.templates.guidance.vars.title'), body: t('studio.templates.guidance.vars.body') },
+    { title: t('studio.templates.guidance.name.title'), body: t('studio.templates.guidance.name.body') },
+  ]
+  return (
+    <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/60 dark:border-indigo-900 dark:bg-indigo-950/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium text-indigo-800 dark:text-indigo-200"
+      >
+        <span>💡 {t('studio.templates.guidance.toggle')}</span>
+        <span aria-hidden>{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <dl className="grid gap-3 border-t border-indigo-200 px-3 py-3 dark:border-indigo-900 sm:grid-cols-2">
+          {items.map((it) => (
+            <div key={it.title}>
+              <dt className="text-xs font-semibold text-gray-700 dark:text-gray-200">{it.title}</dt>
+              <dd className="mt-0.5 text-xs text-gray-500">{it.body}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </div>
   )
@@ -114,9 +317,11 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
   const [language, setLanguage] = useState('es')
   const [body, setBody] = useState('')
 
+  const analysis = useMemo(() => analyzeTemplate(body, name), [body, name])
+  const metaType = CATEGORY_META_TYPE[category]
+
   const mutation = useMutation({
-    mutationFn: () =>
-      api.post(`/clinics/${clinicId}/message-templates`, { name, category, language, body }),
+    mutationFn: () => api.post(`/clinics/${clinicId}/message-templates`, { name, category, language, body }),
     onSuccess: () => {
       setName('')
       setBody('')
@@ -126,8 +331,11 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (name.trim() && body.trim()) mutation.mutate()
+    if (name.trim() && body.trim() && analysis.valid) mutation.mutate()
   }
+
+  const overLimit = analysis.charCount > TEMPLATE_BODY_MAX
+  const canSubmit = Boolean(name.trim() && body.trim() && analysis.valid)
 
   return (
     <form
@@ -135,12 +343,23 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
       className="mb-6 space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
     >
       <div className="flex flex-wrap gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('studio.templates.name')}
-          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
-        />
+        <div className="flex flex-1 items-center gap-1">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('studio.templates.name')}
+            className="min-w-[8rem] flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          />
+          <button
+            type="button"
+            onClick={() => setName(suggestTemplateName(name))}
+            disabled={!name.trim()}
+            title={t('studio.templates.nameSuggest')}
+            className="shrink-0 rounded-md border border-gray-300 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            a_b_c
+          </button>
+        </div>
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value as MessageTemplateCategory)}
@@ -161,6 +380,13 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
           <option value="en">en</option>
         </select>
       </div>
+
+      {/* Meta category type the chosen category maps to. */}
+      <p className="text-[11px] text-gray-400">
+        {t('studio.templates.metaTypeLabel')}{' '}
+        <span className="font-medium text-gray-500">{t(`studio.templates.metaType.${metaType}` as const)}</span>
+      </p>
+
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -168,9 +394,19 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
         placeholder={t('studio.templates.body')}
         className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
       />
+
+      {/* Live char counter + variable chips + Meta-rule validation for the draft. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <VariableChips analysis={analysis} />
+        <span className={`text-[11px] ${overLimit ? 'text-red-600' : 'text-gray-400'}`}>
+          {analysis.charCount} / {TEMPLATE_BODY_MAX}
+        </span>
+      </div>
+      {body.trim() !== '' && <IssueList analysis={analysis} />}
+
       <button
         type="submit"
-        disabled={mutation.isPending || !name.trim() || !body.trim()}
+        disabled={mutation.isPending || !canSubmit}
         className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
       >
         {t('studio.templates.submit')}
