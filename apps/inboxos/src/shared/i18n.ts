@@ -37,6 +37,10 @@ const es: Dict = {
   'nav.errors': 'Revisión de errores',
   'nav.usage': 'Uso',
   'nav.backToInbox': 'Volver a la bandeja',
+  'nav.group.clinics': 'Clínicas y personas',
+  'nav.group.messaging': 'Mensajería',
+  'nav.group.operations': 'Operaciones',
+  'nav.group.compliance': 'Cumplimiento',
 
   'lang.toggle': 'Idioma',
   'lang.es': 'Español',
@@ -1228,6 +1232,10 @@ const en: Dict = {
   'nav.errors': 'Error review',
   'nav.usage': 'Usage',
   'nav.backToInbox': 'Back to inbox',
+  'nav.group.clinics': 'Clinics & people',
+  'nav.group.messaging': 'Messaging',
+  'nav.group.operations': 'Operations',
+  'nav.group.compliance': 'Compliance',
 
   'lang.toggle': 'Language',
   'lang.es': 'Spanish',
