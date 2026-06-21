@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { NavItem } from './shell'
 import { DashboardShell } from './shell'
 import { FormSubmitFeedback } from './form-submit-feedback'
+import { readCustomAis } from './lib/custom-ais'
 
 const nav: NavItem[] = [
   ['Workflow', '/workflow'],
@@ -44,11 +45,14 @@ const nav: NavItem[] = [
 ]
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const customAis = readCustomAis()
+  const fullNav: NavItem[] = [...nav, ...customAis.map((ai): NavItem => [ai.name, `/ai/${ai.id}`])]
+  const subLabels = Object.fromEntries(customAis.map((ai) => [ai.name, ai.role]))
   return (
     <html lang="en">
       <body>
         <FormSubmitFeedback />
-        <DashboardShell nav={nav}>{children}</DashboardShell>
+        <DashboardShell nav={fullNav} subLabels={subLabels}>{children}</DashboardShell>
       </body>
     </html>
   )

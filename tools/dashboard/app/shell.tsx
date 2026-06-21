@@ -9,6 +9,7 @@ import { SpanishTranslator } from './spanish-translator'
 type DashboardShellProps = {
   children: ReactNode
   nav: NavItem[]
+  subLabels?: Record<string, string>
 }
 export type NavItem = [label: string, href: string]
 type NavGroup = {
@@ -188,7 +189,7 @@ const sideRailGroupIcons: Record<string, string> = {
   Other: '/lineicons/layers-1.svg'
 }
 
-export function DashboardShell({ children, nav }: DashboardShellProps) {
+export function DashboardShell({ children, nav, subLabels }: DashboardShellProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -440,10 +441,17 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
   const featureHeartbeatText = `Backend heartbeat: ${heartbeatLabel(heartbeat?.featureHeartbeat?.status)}${heartbeat?.featureRun?.phase ? `, ${heartbeat.featureRun.phase}` : ''}`
   const frontendHeartbeatText = `Frontend heartbeat: ${heartbeatLabel(heartbeat?.frontendHeartbeat?.status)}${heartbeat?.frontendRun?.phase ? `, ${heartbeat.frontendRun.phase}` : ''}`
   const uiHeartbeatText = `UI heartbeat: ${heartbeatLabel(heartbeat?.uiHeartbeat?.status)}${heartbeat?.uiRun?.phase ? `, ${heartbeat.uiRun.phase}` : ''}`
+  // Inject user-added AIs (those with a role sublabel) into the AI group, before Agents.
+  const customAiLabels = Object.keys(subLabels ?? {})
+  const resolvedGroups = customAiLabels.length
+    ? sideRailGroups.map((group) => group.label === 'AI'
+      ? { ...group, items: [...group.items.filter((item) => item !== 'Agents'), ...customAiLabels, 'Agents'] }
+      : group)
+    : sideRailGroups
   const navByLabel = new Map(nav.map((item) => [item[0], item]))
-  const groupedNavLabels = new Set(sideRailGroups.flatMap((group) => group.items))
+  const groupedNavLabels = new Set(resolvedGroups.flatMap((group) => group.items))
   const groupedSideRail = [
-    ...sideRailGroups.map((group) => ({
+    ...resolvedGroups.map((group) => ({
       ...group,
       items: group.items.map((label) => navByLabel.get(label)).filter((item): item is NavItem => Boolean(item))
     })).filter((group) => group.items.length > 0),
@@ -502,7 +510,10 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
                         className={`app-sidebar-submenu-link flex min-h-10 items-center gap-2 rounded-md px-2.5 py-2 text-sm ${active ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                       >
                         {pendingHref === href ? navSpinner() : navIconFor(label, active)}
-                        <span className="min-w-0 truncate">{displayLabel}</span>
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{displayLabel}</span>
+                          {subLabels?.[label] && <span className="truncate text-[10px] font-medium uppercase tracking-wide leading-tight text-cyan-300/70">{subLabels[label]}</span>}
+                        </span>
                       </Link>
                     )
                   })}
@@ -728,7 +739,10 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
                   >
                     {label === 'Ready' && readyCritical > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />}
                     <span className="scale-90">{pendingHref === href ? navSpinner() : navIconFor(label, active)}</span>
-                    <span className="min-w-0 truncate">{labelFor(label)}</span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate">{labelFor(label)}</span>
+                      {subLabels?.[label] && <span className="truncate text-[10px] uppercase tracking-wide leading-tight text-cyan-300/70">{subLabels[label]}</span>}
+                    </span>
                   </Link>
                 )
               })}

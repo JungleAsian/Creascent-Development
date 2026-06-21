@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import net from 'node:net'
 import { NextResponse } from 'next/server'
 import { scanSentinel } from '../../lib/sentinel'
+import { readCustomAis, writeCustomAis, slugifyAiId } from '../../lib/custom-ais'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const repoRoot = path.resolve(toolsRoot, '..')
@@ -2136,6 +2137,29 @@ export async function POST(request: Request) {
     }
     runToolDetached(['backlog', 'auto-resolve'])
     return redirect(request, 'message', 'Auto-resolve started — Claude plans each open item in turn, resolving the confident ones (≥8) and queuing the rest for your approval.')
+  }
+
+  if (action === 'ai-add') {
+    const name = String(form.get('name') ?? '').trim()
+    if (!name) return redirect(request, 'error', 'AI name is required')
+    const id = slugifyAiId(name)
+    if (!id) return redirect(request, 'error', 'AI name must contain letters or numbers')
+    const list = readCustomAis()
+    if (list.some((ai) => ai.id === id)) return redirect(request, 'error', `An AI named "${name}" already exists`)
+    const role = String(form.get('role') ?? '').trim() || 'Assistant'
+    const model = String(form.get('model') ?? '').trim()
+    const baseUrl = String(form.get('baseUrl') ?? '').trim()
+    const consoleUrl = String(form.get('consoleUrl') ?? '').trim()
+    const keyVar = String(form.get('keyVar') ?? '').trim()
+    list.push({ id, name, role, model: model || undefined, baseUrl: baseUrl || undefined, consoleUrl: consoleUrl || undefined, keyVar: keyVar || undefined })
+    writeCustomAis(list)
+    return redirect(request, 'message', `Added ${name} (${role})`, '/agents')
+  }
+
+  if (action === 'ai-remove') {
+    const id = String(form.get('id') ?? '')
+    writeCustomAis(readCustomAis().filter((ai) => ai.id !== id))
+    return redirect(request, 'message', 'AI removed', '/agents')
   }
 
   if (action === 'backlog-add') {
