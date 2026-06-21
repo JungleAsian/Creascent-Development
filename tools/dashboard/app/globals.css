@@ -445,7 +445,7 @@ a {
 
 .dashboard-content :where(button, input, select, textarea),
 .dashboard-content :where(a[class*='min-h'], a[class*='px-']) {
-  min-height: 2.75rem;
+  min-height: 2.25rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;
   line-height: 1.2;
@@ -455,7 +455,7 @@ a {
 .dashboard-content :where(button),
 .dashboard-content :where(a[class*='min-h'], a[class*='px-']) {
   display: inline-flex;
-  min-width: 7rem;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
@@ -1079,5 +1079,51 @@ details:not([open]) .details-toggle-label::after {
 
   .dashboard-content :where([class*='grid-cols-[']) {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ============================================================
+   UI/UX polish pass — table readability, card elevation/hover,
+   and mobile bottom-nav legibility. Scoped to .dashboard-content
+   so the shell/header/sidebar are untouched.
+   ============================================================ */
+
+/* Tables: hover highlight on rows (overrides row bg only on hover) and sticky
+   headers inside vertically-scrollable table containers (e.g. Logs). */
+.dashboard-content tbody tr {
+  transition: background-color 120ms ease;
+}
+.dashboard-content tbody tr:hover {
+  background-color: color-mix(in srgb, var(--accent-primary) 9%, transparent);
+}
+.dashboard-content :where(.overflow-auto, .overflow-y-auto) table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Card panels: one consistent subtle elevation across the whole tool, and a
+   gentle lift on interactive (link) cards so clickable cards feel clickable. */
+.dashboard-content :where(.bg-slate-900, .ui-panel):where(.rounded-md, .rounded-lg) {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+.dashboard-content a:where(.rounded-md, .rounded-lg).border {
+  transition: border-color 160ms ease, transform 160ms ease, background-color 160ms ease;
+}
+.dashboard-content a:where(.rounded-md, .rounded-lg).border:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-primary) 55%, var(--border-muted));
+}
+
+/* Mobile bottom-nav: the row now scrolls horizontally (fixed-width items show
+   full group labels instead of truncating to "Dev… / Mo… / Sen…"). Hide the
+   scrollbar so the bar stays clean; swipe to reach the later groups. */
+@media (max-width: 767px) {
+  .app-mobile-nav > div {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .app-mobile-nav > div::-webkit-scrollbar {
+    display: none;
   }
 }

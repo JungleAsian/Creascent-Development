@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import net from 'node:net'
@@ -8,18 +8,90 @@ import { scanSentinel } from '../../lib/sentinel'
 const toolsRoot = path.resolve(process.cwd(), '..')
 const repoRoot = path.resolve(toolsRoot, '..')
 const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
+// Each build lane gets its own start-readiness file so running the start check on
+// one lane no longer wipes the "passed" state of the others. build-control keeps
+// the legacy default file (also read by the install-monitor/ready/healer views).
+function startReadinessFileFor(workflow: string) {
+  return workflow && workflow !== 'build-control'
+    ? path.join(toolsRoot, 'logs', `start-readiness-${workflow}.json`)
+    : startReadinessFile
+}
 const logsRoot = path.join(toolsRoot, 'logs')
 const runtimeRoot = path.join(toolsRoot, 'runtime')
 const buildRunFile = path.join(logsRoot, 'build-run.json')
+const featureRunFile = path.join(logsRoot, 'feature-run.json')
+const frontendRunFile = path.join(logsRoot, 'frontend-run.json')
+const uiRunFile = path.join(logsRoot, 'ui-run.json')
+const backlogRunFile = path.join(logsRoot, 'backlog-run.json')
 const claudeUsageGuardFile = path.join(logsRoot, 'claude-usage-guard.json')
 const appLaunchFile = path.join(logsRoot, 'app-launch.json')
 const postDeploymentFile = path.join(logsRoot, 'post-deployment.json')
+const featureCoverageFile = path.join(logsRoot, 'rev1-feature-coverage.json')
+const deploymentRecordsFile = path.join(logsRoot, 'docmee-deployment-records.json')
+const developmentSourcesFile = path.join(logsRoot, 'development-sources.json')
+const sentinelAuditFile = path.join(logsRoot, 'sentinel-audit.json')
+const enhancementsFile = path.join(logsRoot, 'enhancements.json')
+const designAuditRecordsFile = path.join(logsRoot, 'design-audit-records.json')
+const uiDevelopmentRecordsFile = path.join(logsRoot, 'ui-development-records.json')
+const promptsDir = path.join(toolsRoot, 'prompts')
+const claudeDesignRunFile = path.join(logsRoot, 'design-run.json')
+const claudeDesignPromptFile = path.join(promptsDir, 'CLAUDE-DESIGN-RUN.md')
+const mockupsDir = path.join(logsRoot, 'mockups')
+const savedMockupsDir = path.join(toolsRoot, 'mockup-library')
+const docmeeUpdateFile = path.join(logsRoot, 'docmee-technology-update.json')
+const codexAccountFile = path.join(logsRoot, 'codex-account.json')
+const costFile = path.join(logsRoot, 'cost.json')
+const envFile = path.join(toolsRoot, '.env.tools')
+const deployResetArchiveRoot = path.join(logsRoot, 'reset-archive')
+const phaseIds = ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10', 'P11', 'P12', 'P13', 'P14', 'P15', 'P16', 'P17', 'P18', 'P19']
 
 type PostDeploymentCheck = {
   name: string
   status: 'pass' | 'warning' | 'fail'
   message: string
   detail?: string
+}
+type DevelopmentLane = 'backend' | 'frontend' | 'ui'
+type DevelopmentSources = Partial<Record<DevelopmentLane, { url: string; syncedAt?: string; status?: string; message?: string; itemCount?: number }>>
+type NotionBlock = {
+  id: string
+  type: string
+  has_children?: boolean
+  paragraph?: { rich_text?: NotionRichText[] }
+  heading_1?: { rich_text?: NotionRichText[] }
+  heading_2?: { rich_text?: NotionRichText[] }
+  heading_3?: { rich_text?: NotionRichText[] }
+  bulleted_list_item?: { rich_text?: NotionRichText[] }
+  numbered_list_item?: { rich_text?: NotionRichText[] }
+  to_do?: { rich_text?: NotionRichText[] }
+  quote?: { rich_text?: NotionRichText[] }
+  callout?: { rich_text?: NotionRichText[] }
+  table_row?: { cells?: NotionRichText[][] }
+  code?: { rich_text?: NotionRichText[] }
+}
+type NotionRichText = { plain_text?: string }
+type NotionPageText = { text: string; rows: string[][] }
+type QueueFeature = {
+  id: number
+  phase: string
+  area: string
+  feature: string
+  status: 'complete' | 'partial' | 'missing'
+  backendStatus?: 'complete' | 'pending' | 'needs-audit'
+  frontendStatus?: 'complete' | 'pending' | 'needs-audit'
+  priority: 'critical' | 'high' | 'medium' | 'low'
+  evidence: string
+  nextStep: string
+}
+type UiQueueItem = {
+  id: number
+  screen: string
+  phase: string
+  featuresCovered: string
+  status: 'complete' | 'planned' | 'running' | 'needs-review'
+  priority: 'critical' | 'high' | 'medium' | 'low'
+  source: string
+  nextStep: string
 }
 
 type CheckResponse = PostDeploymentCheck & { rawBody?: string }
@@ -29,6 +101,55 @@ type PostDeploymentRun = {
   createdAt: string
   summary: { pass: number; warning: number; fail: number }
   checks: PostDeploymentCheck[]
+  target?: 'local' | 'vps' | 'env'
+}
+
+type DocmeeUpdateStep = {
+  name: string
+  status: 'pass' | 'warning' | 'fail'
+  message: string
+}
+
+type DocmeeTechnologyUpdateRun = {
+  id: string
+  createdAt: string
+  status: 'planned' | 'local-passed' | 'local-failed'
+  summary: string
+  steps: DocmeeUpdateStep[]
+}
+
+type DevCostEntry = {
+  id: string
+  timestamp: string
+  phase: string
+  feature: string
+  tool: string
+  model: string
+  session_minutes: number
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  cost_usd: number
+  capture_method: string
+  notes: string
+}
+
+type CostStore = {
+  runtime?: unknown[]
+  development?: DevCostEntry[]
+}
+
+type StageStatus = 'complete' | 'pending' | 'needs-audit'
+type DeploymentFeature = {
+  status?: string
+  backendStatus?: StageStatus
+  frontendStatus?: StageStatus
+}
+type StartReadiness = {
+  createdAt?: string
+  phase?: string
+  ready?: boolean
+  steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }>
 }
 
 function pnpmCommand() {
@@ -38,9 +159,11 @@ function pnpmCommand() {
   return pnpmExe && existsSync(pnpmExe) ? pnpmExe : 'pnpm.exe'
 }
 
-function redirect(request: Request, key: 'message' | 'error', value: string) {
+function redirect(request: Request, key: 'message' | 'error', value: string, targetPath?: string) {
   const referer = request.headers.get('referer') ?? 'http://127.0.0.1:4000/settings'
-  const url = new URL(referer)
+  const url = targetPath?.startsWith('/') && !targetPath.startsWith('//')
+    ? new URL(targetPath, referer)
+    : new URL(referer)
   url.searchParams.set(key, value)
   return NextResponse.redirect(url, 303)
 }
@@ -68,6 +191,146 @@ function runRepo(args: string[]) {
   return { ok: result.status === 0, output }
 }
 
+function codexHome() {
+  return path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex')
+}
+
+function openCodexApp() {
+  if (process.platform === 'win32') {
+    const child = spawn('explorer.exe', ['shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    })
+    child.unref()
+    return true
+  }
+  return false
+}
+
+function writeCodexAccountStatus(status: string, message: string) {
+  writeFileSync(codexAccountFile, JSON.stringify({
+    status,
+    message,
+    updatedAt: new Date().toISOString()
+  }, null, 2))
+}
+
+function backupCodexAuth() {
+  const home = codexHome()
+  if (!home) return { ok: false, message: 'Codex home folder was not found.' }
+  const authFile = path.join(home, 'auth.json')
+  if (!existsSync(authFile)) {
+    writeCodexAccountStatus('signed-out', 'No Codex auth file was present. Open Codex to sign in.')
+    return { ok: true, message: 'Codex is already signed out on this machine.' }
+  }
+  const backupDir = path.join(home, 'auth-backups')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupFile = path.join(backupDir, `auth-${stamp}.json`)
+  try {
+    mkdirSync(backupDir, { recursive: true })
+    renameSync(authFile, backupFile)
+    writeCodexAccountStatus('signed-out', 'Codex auth was backed up. Open Codex and sign in with the desired account.')
+    return { ok: true, message: 'Codex was signed out locally. Open Codex to sign in again.' }
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function writeDocmeeUpdate(run: DocmeeTechnologyUpdateRun) {
+  const runs = readJson<DocmeeTechnologyUpdateRun[]>(docmeeUpdateFile, [])
+  writeFileSync(docmeeUpdateFile, JSON.stringify([run, ...runs].slice(0, 25), null, 2))
+  return run
+}
+
+function recordCurrentCodexChatSupport() {
+  const existing = readJson<CostStore | DevCostEntry[]>(costFile, { runtime: [], development: [] })
+  const store: CostStore = Array.isArray(existing)
+    ? { runtime: existing, development: [] }
+    : { runtime: existing.runtime ?? [], development: existing.development ?? [] }
+  const id = 'support-codex-chat-docmee-current'
+  const now = new Date().toISOString()
+  const withoutCurrent = (store.development ?? []).filter((entry) => entry.id !== id)
+  const entry: DevCostEntry = {
+    id,
+    timestamp: now,
+    phase: 'SUPPORT',
+    feature: 'Codex chat support for Docmee',
+    tool: 'codex-pro',
+    model: 'codex-chat',
+    session_minutes: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cached_tokens: 0,
+    cost_usd: 0,
+    capture_method: 'attributed-pending',
+    notes: 'docmee_support_chat=true; project=docmee; source=docmee-devtools; exact Codex chat usage/cost pending authenticated product usage access.'
+  }
+  writeFileSync(costFile, JSON.stringify({
+    runtime: store.runtime ?? [],
+    development: [...withoutCurrent, entry].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  }, null, 2))
+}
+
+function docmeeUpdateDiscordMessage(run: DocmeeTechnologyUpdateRun) {
+  const lines = [
+    'Docmee technology update workflow changed.',
+    `Status: ${run.status}`,
+    `Summary: ${run.summary}`,
+    `Recorded: ${new Date(run.createdAt).toLocaleString()}`,
+    '',
+    'Steps:',
+    ...run.steps.map((step) => `- ${step.status.toUpperCase()}: ${step.name} - ${step.message}`)
+  ]
+  return lines.join('\n').slice(0, 1800)
+}
+
+function createDocmeeUpdatePlan() {
+  const run: DocmeeTechnologyUpdateRun = {
+    id: `docmee-update-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    status: 'planned',
+    summary: 'Docmee updates will be reviewed, built locally, verified locally, then deployed to VPS only after local validation passes.',
+    steps: [
+      { name: 'Scan technology stack', status: 'warning', message: 'Refresh Stack Intelligence before selecting package updates.' },
+      { name: 'Review impact', status: 'warning', message: 'Classify each update as frontend, backend, database, worker, deployment, or service integration.' },
+      { name: 'Build locally first', status: 'warning', message: 'Run local install, typecheck, and build before VPS deployment.' },
+      { name: 'Verify locally', status: 'warning', message: 'Run local functionality and post-deployment checks after the build.' },
+      { name: 'Deploy to VPS', status: 'warning', message: 'Allowed only after local validation passes.' },
+      { name: 'Verify VPS', status: 'warning', message: 'Run VPS verification, Discord notification, and report export after deployment.' }
+    ]
+  }
+  return writeDocmeeUpdate(run)
+}
+
+function runDocmeeLocalUpdateValidation() {
+  const checks: Array<{ name: string; args: string[] }> = [
+    { name: 'Install lockfile check', args: ['install', '--frozen-lockfile'] },
+    { name: 'Typecheck', args: ['typecheck'] },
+    { name: 'Build', args: ['build'] }
+  ]
+  const steps: DocmeeUpdateStep[] = []
+  for (const check of checks) {
+    const result = runRepo(check.args)
+    steps.push({
+      name: check.name,
+      status: result.ok ? 'pass' : 'fail',
+      message: result.ok ? `${check.name} passed.` : shortOutput(result.output) || `${check.name} failed.`
+    })
+    if (!result.ok) break
+  }
+  const failed = steps.some((step) => step.status === 'fail')
+  return writeDocmeeUpdate({
+    id: `docmee-update-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    status: failed ? 'local-failed' : 'local-passed',
+    summary: failed
+      ? 'Local validation failed. VPS deployment remains blocked for this update.'
+      : 'Local validation passed. This update can move to local functionality checks and then VPS deployment.',
+    steps
+  })
+}
+
 function shortOutput(output: string) {
   return output.replace(/\s+/g, ' ').trim().slice(0, 220)
 }
@@ -91,7 +354,177 @@ function readJson<T>(file: string, fallback: T) {
   }
 }
 
-function appendPostDeploymentRun(checks: PostDeploymentCheck[]) {
+function readToolsEnv() {
+  if (!existsSync(envFile)) return {} as Record<string, string>
+  return Object.fromEntries(readFileSync(envFile, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#') && line.includes('='))
+    .map((line) => {
+      const index = line.indexOf('=')
+      return [line.slice(0, index).trim(), line.slice(index + 1).trim().replace(/^["']|["']$/g, '')]
+    }))
+}
+
+function plainText(items?: NotionRichText[]) {
+  return (items ?? []).map((item) => item.plain_text ?? '').join('')
+}
+
+function blockText(block: NotionBlock) {
+  if (block.type === 'paragraph') return plainText(block.paragraph?.rich_text)
+  if (block.type === 'heading_1') return plainText(block.heading_1?.rich_text)
+  if (block.type === 'heading_2') return plainText(block.heading_2?.rich_text)
+  if (block.type === 'heading_3') return plainText(block.heading_3?.rich_text)
+  if (block.type === 'bulleted_list_item') return plainText(block.bulleted_list_item?.rich_text)
+  if (block.type === 'numbered_list_item') return plainText(block.numbered_list_item?.rich_text)
+  if (block.type === 'to_do') return plainText(block.to_do?.rich_text)
+  if (block.type === 'quote') return plainText(block.quote?.rich_text)
+  if (block.type === 'callout') return plainText(block.callout?.rich_text)
+  if (block.type === 'code') return plainText(block.code?.rich_text)
+  if (block.type === 'table_row') return (block.table_row?.cells ?? []).map((cell) => plainText(cell)).join(' | ')
+  return ''
+}
+
+function notionPageId(input: string) {
+  const compact = input.match(/[0-9a-f]{32}/i)?.[0]
+  if (compact) return compact.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
+  const dashed = input.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0]
+  return dashed ?? input.trim()
+}
+
+async function notionRequest<T>(apiKey: string, url: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Notion-Version': '2022-06-28'
+    },
+    cache: 'no-store'
+  })
+  if (!response.ok) throw new Error(`Notion returned ${response.status}`)
+  return response.json() as Promise<T>
+}
+
+async function fetchNotionPageText(pageUrl: string, apiKey: string): Promise<NotionPageText> {
+  const rows: string[][] = []
+  const lines: string[] = []
+
+  async function visit(blockId: string) {
+    let cursor = ''
+    do {
+      const query = cursor ? `?page_size=100&start_cursor=${encodeURIComponent(cursor)}` : '?page_size=100'
+      const data = await notionRequest<{ results?: NotionBlock[]; has_more?: boolean; next_cursor?: string | null }>(
+        apiKey,
+        `https://api.notion.com/v1/blocks/${blockId}/children${query}`
+      )
+      for (const block of data.results ?? []) {
+        if (block.type === 'table_row') rows.push((block.table_row?.cells ?? []).map((cell) => plainText(cell).trim()))
+        const text = blockText(block).trim()
+        if (text) lines.push(text)
+        if (block.has_children) await visit(block.id)
+      }
+      cursor = data.has_more && data.next_cursor ? data.next_cursor : ''
+    } while (cursor)
+  }
+
+  await visit(notionPageId(pageUrl))
+  return { text: lines.join('\n'), rows }
+}
+
+function sourceSettings() {
+  return readJson<DevelopmentSources>(developmentSourcesFile, {})
+}
+
+function writeSourceSettings(settings: DevelopmentSources) {
+  mkdirSync(logsRoot, { recursive: true })
+  writeFileSync(developmentSourcesFile, JSON.stringify(settings, null, 2))
+}
+
+function normalizeStageStatus(value: string): 'complete' | 'pending' | 'needs-audit' | null {
+  const text = value.toLowerCase()
+  if (text.includes('complete') || text.includes('accepted') || text.includes('done')) return 'complete'
+  if (text.includes('audit') || text.includes('review')) return 'needs-audit'
+  if (text.includes('pending') || text.includes('missing') || text.includes('planned') || text.includes('partial')) return 'pending'
+  return null
+}
+
+function syncUiQueueFromNotion(page: NotionPageText, sourceUrl: string) {
+  const current = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+  const byId = new Map(current.map((item) => [item.id, item]))
+  const rows = page.rows
+    .map((row) => row.map((cell) => cell.trim()))
+    .filter((row) => /^\d+$/.test(row[0] ?? '') && row.length >= 4)
+  const next = rows.map((row) => {
+    const id = Number(row[0])
+    const existing = byId.get(id)
+    const screen = row[1] || existing?.screen || `Screen ${id}`
+    const phase = row[2] || existing?.phase || '1'
+    const featuresCovered = (row[3] || existing?.featuresCovered || '').replace(/\*/g, '')
+    const promptMatch = page.text.match(new RegExp(`(?:Screen:\\s*)?${screen.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]{0,700}`, 'i'))
+    const nextStep = existing?.nextStep || (promptMatch ? `Design and implement ${screen} from the linked Notion source.` : `Review the linked Notion source and build ${screen}.`)
+    return {
+      id,
+      screen,
+      phase,
+      featuresCovered,
+      status: existing?.status ?? 'planned',
+      priority: existing?.priority ?? (Number(phase) === 1 ? 'critical' : Number(phase) === 2 ? 'high' : 'medium'),
+      source: sourceUrl,
+      nextStep
+    } satisfies UiQueueItem
+  })
+  if (next.length === 0) throw new Error('No 17-screen UI table rows were found in the Notion source.')
+  writeFileSync(uiDevelopmentRecordsFile, JSON.stringify(next.sort((a, b) => a.id - b.id), null, 2))
+  return next.length
+}
+
+function syncStageQueueFromNotion(lane: 'backend' | 'frontend', page: NotionPageText, sourceUrl: string) {
+  const current = readJson<QueueFeature[]>(featureCoverageFile, [])
+  const byId = new Map(current.map((item) => [item.id, item]))
+  let updates = 0
+  for (const row of page.rows.map((item) => item.map((cell) => cell.trim())).filter((item) => /^\d+$/.test(item[0] ?? ''))) {
+    const id = Number(row[0])
+    const existing = byId.get(id)
+    if (!existing) continue
+    const joined = row.join(' | ')
+    const stageStatus = normalizeStageStatus(joined)
+    const detail = row.slice(1).filter(Boolean).join(' | ')
+    const sourceNote = `Notion source (${new Date().toISOString()}): ${sourceUrl} | ${detail}`
+    byId.set(id, {
+      ...existing,
+      backendStatus: lane === 'backend' ? stageStatus ?? existing.backendStatus : existing.backendStatus,
+      frontendStatus: lane === 'frontend' ? stageStatus ?? existing.frontendStatus : existing.frontendStatus,
+      evidence: lane === 'backend' && detail ? `${existing.evidence}\n\n${sourceNote}` : existing.evidence,
+      nextStep: lane === 'frontend' && detail ? `${existing.nextStep}\n\n${sourceNote}` : existing.nextStep
+    })
+    updates += 1
+  }
+  if (updates === 0) throw new Error(`No parseable ${lane} queue rows were found in the Notion source.`)
+  const next = Array.from(byId.values()).sort((a, b) => a.id - b.id)
+  writeFileSync(featureCoverageFile, JSON.stringify(next, null, 2))
+  return updates || next.length
+}
+
+async function setDevelopmentSource(lane: DevelopmentLane, sourceUrl: string) {
+  const env = readToolsEnv()
+  const apiKey = env.NOTION_API_KEY || process.env.NOTION_API_KEY
+  if (!apiKey) throw new Error('NOTION_API_KEY is missing in Settings.')
+  const page = await fetchNotionPageText(sourceUrl, apiKey)
+  const itemCount = lane === 'ui'
+    ? syncUiQueueFromNotion(page, sourceUrl)
+    : syncStageQueueFromNotion(lane, page, sourceUrl)
+  const settings = sourceSettings()
+  settings[lane] = {
+    url: sourceUrl,
+    syncedAt: new Date().toISOString(),
+    status: 'synced',
+    message: `Synced ${itemCount} queue item${itemCount === 1 ? '' : 's'} from Notion.`,
+    itemCount
+  }
+  writeSourceSettings(settings)
+  return itemCount
+}
+
+function appendPostDeploymentRun(checks: PostDeploymentCheck[], target: 'local' | 'vps' | 'env' = 'local') {
   const runs = readJson<PostDeploymentRun[]>(postDeploymentFile, [])
   const summary = {
     pass: checks.filter((check) => check.status === 'pass').length,
@@ -102,10 +535,180 @@ function appendPostDeploymentRun(checks: PostDeploymentCheck[]) {
     id: `post-${Date.now()}`,
     createdAt: new Date().toISOString(),
     summary,
-    checks
+    checks,
+    target
   }
   writeFileSync(postDeploymentFile, JSON.stringify([run, ...runs].slice(0, 50), null, 2))
   return run
+}
+
+function isLocalRuntimeValue(value: string) {
+  return /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(value)
+}
+
+function configuredMessage(name: string) {
+  return `${name} is configured. Secret value is hidden.`
+}
+
+function requiredEnvCheck(env: Record<string, string>, name: string, label = name): PostDeploymentCheck {
+  return env[name]?.trim()
+    ? { name: label, status: 'pass', message: configuredMessage(label) }
+    : { name: label, status: 'fail', message: `${label} is missing.` }
+}
+
+function runEnvReadinessChecks() {
+  const env = readToolsEnv()
+  const checks: PostDeploymentCheck[] = []
+  const databaseUrl = env.DATABASE_URL?.trim() ?? ''
+  const supabaseUrl = env.SUPABASE_URL?.trim() ?? ''
+  const redisUrl = env.REDIS_URL?.trim() ?? ''
+  const appUrl = (env.APP_URL || env.PERMANENT_DOMAIN_URL || env.NGROK_URL || env.VPS_DOMAIN || '').trim()
+  const jwtSecret = (env.JWT_SECRET || env.JWT_ACCESS_SECRET || '').trim()
+  const jwtRefreshSecret = env.JWT_REFRESH_SECRET?.trim() ?? ''
+
+  checks.push({
+    name: 'DATABASE_URL',
+    status: !databaseUrl
+      ? 'fail'
+      : !/^postgres(ql)?:\/\//i.test(databaseUrl)
+        ? 'fail'
+        : isLocalRuntimeValue(databaseUrl)
+          ? 'warning'
+          : 'pass',
+    message: !databaseUrl
+      ? 'DATABASE_URL is missing.'
+      : !/^postgres(ql)?:\/\//i.test(databaseUrl)
+        ? 'DATABASE_URL must be a Postgres connection string.'
+        : isLocalRuntimeValue(databaseUrl)
+          ? 'DATABASE_URL points to local database. Use Supabase Postgres before VPS deployment.'
+          : 'DATABASE_URL is configured for a remote Postgres database.'
+  })
+
+  checks.push({
+    name: 'SUPABASE_URL',
+    status: !supabaseUrl ? 'fail' : /^https:\/\/[^/]+\.supabase\.co\/?$/i.test(supabaseUrl) ? 'pass' : 'warning',
+    message: !supabaseUrl
+      ? 'SUPABASE_URL is missing.'
+      : /^https:\/\/[^/]+\.supabase\.co\/?$/i.test(supabaseUrl)
+        ? 'SUPABASE_URL points to Supabase Cloud.'
+        : 'SUPABASE_URL is present but does not look like a Supabase Cloud URL.'
+  })
+  checks.push(requiredEnvCheck(env, 'SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY'))
+  checks.push(requiredEnvCheck(env, 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE_KEY'))
+
+  checks.push({
+    name: 'REDIS_URL',
+    status: !redisUrl
+      ? 'fail'
+      : /^redis(s)?:\/\//i.test(redisUrl)
+        ? 'pass'
+        : 'fail',
+    message: !redisUrl
+      ? 'REDIS_URL is missing.'
+      : /^redis(s)?:\/\//i.test(redisUrl)
+        ? isLocalRuntimeValue(redisUrl)
+          ? 'REDIS_URL is configured for VPS-local Redis.'
+          : 'REDIS_URL is configured for a remote Redis service.'
+        : 'REDIS_URL must start with redis:// or rediss://.'
+  })
+
+  checks.push({
+    name: 'NODE_ENV',
+    status: env.NODE_ENV === 'production' ? 'pass' : 'warning',
+    message: env.NODE_ENV === 'production'
+      ? 'NODE_ENV is set to production.'
+      : 'NODE_ENV is not production. Set it to production before final VPS deployment.'
+  })
+  checks.push({
+    name: 'LLM_STUB',
+    status: env.LLM_STUB === 'false' ? 'pass' : 'warning',
+    message: env.LLM_STUB === 'false'
+      ? 'LLM_STUB is disabled for real AI responses.'
+      : 'LLM_STUB is not false. Disable it before production use.'
+  })
+  checks.push({
+    name: 'APP_URL',
+    status: !appUrl ? 'fail' : isLocalRuntimeValue(appUrl) ? 'warning' : /^https?:\/\//i.test(appUrl) ? 'pass' : 'warning',
+    message: !appUrl
+      ? 'APP_URL or public URL is missing.'
+      : isLocalRuntimeValue(appUrl)
+        ? 'APP_URL points to localhost. Use ngrok or the permanent domain for VPS deployment.'
+        : /^https?:\/\//i.test(appUrl)
+          ? 'APP_URL/public URL is configured.'
+          : 'APP_URL/public URL is present but should include http:// or https://.'
+  })
+  checks.push({
+    name: 'JWT_SECRET',
+    status: jwtSecret.length >= 32 && !/local|dev|secret/i.test(jwtSecret) ? 'pass' : 'fail',
+    message: jwtSecret
+      ? jwtSecret.length >= 32 && !/local|dev|secret/i.test(jwtSecret)
+        ? configuredMessage('JWT_SECRET')
+        : 'JWT_SECRET must be a strong production secret with at least 32 characters.'
+      : 'JWT_SECRET is missing.'
+  })
+  checks.push({
+    name: 'JWT_REFRESH_SECRET',
+    status: jwtRefreshSecret.length >= 32 && jwtRefreshSecret !== jwtSecret && !/local|dev|secret/i.test(jwtRefreshSecret) ? 'pass' : 'fail',
+    message: jwtRefreshSecret
+      ? jwtRefreshSecret.length >= 32 && jwtRefreshSecret !== jwtSecret && !/local|dev|secret/i.test(jwtRefreshSecret)
+        ? configuredMessage('JWT_REFRESH_SECRET')
+        : 'JWT_REFRESH_SECRET must be strong, at least 32 characters, and different from JWT_SECRET.'
+      : 'JWT_REFRESH_SECRET is missing.'
+  })
+
+  const missingVps = ['VPS_HOST', 'VPS_USER', 'VPS_SSH_KEY_PATH', 'VPS_DEPLOY_PATH'].filter((name) => !env[name]?.trim())
+  checks.push({
+    name: 'VPS settings',
+    status: missingVps.length > 0 ? 'fail' : 'pass',
+    message: missingVps.length > 0
+      ? `Missing VPS settings: ${missingVps.join(', ')}.`
+      : 'VPS host, user, SSH key, and deploy path are configured.'
+  })
+
+  const failCount = checks.filter((check) => check.status === 'fail').length
+  const warningCount = checks.filter((check) => check.status === 'warning').length
+  checks.unshift({
+    name: 'Production env readiness',
+    status: failCount > 0 ? 'fail' : warningCount > 0 ? 'warning' : 'pass',
+    message: failCount > 0
+      ? `${failCount} required .env value${failCount === 1 ? '' : 's'} need attention before VPS deployment.`
+      : warningCount > 0
+        ? `.env has ${warningCount} warning${warningCount === 1 ? '' : 's'} to review before final production use.`
+        : '.env is ready for production/VPS deployment.'
+  })
+
+  return appendPostDeploymentRun(checks, 'env')
+}
+
+function vpsBaseUrl(env: Record<string, string>) {
+  const selected = env.PUBLIC_URL_MODE === 'ngrok'
+    ? env.NGROK_URL
+    : env.PUBLIC_URL_MODE === 'domain'
+      ? env.PERMANENT_DOMAIN_URL || env.VPS_DOMAIN
+      : env.APP_URL
+  if (selected && /^https?:\/\//i.test(selected) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(selected)) {
+    return selected.replace(/\/$/, '')
+  }
+  const configured = env.VPS_DOMAIN || env.VPS_HOST
+  if (!configured) return ''
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/$/, '')
+  return `${env.VPS_DOMAIN ? 'https' : 'http'}://${configured}`.replace(/\/$/, '')
+}
+
+function vpsSsh(args: string[], env: Record<string, string>) {
+  const missing = ['VPS_HOST', 'VPS_USER', 'VPS_SSH_KEY_PATH', 'VPS_DEPLOY_PATH'].filter((name) => !env[name])
+  if (missing.length > 0) {
+    return { ok: false, output: `Missing VPS settings: ${missing.join(', ')}` }
+  }
+  const key = env.VPS_SSH_KEY_PATH.replace(/^~/, process.env.USERPROFILE || '')
+  const target = `${env.VPS_USER}@${env.VPS_HOST}`
+  const result = spawnSync('ssh', ['-i', key, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', target, ...args], {
+    encoding: 'utf8',
+    shell: true,
+    stdio: 'pipe',
+    windowsHide: true
+  })
+  return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
 }
 
 async function fetchCheck(
@@ -220,7 +823,51 @@ async function runPostDeploymentChecks() {
     checks.push({ name: 'Authenticated API checks', status: 'warning', message: 'Skipped because demo login failed.' })
   }
 
-  return appendPostDeploymentRun(checks)
+  return appendPostDeploymentRun(checks, 'local')
+}
+
+async function runVpsPostDeploymentChecks() {
+  const env = readToolsEnv()
+  const checks: PostDeploymentCheck[] = []
+  const baseUrl = vpsBaseUrl(env)
+
+  if (!baseUrl) {
+    checks.push({ name: 'VPS target', status: 'fail', message: 'VPS_DOMAIN or VPS_HOST is missing.' })
+    return appendPostDeploymentRun(checks, 'vps')
+  }
+
+  checks.push({ name: 'VPS target', status: 'pass', message: `Checking ${baseUrl}` })
+
+  const sshStatus = vpsSsh(['"pwd; pm2 status; redis-cli ping; df -h; free -h"'], env)
+  checks.push({
+    name: 'VPS runtime status',
+    status: sshStatus.ok ? 'pass' : 'fail',
+    message: sshStatus.ok ? 'SSH runtime status completed.' : shortOutput(sshStatus.output) || 'SSH runtime status failed.',
+    detail: sshStatus.output.slice(0, 1000)
+  })
+
+  checks.push(await fetchCheck('VPS login page', `${baseUrl}/login`))
+  checks.push(await fetchCheck('VPS inbox page', `${baseUrl}/inbox`))
+
+  const healthCandidates = [
+    `${baseUrl}/health`,
+    `${baseUrl}/api/health`,
+    `http://${env.VPS_HOST}:3001/health`
+  ].filter(Boolean)
+  const healthResults: CheckResponse[] = []
+  for (const url of healthCandidates) {
+    const result = await fetchCheck(`VPS API health ${url}`, url)
+    healthResults.push(result)
+    if (result.status === 'pass') break
+  }
+  const healthPass = healthResults.find((result) => result.status === 'pass')
+  checks.push(healthPass ?? {
+    name: 'VPS API health',
+    status: 'fail',
+    message: healthResults.map((result) => `${result.name}: ${result.message}`).join(' | ').slice(0, 500)
+  })
+
+  return appendPostDeploymentRun(checks, 'vps')
 }
 
 function claudeSmokeBlocker(output: string) {
@@ -234,15 +881,105 @@ function claudeSmokeBlocker(output: string) {
   }
 }
 
-function saveStartReadiness(phase: string, steps: Array<{ name: string; status: 'pass' | 'fail'; message: string }>) {
+function saveStartReadiness(phase: string, steps: Array<{ name: string; status: 'pass' | 'fail'; message: string }>, workflow = 'build-control') {
   const failed = steps.find((step) => step.status === 'fail')
-  writeFileSync(startReadinessFile, JSON.stringify({
+  writeFileSync(startReadinessFileFor(workflow), JSON.stringify({
     createdAt: new Date().toISOString(),
     phase,
     ready: !failed,
     steps
   }, null, 2))
   return !failed
+}
+
+function stageFor(item: DeploymentFeature, field: 'backendStatus' | 'frontendStatus'): StageStatus {
+  const explicit = item[field]
+  if (explicit === 'complete' || explicit === 'pending' || explicit === 'needs-audit') return explicit
+  if (field === 'backendStatus') return item.status === 'complete' ? 'complete' : 'pending'
+  return item.status === 'complete' ? 'needs-audit' : 'pending'
+}
+
+function summarizeStage(features: DeploymentFeature[], field: 'backendStatus' | 'frontendStatus') {
+  const counts = features.reduce(
+    (acc, item) => {
+      const stage = stageFor(item, field)
+      if (stage === 'needs-audit') acc.needsAudit += 1
+      else acc[stage] += 1
+      return acc
+    },
+    { complete: 0, pending: 0, needsAudit: 0 }
+  )
+  return { designedFeatures: features.length, ...counts }
+}
+
+function appendSentinelAudit(entry: { subsystem: string; action: string; outcome: string; message: string }) {
+  const audit = readJson<Array<Record<string, unknown>>>(sentinelAuditFile, [])
+  writeFileSync(sentinelAuditFile, JSON.stringify([{ ts: new Date().toISOString(), ...entry }, ...audit].slice(0, 200), null, 2))
+}
+
+function refreshDerivedDeploymentRecords() {
+  const features = readJson<DeploymentFeature[]>(featureCoverageFile, [])
+  if (features.length === 0) return { ok: false, message: 'No feature coverage records found.' }
+  const backend = summarizeStage(features, 'backendStatus')
+  const frontend = summarizeStage(features, 'frontendStatus')
+  writeFileSync(deploymentRecordsFile, JSON.stringify({
+    record: 'Docmee deployment stage grouping',
+    updatedAt: new Date().toISOString().slice(0, 10),
+    source: 'tools/logs/rev1-feature-coverage.json',
+    landingPage: {
+      title: 'Docmee Deployment',
+      route: '/docmee-deployment',
+      purpose: 'User chooses between the Backend deployment lane and the Frontend deployment lane before starting deployment review.'
+    },
+    sharedWorkflow: {
+      enabled: true,
+      purpose: 'Backend and Frontend use the same screen arrangement, guided workprocess, workflow steps, progress gauge, grouped records, and heartbeat-style stage monitor.',
+      steps: ['Run readiness', 'Review grouped records', 'Verify or launch the stage', 'Deploy or verify VPS', 'Export report']
+    },
+    groups: [
+      {
+        id: 'backend',
+        title: 'Docmee Deployment - Backend',
+        route: '/docmee-deployment-backend',
+        statusField: 'backendStatus',
+        completeMeaning: 'Backend/local-code implementation is complete. Evidence comes from the completed feature coverage record.',
+        detailFields: ['id', 'phase', 'area', 'feature', 'priority', 'backendStatus', 'evidence', 'nextStep'],
+        summary: backend
+      },
+      {
+        id: 'frontend',
+        title: 'Docmee Deployment - Frontend',
+        route: '/docmee-deployment-frontend',
+        statusField: 'frontendStatus',
+        completeMeaning: 'Frontend/product acceptance is complete only after the running app passes UI, mobile, workflow, language, and design review.',
+        detailFields: ['id', 'phase', 'area', 'feature', 'priority', 'frontendStatus', 'evidence', 'nextStep'],
+        summary: frontend
+      }
+    ],
+    notes: [
+      'Backend and frontend records are intentionally separate so backend completion does not overclaim product/UI readiness.',
+      'The full completed item details remain in the feature coverage source record and are rendered by each deployment page.',
+      'Frontend records remain incomplete until each visible screen, route, workflow, mobile layout, and EN/ES label set is accepted in the running app.'
+    ]
+  }, null, 2))
+
+  const frontendReadinessFile = startReadinessFileFor('frontend-development')
+  const readiness = readJson<StartReadiness>(frontendReadinessFile, { ready: false, steps: [] })
+  const openFrontend = frontend.pending + frontend.needsAudit
+  const message = openFrontend > 0 ? `${openFrontend} frontend item(s) need audit or acceptance.` : 'Frontend acceptance queue is clear.'
+  const steps = readiness.steps ?? []
+  const index = steps.findIndex((step) => step.name === 'Frontend Queue')
+  const queueStep = { name: 'Frontend Queue', status: 'pass' as const, message }
+  if (index >= 0) steps[index] = queueStep
+  else steps.push(queueStep)
+  writeFileSync(frontendReadinessFile, JSON.stringify({ ...readiness, steps }, null, 2))
+  appendSentinelAudit({
+    subsystem: 'healer',
+    action: 'refresh-derived-deployment-records',
+    outcome: 'success',
+    message: `Derived records refreshed. Frontend ${frontend.complete}/${frontend.designedFeatures} complete, ${openFrontend} open.`
+  })
+  return { ok: true, message: 'Healer refreshed derived deployment records.' }
 }
 
 function runToolDetached(args: string[]) {
@@ -531,6 +1268,18 @@ function postDeploymentDiscordMessage(run: PostDeploymentRun) {
   return lines.join('\n').slice(0, 1800)
 }
 
+function vpsDeploymentSuccessMessage(run: PostDeploymentRun) {
+  const env = readToolsEnv()
+  const appUrl = vpsBaseUrl(env)
+  return [
+    'VPS deployment completed and verified.',
+    `Result: ${run.summary.pass} passed, ${run.summary.warning} warnings, ${run.summary.fail} issues.`,
+    appUrl ? `App URL: ${appUrl}` : '',
+    appUrl ? `Login: ${appUrl}/login` : '',
+    `Verified at: ${new Date(run.createdAt).toLocaleString()}`
+  ].filter(Boolean).join('\n')
+}
+
 function isProcessAlive(pid?: number) {
   if (!pid) return false
   try {
@@ -551,6 +1300,36 @@ function activeBuildRun() {
   }
 }
 
+function activeFeatureRun() {
+  if (!existsSync(featureRunFile)) return null
+  try {
+    const data = JSON.parse(readFileSync(featureRunFile, 'utf8')) as { pid?: number; status?: string; phase?: string }
+    return isProcessAlive(data.pid) && ['starting', 'running', 'paused'].includes(data.status ?? '') ? data : null
+  } catch {
+    return null
+  }
+}
+
+function activeUiRun() {
+  if (!existsSync(uiRunFile)) return null
+  try {
+    const data = JSON.parse(readFileSync(uiRunFile, 'utf8')) as { pid?: number; status?: string; phase?: string }
+    return isProcessAlive(data.pid) && ['starting', 'running', 'paused'].includes(data.status ?? '') ? data : null
+  } catch {
+    return null
+  }
+}
+
+function activeFrontendRun() {
+  if (!existsSync(frontendRunFile)) return null
+  try {
+    const data = JSON.parse(readFileSync(frontendRunFile, 'utf8')) as { pid?: number; status?: string; phase?: string }
+    return isProcessAlive(data.pid) && ['starting', 'running', 'paused'].includes(data.status ?? '') ? data : null
+  } catch {
+    return null
+  }
+}
+
 function stopProcessTree(pid?: number) {
   if (!pid || !isProcessAlive(pid)) return false
   if (process.platform === 'win32') {
@@ -565,9 +1344,251 @@ function stopProcessTree(pid?: number) {
   }
 }
 
+function archiveStateFile(file: string, archiveDir: string) {
+  if (!existsSync(file)) return false
+  renameSync(file, path.join(archiveDir, path.basename(file)))
+  return true
+}
+
+function stopTrackedRunProcesses() {
+  const stopped: string[] = []
+  const buildRun = readJson<{ pid?: number }>(buildRunFile, {})
+  const featureRun = readJson<{ pid?: number }>(featureRunFile, {})
+  const uiRun = readJson<{ pid?: number }>(uiRunFile, {})
+  const appLaunch = readJson<{ pids?: Record<string, number | undefined> }>(appLaunchFile, {})
+  if (stopProcessTree(buildRun.pid)) stopped.push('build watcher')
+  if (stopProcessTree(featureRun.pid)) stopped.push('feature watcher')
+  if (stopProcessTree(uiRun.pid)) stopped.push('UI watcher')
+  for (const [name, pid] of Object.entries(appLaunch.pids ?? {})) {
+    if (stopProcessTree(pid)) stopped.push(name)
+  }
+  return stopped
+}
+
+function resetDeploymentState() {
+  mkdirSync(deployResetArchiveRoot, { recursive: true })
+  const archiveDir = path.join(deployResetArchiveRoot, new Date().toISOString().replace(/[:.]/g, '-'))
+  mkdirSync(archiveDir, { recursive: true })
+  const stopped = stopTrackedRunProcesses()
+  const targets = [
+    startReadinessFile,
+    buildRunFile,
+    featureRunFile,
+    uiRunFile,
+    claudeUsageGuardFile,
+    appLaunchFile,
+    postDeploymentFile,
+    featureCoverageFile,
+    docmeeUpdateFile,
+    path.join(logsRoot, 'deploy-lock.json'),
+    path.join(logsRoot, 'predeployment.json'),
+    path.join(logsRoot, 'predeployment-running.json'),
+    path.join(logsRoot, 'ready.json'),
+    path.join(logsRoot, 'diagnostics.json'),
+    path.join(logsRoot, 'diagnostics-history.json'),
+    path.join(logsRoot, 'six-gates.json'),
+    path.join(logsRoot, 'sentinel-audit.json'),
+    path.join(logsRoot, 'sentinel-issues.json'),
+    path.join(logsRoot, 'cost.json'),
+    path.join(logsRoot, 'phases.json'),
+    path.join(logsRoot, 'build-control.json')
+  ]
+  const archived = targets.filter((file) => archiveStateFile(file, archiveDir)).length
+  const now = new Date().toISOString()
+  writeFileSync(path.join(logsRoot, 'phases.json'), JSON.stringify(phaseIds.map((id) => ({ id, status: 'not-started' })), null, 2))
+  writeFileSync(path.join(logsRoot, 'build-control.json'), JSON.stringify(phaseIds.map((phaseId) => ({
+    phaseId,
+    status: 'pending',
+    updatedAt: now,
+    notes: 'Reset to fresh deployment state'
+  })), null, 2))
+  writeFileSync(buildRunFile, JSON.stringify({
+    status: 'stopped',
+    phase: 'P01',
+    heartbeatAt: now,
+    message: 'Fresh deployment reset completed. Build automation is not running.'
+  }, null, 2))
+  writeFileSync(featureRunFile, JSON.stringify({
+    status: 'stopped',
+    phase: 'Phase 1',
+    workflow: 'features-development',
+    heartbeatAt: now,
+    message: 'Fresh deployment reset completed. Feature automation is not running.'
+  }, null, 2))
+  writeFileSync(claudeUsageGuardFile, JSON.stringify({
+    thresholdPercent: 95,
+    notes: 'Reset to fresh deployment state. DevTools will relearn usage after the next run.',
+    updatedAt: now
+  }, null, 2))
+  writeFileSync(postDeploymentFile, JSON.stringify([], null, 2))
+  writeFileSync(path.join(logsRoot, 'predeployment.json'), JSON.stringify([], null, 2))
+  writeFileSync(path.join(logsRoot, 'sentinel-issues.json'), JSON.stringify([], null, 2))
+  writeFileSync(path.join(logsRoot, 'cost.json'), JSON.stringify({ runtime: [], development: [] }, null, 2))
+  writeFileSync(path.join(logsRoot, 'deployment-reset.json'), JSON.stringify({
+    createdAt: now,
+    archiveDir,
+    archivedFiles: archived,
+    stoppedProcesses: stopped,
+    preserved: ['.env.tools', 'VPS settings', 'Discord tokens', 'Notion/GitHub setup', 'licenses', 'source code', 'installed dependencies']
+  }, null, 2))
+  return { archived, archiveDir, stopped }
+}
+
 export async function POST(request: Request) {
   const form = await request.formData()
   const action = String(form.get('action') ?? '')
+
+  if (action === 'set-development-source') {
+    const lane = String(form.get('lane') ?? '') as DevelopmentLane
+    const sourceUrl = String(form.get('sourceUrl') ?? '').trim()
+    const redirectTo = String(form.get('redirectTo') ?? `/docmee-deployment-${lane}`)
+    if (!['backend', 'frontend', 'ui'].includes(lane)) return redirect(request, 'error', 'Unknown development lane.', redirectTo)
+    if (!sourceUrl || !/^https:\/\/.*notion\./i.test(sourceUrl)) return redirect(request, 'error', 'Enter a valid Notion source URL.', redirectTo)
+    try {
+      const count = await setDevelopmentSource(lane, sourceUrl)
+      return redirect(request, 'message', `${lane.toUpperCase()} Notion source saved and ${count} queue item${count === 1 ? '' : 's'} synced.`, redirectTo)
+    } catch (error) {
+      const settings = sourceSettings()
+      settings[lane] = {
+        url: sourceUrl,
+        syncedAt: new Date().toISOString(),
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      }
+      writeSourceSettings(settings)
+      return redirect(request, 'error', `Notion source saved, but sync failed: ${error instanceof Error ? error.message : String(error)}`, redirectTo)
+    }
+  }
+
+  if (action === 'claude-design-run') {
+    const basePrompt = String(form.get('prompt') ?? '')
+    const mockup = String(form.get('mockup') ?? '').trim()
+    // Option B: implement an approved Claude Design mockup. The pasted mockup is
+    // appended so Claude Code builds that exact design rather than inventing one.
+    const prompt = mockup
+      ? `${basePrompt}\n\n## Approved Claude Design mockup — implement this exactly in the Docmee product (apps/inboxos)\n${mockup}`
+      : basePrompt
+    if (!prompt.trim()) return redirect(request, 'error', 'No design prompt was provided.')
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A Claude Design run is already in progress. Wait for it to finish.')
+    }
+    // Hand the design prompt to Claude Code and run it once (single-shot, so it
+    // can't loop). It designs/improves the item and commits the change.
+    mkdirSync(promptsDir, { recursive: true })
+    writeFileSync(claudeDesignPromptFile, prompt)
+    const pid = runToolDetached(['design-run'])
+    const uiScreenId = String(form.get('uiScreenId') ?? '').trim()
+    const uiScreen = String(form.get('uiScreen') ?? '').trim()
+    writeFileSync(claudeDesignRunFile, JSON.stringify({
+      pid,
+      workflow: 'claude-design',
+      status: 'starting',
+      startedAt: new Date().toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      message: 'Claude Design run starting — Claude Code is designing this item.',
+      // Carries the UI screen identity to design-run so it can write the UI
+      // heartbeat + cost marker for the right screen.
+      ...(uiScreenId ? { uiScreenId } : {}),
+      ...(uiScreen ? { uiScreen } : {})
+    }, null, 2))
+    return redirect(request, 'message', 'Claude Design run started — Claude Code is now designing this item and will commit the change when done.')
+  }
+
+  if (action === 'mockup-build') {
+    const id = Number(form.get('id'))
+    const basePrompt = String(form.get('prompt') ?? '')
+    if (!Number.isInteger(id) || !basePrompt.trim()) return redirect(request, 'error', 'Invalid mockup build request.')
+    const mockupFile = path.join(mockupsDir, `screen-${id}.html`)
+    if (!existsSync(mockupFile)) return redirect(request, 'error', `No mockup found for screen ${id}. Generate the mockup first.`)
+    const mockup = readFileSync(mockupFile, 'utf8')
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A Claude run is already in progress. Wait for it to finish.')
+    }
+    const buildRecords = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const uiScreen = buildRecords.find((row) => row.id === id)?.screen ?? `Screen ${id}`
+    // The approved HTML mockup is the reference Claude Code builds the real
+    // component against — single-shot, then it marks the screen needs-review.
+    const prompt = `${basePrompt}\n\n## Approved HTML mockup (source: tools/logs/mockups/screen-${id}.html) — build the real Docmee component to match this mockup exactly\n${mockup}`
+    mkdirSync(promptsDir, { recursive: true })
+    writeFileSync(claudeDesignPromptFile, prompt)
+    const pid = runToolDetached(['design-run'])
+    writeFileSync(claudeDesignRunFile, JSON.stringify({
+      pid,
+      workflow: 'claude-design',
+      status: 'starting',
+      startedAt: new Date().toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      message: `Building screen ${id} from the approved mockup.`,
+      uiScreenId: id,
+      uiScreen
+    }, null, 2))
+    return redirect(request, 'message', `Approved — Claude Code is now building screen ${id} from the mockup and will mark it for review when done.`)
+  }
+
+  if (action === 'mockup-save') {
+    const id = Number(form.get('id'))
+    if (!Number.isInteger(id)) return redirect(request, 'error', 'Invalid mockup save request.')
+    const src = path.join(mockupsDir, `screen-${id}.html`)
+    if (!existsSync(src)) return redirect(request, 'error', `No mockup found for screen ${id}. Generate it first.`)
+    // Build a readable, reusable filename from the screen record: Screen_Phase_Features.
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const item = records.find((row) => row.id === id)
+    const slug = (value: string, max = 60) =>
+      String(value ?? '').trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max).replace(/-+$/g, '') || 'na'
+    const fileName = item
+      ? `${slug(item.screen)}_Phase-${slug(String(item.phase))}_${slug(item.featuresCovered)}.html`
+      : `screen-${id}.html`
+    mkdirSync(savedMockupsDir, { recursive: true })
+    writeFileSync(path.join(savedMockupsDir, fileName), readFileSync(src, 'utf8'))
+    return redirect(request, 'message', `Saved mockup reference to mockup-library/${fileName}`)
+  }
+
+  if (action === 'ui-screen-status') {
+    const id = Number(form.get('id'))
+    const status = String(form.get('status') ?? '')
+    if (!Number.isInteger(id) || !['complete', 'planned', 'needs-review'].includes(status)) {
+      return redirect(request, 'error', 'Invalid screen status update.')
+    }
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    if (!records.some((row) => row.id === id)) return redirect(request, 'error', `Screen ${id} not found.`)
+    const next = records.map((row) => (row.id === id ? { ...row, status: status as UiQueueItem['status'] } : row))
+    writeFileSync(uiDevelopmentRecordsFile, JSON.stringify(next.sort((a, b) => a.id - b.id), null, 2))
+    const label = status === 'complete' ? 'approved and marked complete' : status === 'planned' ? 'queued to rebuild' : 'reopened for review'
+    return redirect(request, 'message', `Screen ${id} ${label}.`)
+  }
+
+  if (action === 'ui-reset-screens') {
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const next = records.map((row) => ({ ...row, status: 'planned' as UiQueueItem['status'] }))
+    writeFileSync(uiDevelopmentRecordsFile, JSON.stringify(next.sort((a, b) => a.id - b.id), null, 2))
+    return redirect(request, 'message', `Reset ${next.length} screen(s) back to planned — the design process can start over from Start UI Development.`)
+  }
+
+  if (action === 'ui-build-all') {
+    const active = activeUiRun()
+    if (active) return redirect(request, 'error', 'UI development automation is already running. Stop it before starting another build.')
+    // Re-queue every screen not yet approved (planned + needs-review) to planned
+    // so the sequential builder processes them all; already-approved (complete)
+    // screens are left untouched. Each built screen lands in needs-review.
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const requeued = records.map((row) => (row.status === 'complete' ? row : { ...row, status: 'planned' as UiQueueItem['status'] }))
+    writeFileSync(uiDevelopmentRecordsFile, JSON.stringify(requeued.sort((a, b) => a.id - b.id), null, 2))
+    const count = requeued.filter((row) => row.status === 'planned').length
+    if (count === 0) return redirect(request, 'message', 'All screens are already approved (complete) — nothing to build.')
+    const pid = runToolDetached(['ui-development', 'watch'])
+    writeFileSync(uiRunFile, JSON.stringify({
+      pid,
+      phase: 'UI-DEVELOPMENT',
+      workflow: 'ui-development',
+      status: 'starting',
+      startedAt: new Date().toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      message: `Sequential build of ${count} screen(s) started`
+    }, null, 2))
+    return redirect(request, 'message', `Building ${count} screen(s) sequentially — each lands in review for your approval when done.`)
+  }
 
   if (action === 'app-launch') {
     const result = await launchProductApp()
@@ -594,6 +1615,32 @@ export async function POST(request: Request) {
     )
   }
 
+  if (action === 'vps-post-deploy-check') {
+    const run = await runVpsPostDeploymentChecks()
+    runTool(['discord', 'send', '--type', run.summary.fail > 0 ? 'critical' : 'development', '--message', postDeploymentDiscordMessage(run)])
+    const failed = run.summary.fail > 0
+    return redirect(
+      request,
+      failed ? 'error' : 'message',
+      failed
+        ? `VPS verification found ${run.summary.fail} issue${run.summary.fail === 1 ? '' : 's'}.`
+        : 'VPS verification passed.'
+    )
+  }
+
+  if (action === 'env-readiness-check') {
+    const run = runEnvReadinessChecks()
+    runTool(['discord', 'send', '--type', run.summary.fail > 0 ? 'critical' : 'development', '--message', postDeploymentDiscordMessage(run)])
+    const failed = run.summary.fail > 0
+    return redirect(
+      request,
+      failed ? 'error' : 'message',
+      failed
+        ? `.env readiness found ${run.summary.fail} required issue${run.summary.fail === 1 ? '' : 's'}.`
+        : `.env readiness passed with ${run.summary.warning} warning${run.summary.warning === 1 ? '' : 's'}.`
+    )
+  }
+
   if (action === 'sentinel-scan') {
     const result = scanSentinel()
     return redirect(
@@ -603,6 +1650,22 @@ export async function POST(request: Request) {
         ? `Sentinel found ${result.activeIssueCount} active issue${result.activeIssueCount === 1 ? '' : 's'}.`
         : 'Sentinel scan completed with no active issues.'
     )
+  }
+
+  if (action === 'deployment-reset') {
+    if (String(form.get('confirm')) !== 'RESET DEPLOYMENT') {
+      return redirect(request, 'error', 'Reset was not confirmed. Type RESET DEPLOYMENT to continue.')
+    }
+    try {
+      const result = resetDeploymentState()
+      return redirect(
+        request,
+        'message',
+        `Fresh deployment reset completed. ${result.archived} state file(s) archived and ${result.stopped.length} process(es) stopped.`
+      )
+    } catch (error) {
+      return redirect(request, 'error', `Fresh deployment reset failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   if (action === 'gates-run') {
@@ -616,8 +1679,21 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'DevTools is ready' : 'Readiness check found critical issues')
   }
 
+  if (action === 'diagnose-run' || action === 'diagnose-quick' || action === 'diagnose-fix') {
+    const category = String(form.get('category') ?? '').trim()
+    const args = ['diagnose']
+    if (action === 'diagnose-quick') args.push('--quick')
+    if (action === 'diagnose-fix') args.push('--fix')
+    if (category) args.push('--category', category)
+    const result = runTool(args)
+    const ranWhat = category ? 'Diagnostic category' : action === 'diagnose-quick' ? 'Quick diagnostics' : action === 'diagnose-fix' ? 'Diagnostic fix guidance' : 'Diagnostics'
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `${ranWhat} completed` : `${ranWhat} found issues`, '/diagnostics')
+  }
+
   if (action === 'start-readiness') {
     const phase = String(form.get('phase') ?? 'P01')
+    const workflow = String(form.get('workflow') ?? 'build-control')
+    const redirectTo = String(form.get('redirectTo') ?? '')
     const steps: Array<{ name: string; status: 'pass' | 'fail'; message: string }> = []
 
     const ready = runTool(['ready', '--json'])
@@ -627,7 +1703,74 @@ export async function POST(request: Request) {
       message: ready.ok ? 'Ready Check passed. Claude Pro, Notion, GitHub, prompts, and Discord are usable.' : shortOutput(ready.output) || 'Ready Check found a blocker.'
     })
 
-    if (ready.ok) {
+    if (ready.ok && workflow === 'features-development') {
+      const features = existsSync(featureCoverageFile)
+        ? readJson<Array<{ status?: string }>>(featureCoverageFile, [])
+        : []
+      const openFeatures = features.filter((item) => item.status !== 'complete').length
+      steps.push({
+        name: 'Feature Queue',
+        status: openFeatures > 0 ? 'pass' : 'fail',
+        message: openFeatures > 0 ? `${openFeatures} open feature(s) ready for Claude.` : 'No open feature queue was found.'
+      })
+    }
+
+    if (ready.ok && workflow === 'frontend-development') {
+      const features = existsSync(featureCoverageFile)
+        ? readJson<Array<{ frontendStatus?: string }>>(featureCoverageFile, [])
+        : []
+      const openFrontend = features.filter((item) => item.frontendStatus !== 'complete').length
+      steps.push({
+        name: 'Frontend Queue',
+        status: openFrontend > 0 ? 'pass' : 'fail',
+        message: openFrontend > 0 ? `${openFrontend} frontend item(s) need audit or acceptance.` : 'No open frontend acceptance queue was found.'
+      })
+    }
+
+    if (ready.ok && workflow === 'enhancements-development') {
+      const enhancements = existsSync(enhancementsFile)
+        ? readJson<Array<{ status?: string }>>(enhancementsFile, [])
+        : [
+          { status: 'planned' },
+          { status: 'missing' }
+        ]
+      const openEnhancements = enhancements.filter((item) => item.status !== 'complete').length
+      steps.push({
+        name: 'Enhancement Queue',
+        status: openEnhancements > 0 ? 'pass' : 'fail',
+        message: openEnhancements > 0 ? `${openEnhancements} open enhancement(s) ready for planning.` : 'No open enhancement queue was found.'
+      })
+    }
+
+    if (ready.ok && workflow === 'design-audit') {
+      const auditItems = existsSync(designAuditRecordsFile)
+        ? readJson<Array<{ status?: string }>>(designAuditRecordsFile, [])
+        : [
+          { status: 'planned' },
+          { status: 'planned' },
+          { status: 'planned' }
+        ]
+      const openAuditItems = auditItems.filter((item) => item.status !== 'complete').length
+      steps.push({
+        name: 'Design Audit Queue',
+        status: openAuditItems > 0 ? 'pass' : 'fail',
+        message: openAuditItems > 0 ? `${openAuditItems} design audit item(s) ready for Claude Design.` : 'No open design audit queue was found.'
+      })
+    }
+
+    if (ready.ok && workflow === 'ui-development') {
+      const uiItems = existsSync(uiDevelopmentRecordsFile)
+        ? readJson<Array<{ status?: string }>>(uiDevelopmentRecordsFile, [])
+        : []
+      const openUIItems = uiItems.filter((item) => item.status !== 'complete').length
+      steps.push({
+        name: 'UI Development Queue',
+        status: openUIItems > 0 ? 'pass' : 'fail',
+        message: openUIItems > 0 ? `${openUIItems} UI screen(s) ready for Claude.` : 'No open UI development queue was found.'
+      })
+    }
+
+    if (ready.ok && workflow !== 'features-development' && workflow !== 'frontend-development' && workflow !== 'enhancements-development' && workflow !== 'design-audit' && workflow !== 'ui-development') {
       const context = runTool(['phase', 'context', '--phase', phase])
       steps.push({
         name: `${phase} Context`,
@@ -636,7 +1779,7 @@ export async function POST(request: Request) {
       })
     }
 
-    if (steps.every((step) => step.status === 'pass')) {
+    if (steps.every((step) => step.status === 'pass') && workflow !== 'features-development' && workflow !== 'frontend-development' && workflow !== 'enhancements-development' && workflow !== 'design-audit' && workflow !== 'ui-development') {
       const dryRun = runTool(['phase', 'build', '--from', phase, '--dry-run', '--no-sync'])
       steps.push({
         name: 'Safe Build Test',
@@ -645,8 +1788,53 @@ export async function POST(request: Request) {
       })
     }
 
-    const ok = saveStartReadiness(phase, steps)
-    return redirect(request, ok ? 'message' : 'error', ok ? 'Start Check passed. You can start the automated build.' : 'Start Check found something that needs attention.')
+    if (steps.every((step) => step.status === 'pass') && workflow === 'features-development') {
+      steps.push({
+        name: 'Safe Feature Start',
+        status: 'pass',
+        message: 'Feature automation will start from the open Rev 1 coverage queue.'
+      })
+    }
+
+    if (steps.every((step) => step.status === 'pass') && workflow === 'frontend-development') {
+      steps.push({
+        name: 'Safe Frontend Start',
+        status: 'pass',
+        message: 'Frontend build control can proceed from the open frontend acceptance queue.'
+      })
+    }
+
+    if (steps.every((step) => step.status === 'pass') && workflow === 'enhancements-development') {
+      steps.push({
+        name: 'Safe Enhancement Start',
+        status: 'pass',
+        message: 'Enhancement work can be planned without changing product feature progress.'
+      })
+    }
+
+    if (steps.every((step) => step.status === 'pass') && workflow === 'design-audit') {
+      steps.push({
+        name: 'Safe Design Audit Start',
+        status: 'pass',
+        message: 'Claude Design audit can run from the open design audit queue.'
+      })
+    }
+
+    if (steps.every((step) => step.status === 'pass') && workflow === 'ui-development') {
+      steps.push({
+        name: 'Safe UI Development Start',
+        status: 'pass',
+        message: 'UI development can start from the 17-screen design queue.'
+      })
+    }
+
+    const ok = saveStartReadiness(phase, steps, workflow)
+    return redirect(
+      request,
+      ok ? 'message' : 'error',
+      ok ? 'Start Check passed. You can start automation.' : 'Start Check found something that needs attention.',
+      ok ? redirectTo : undefined
+    )
   }
 
   if (action === 'seed') {
@@ -709,35 +1897,100 @@ export async function POST(request: Request) {
 
   if (action === 'phase-build-watch') {
     const from = String(form.get('from') ?? 'P01')
-    const active = activeBuildRun()
-    if (active) return redirect(request, 'error', `Build is already running from ${active.phase ?? 'current phase'}. Stop it before starting another one.`)
-    const pid = runToolDetached(['phase', 'watch', '--from', from])
-    writeFileSync(buildRunFile, JSON.stringify({
+    const workflow = String(form.get('workflow') ?? 'build-control')
+    const isFeatureWorkflow = workflow === 'features-development' || workflow === 'frontend-development' || workflow === 'enhancements-development' || workflow === 'design-audit' || workflow === 'ui-development'
+    const workflowLabel = workflow === 'frontend-development'
+      ? 'Frontend development automation'
+      : workflow === 'enhancements-development'
+        ? 'Enhancement development automation'
+      : workflow === 'design-audit'
+        ? 'Design audit automation'
+      : workflow === 'ui-development'
+        ? 'UI development automation'
+      : workflow === 'features-development'
+        ? 'Feature development automation'
+        : 'Automated build watcher'
+    const active = workflow === 'ui-development'
+      ? activeUiRun()
+      : workflow === 'frontend-development'
+        ? activeFrontendRun()
+        : isFeatureWorkflow ? activeFeatureRun() : activeBuildRun()
+    if (active) return redirect(request, 'error', `${workflowLabel} is already running from ${active.phase ?? 'current phase'}. Stop it before starting another one.`)
+    const pid = workflow === 'frontend-development'
+      ? runToolDetached(['feature', 'watch', '--mode', 'frontend'])
+      : workflow === 'enhancements-development'
+        ? runToolDetached(['enhancement', 'watch'])
+      : workflow === 'design-audit'
+        ? runToolDetached(['design-audit', 'watch'])
+      : workflow === 'ui-development'
+        ? runToolDetached(['ui-development', 'watch'])
+      : workflow === 'features-development'
+        ? runToolDetached(['feature', 'watch'])
+      : runToolDetached(['phase', 'watch', '--from', from])
+    const runFile = workflow === 'ui-development'
+      ? uiRunFile
+      : workflow === 'frontend-development'
+        ? frontendRunFile
+        : isFeatureWorkflow ? featureRunFile : buildRunFile
+    writeFileSync(runFile, JSON.stringify({
       pid,
       phase: from,
+      workflow,
       status: 'starting',
       startedAt: new Date().toISOString(),
       heartbeatAt: new Date().toISOString(),
-      message: `Automated build watcher started from ${from}`
+      message: `${workflowLabel} started from ${from}`
     }, null, 2))
-    return redirect(request, 'message', `Automated build watcher started from ${from}${pid ? ` (${pid})` : ''}`)
+    return redirect(request, 'message', `${workflowLabel} started from ${from}${pid ? ` (${pid})` : ''}`)
   }
 
   if (action === 'phase-build-stop') {
+    const now = new Date().toISOString()
     const current = existsSync(buildRunFile)
       ? JSON.parse(readFileSync(buildRunFile, 'utf8')) as { pid?: number; phase?: string }
       : {}
-    const stopped = stopProcessTree(current.pid)
+    const currentFeature = existsSync(featureRunFile)
+      ? JSON.parse(readFileSync(featureRunFile, 'utf8')) as { pid?: number; phase?: string; workflow?: string }
+      : {}
+    const currentUi = existsSync(uiRunFile)
+      ? JSON.parse(readFileSync(uiRunFile, 'utf8')) as { pid?: number; phase?: string; workflow?: string }
+      : {}
+    const currentFrontend = existsSync(frontendRunFile)
+      ? JSON.parse(readFileSync(frontendRunFile, 'utf8')) as { pid?: number; phase?: string; workflow?: string }
+      : {}
+    const stoppedBuild = stopProcessTree(current.pid)
+    const stoppedFeature = stopProcessTree(currentFeature.pid)
+    const stoppedUi = stopProcessTree(currentUi.pid)
+    const stoppedFrontend = stopProcessTree(currentFrontend.pid)
     writeFileSync(buildRunFile, JSON.stringify({
       ...current,
       status: 'stopped',
-      heartbeatAt: new Date().toISOString(),
-      message: stopped ? 'Build stopped from dashboard' : 'No live build process was found'
+      heartbeatAt: now,
+      message: stoppedBuild ? 'Build stopped from dashboard' : 'No live build process was found'
+    }, null, 2))
+    writeFileSync(featureRunFile, JSON.stringify({
+      ...currentFeature,
+      status: 'stopped',
+      heartbeatAt: now,
+      message: stoppedFeature ? 'Feature, frontend, enhancement, or design audit automation stopped from dashboard' : 'No live feature, frontend, enhancement, or design audit process was found'
+    }, null, 2))
+    writeFileSync(uiRunFile, JSON.stringify({
+      ...currentUi,
+      status: 'stopped',
+      heartbeatAt: now,
+      message: stoppedUi ? 'UI development automation stopped from dashboard' : 'No live UI development process was found'
+    }, null, 2))
+    writeFileSync(frontendRunFile, JSON.stringify({
+      ...currentFrontend,
+      status: 'stopped',
+      heartbeatAt: now,
+      message: stoppedFrontend ? 'Frontend development automation stopped from dashboard' : 'No live frontend development process was found'
     }, null, 2))
     if (current.phase) {
       runTool(['phase', 'status', '--phase', current.phase, '--status', 'pending', '--notes', 'Build stopped from dashboard'])
     }
-    return redirect(request, stopped ? 'message' : 'error', stopped ? 'Build stopped' : 'No live build process was found')
+    const stopped = stoppedBuild || stoppedFeature || stoppedUi || stoppedFrontend
+    return redirect(request, stopped ? 'message' : 'error', stopped ? 'Automation stopped' : 'No live build, feature, frontend, enhancement, design audit, or UI development process was found')
   }
 
   if (action === 'phase-build-control-init') {
@@ -762,7 +2015,15 @@ export async function POST(request: Request) {
     const current = existsSync(buildRunFile)
       ? JSON.parse(readFileSync(buildRunFile, 'utf8')) as { pid?: number; phase?: string; startedAt?: string }
       : {}
+    const currentFeature = existsSync(featureRunFile)
+      ? JSON.parse(readFileSync(featureRunFile, 'utf8')) as { pid?: number; phase?: string; workflow?: string; startedAt?: string }
+      : {}
+    const currentUi = existsSync(uiRunFile)
+      ? JSON.parse(readFileSync(uiRunFile, 'utf8')) as { pid?: number; phase?: string; workflow?: string; startedAt?: string }
+      : {}
     stopProcessTree(current.pid)
+    stopProcessTree(currentFeature.pid)
+    stopProcessTree(currentUi.pid)
     writeFileSync(claudeUsageGuardFile, JSON.stringify({
       thresholdPercent: 95,
       notes: 'Reset after Claude account switch. DevTools will relearn the active account limit after Claude refresh.',
@@ -773,6 +2034,18 @@ export async function POST(request: Request) {
       status: 'stopped',
       heartbeatAt: new Date().toISOString(),
       message: 'Build stopped for Claude account switch. Ready Check will verify the new account.'
+    }, null, 2))
+    writeFileSync(featureRunFile, JSON.stringify({
+      ...currentFeature,
+      status: 'stopped',
+      heartbeatAt: new Date().toISOString(),
+      message: 'Feature, frontend, enhancement, or design audit automation stopped for Claude account switch. Ready Check will verify the new account.'
+    }, null, 2))
+    writeFileSync(uiRunFile, JSON.stringify({
+      ...currentUi,
+      status: 'stopped',
+      heartbeatAt: new Date().toISOString(),
+      message: 'UI development automation stopped for Claude account switch. Ready Check will verify the new account.'
     }, null, 2))
     const result = runTool(['ready', '--json'])
     if (!result.ok) {
@@ -801,12 +2074,79 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Marked task ${id} done` : `Task ${id} update failed`)
   }
 
+  if (action === 'backlog-status') {
+    const id = String(form.get('id') ?? '')
+    const status = String(form.get('status') ?? '').trim()
+    const result = runTool(['backlog', 'set', '--id', id, '--status', status])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Task ${id} set to ${status}` : `Task ${id} status update failed`)
+  }
+
+  if (action === 'backlog-delete') {
+    const id = String(form.get('id') ?? '')
+    const result = runTool(['backlog', 'remove', '--id', id])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Deleted task ${id}` : `Task ${id} delete failed`)
+  }
+
+  if (action === 'backlog-sync') {
+    const result = runTool(['backlog', 'sync'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Backlog synced (scanned code + flagged possibly-shipped items)' : 'Backlog sync failed')
+  }
+
+  if (action === 'backlog-update') {
+    const id = String(form.get('id') ?? '')
+    const args = ['backlog', 'update', '--id', id]
+    for (const field of ['assignee', 'plan', 'commit', 'pr']) {
+      const value = form.get(field)
+      if (value !== null) args.push(`--${field}`, String(value))
+    }
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Task ${id} updated` : `Task ${id} update failed`)
+  }
+
+  if (action === 'backlog-plan') {
+    const id = String(form.get('id') ?? '')
+    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    }
+    runTool(['backlog', 'update', '--id', id, '--assignee', 'claude'])
+    runToolDetached(['backlog', 'plan', '--id', id, '--auto'])
+    return redirect(request, 'message', `Auto-planning backlog #${id} — Claude drafts a plan, rates confidence, and auto-resolves if ≥8 (otherwise it waits for your approval).`)
+  }
+
+  if (action === 'backlog-resolve') {
+    const id = String(form.get('id') ?? '')
+    const plan = String(form.get('plan') ?? '')
+    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A backlog resolution is already running. Wait for it to finish.')
+    }
+    // Persist the (possibly edited) plan + assignee first so the run uses them.
+    const updateArgs = ['backlog', 'update', '--id', id, '--assignee', 'claude']
+    if (plan.trim()) updateArgs.push('--plan', plan)
+    runTool(updateArgs)
+    runToolDetached(['backlog', 'resolve', '--id', id])
+    return redirect(request, 'message', `Resolving backlog #${id} with Claude — it will move to review when done.`)
+  }
+
+  if (action === 'backlog-auto-resolve') {
+    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    }
+    runToolDetached(['backlog', 'auto-resolve'])
+    return redirect(request, 'message', 'Auto-resolve started — Claude plans each open item in turn, resolving the confident ones (≥8) and queuing the rest for your approval.')
+  }
+
   if (action === 'backlog-add') {
     const title = String(form.get('title') ?? '').trim()
     const phase = String(form.get('phase') ?? 'P01').trim()
     const priority = String(form.get('priority') ?? 'medium').trim()
+    const lane = String(form.get('lane') ?? '').trim()
     if (!title) return redirect(request, 'error', 'Task title is required')
-    const result = runTool(['backlog', 'add', '--title', title, '--phase', phase, '--priority', priority])
+    const args = ['backlog', 'add', '--title', title, '--phase', phase, '--priority', priority]
+    if (lane && lane !== 'none') args.push('--lane', lane)
+    const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Task added' : 'Task add failed')
   }
 
@@ -844,6 +2184,20 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Claude Code cost synced' : 'Claude Code cost sync failed')
   }
 
+  if (action === 'cost-dev-sync-codex') {
+    const result = runTool(['cost', 'dev', 'sync-codex'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Codex cost synced (development, support, and Docmee usage)' : 'Codex cost sync failed')
+  }
+
+  if (action === 'cost-mark-current-codex-chat') {
+    try {
+      recordCurrentCodexChatSupport()
+      return redirect(request, 'message', 'Current Codex chat marked as Docmee support. Exact usage remains pending until product usage data is available.')
+    } catch (error) {
+      return redirect(request, 'error', `Codex chat support marker failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   if (action === 'stack-refresh') {
     const source = String(form.get('source') ?? 'all')
     const args = source === 'grok'
@@ -861,6 +2215,36 @@ export async function POST(request: Request) {
     }
     const result = runTool(['stack', 'update-all'])
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Technology updates applied' : 'Technology update failed')
+  }
+
+  if (action === 'docmee-update-plan') {
+    const run = createDocmeeUpdatePlan()
+    runTool(['discord', 'send', '--type', 'development', '--message', docmeeUpdateDiscordMessage(run)])
+    return redirect(request, 'message', 'Docmee technology update plan created. Build locally before VPS deployment.')
+  }
+
+  if (action === 'docmee-update-local-check') {
+    const run = runDocmeeLocalUpdateValidation()
+    runTool(['discord', 'send', '--type', run.status === 'local-passed' ? 'development' : 'critical', '--message', docmeeUpdateDiscordMessage(run)])
+    return redirect(
+      request,
+      run.status === 'local-passed' ? 'message' : 'error',
+      run.status === 'local-passed'
+        ? 'Docmee local validation passed. VPS deployment can continue after functionality checks.'
+        : 'Docmee local validation failed. Fix the listed issue before VPS deployment.'
+    )
+  }
+
+  if (action === 'codex-open') {
+    const opened = openCodexApp()
+    if (opened) writeCodexAccountStatus('opened', 'Codex app opened. Use the Codex account menu to confirm the active account.')
+    return redirect(request, opened ? 'message' : 'error', opened ? 'Codex opened. Sign in or switch account there.' : 'Codex app could not be opened automatically.')
+  }
+
+  if (action === 'codex-logout') {
+    const result = backupCodexAuth()
+    if (result.ok) openCodexApp()
+    return redirect(request, result.ok ? 'message' : 'error', result.message)
   }
 
   if (action === 'discord-test') {
@@ -885,6 +2269,28 @@ export async function POST(request: Request) {
     const args = commandByAction[action]
     if (!args) return redirect(request, 'error', 'Unknown deploy action')
     const result = runTool(args)
+    if (action === 'deploy-vps') {
+      if (!result.ok) {
+        return redirect(request, 'error', 'VPS deployment request failed before verification could run.')
+      }
+      const run = await runVpsPostDeploymentChecks()
+      const failed = run.summary.fail > 0
+      runTool([
+        'discord',
+        'send',
+        '--type',
+        failed ? 'critical' : 'development',
+        '--message',
+        failed ? postDeploymentDiscordMessage(run) : vpsDeploymentSuccessMessage(run)
+      ])
+      return redirect(
+        request,
+        failed ? 'error' : 'message',
+        failed
+          ? `VPS deployment requested, but verification found ${run.summary.fail} issue${run.summary.fail === 1 ? '' : 's'}.`
+          : `VPS deployment successful. ${run.summary.pass} checks passed and the app is ready.`
+      )
+    }
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Deploy command completed' : 'Deploy command reported a warning or failure')
   }
 
@@ -900,6 +2306,11 @@ export async function POST(request: Request) {
     if (category) args.push('--category', category)
     const result = runTool(args)
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Diagnostics completed' : 'Diagnostics found critical issues')
+  }
+
+  if (action === 'healer-refresh-derived-deployment-records') {
+    const result = refreshDerivedDeploymentRecords()
+    return redirect(request, result.ok ? 'message' : 'error', result.message, '/healer')
   }
 
   if (action.startsWith('agents-')) {
