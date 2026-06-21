@@ -58,6 +58,23 @@ If you serve the API on a subdomain like above, set
 6. Verify: `curl https://api.example.com/health` → `{status:"ok"}`, and the panel
    loads at `https://app.example.com`.
 
+## WhatsApp activation — POST‑deploy (not a deploy blocker)
+The platform deploys and boots **without** WhatsApp configured — the API env
+schema doesn't require `META_*`/`WHATSAPP_*`, so the panel + other channels run
+fine and WhatsApp simply stays inactive. **Meta verification is the clinic
+operator's responsibility**, and the WhatsApp Business account is **transferred to
+Docmee once it's ready** — so deploy first, activate WhatsApp later.
+
+When the verified account lands, do these (no redeploy of code needed — just env
++ Meta console + a pm2 reload):
+1. Set in `.env.production`: `WHATSAPP_DEFAULT_ACCESS_TOKEN`, `META_APP_SECRET`,
+   `META_VERIFY_TOKEN`, and flip `LLM_STUB=false`.
+2. Submit the 3 WhatsApp message templates for Meta approval.
+3. In the Meta app dashboard, point the webhook to
+   `https://api.example.com/webhook/whatsapp` (verify token = `META_VERIFY_TOKEN`).
+4. `pnpm tool deploy restart --service docmee-api` (and workers) to pick up the env.
+5. Send a test WhatsApp message → confirm it reaches the inbox.
+
 ## Don't deploy to the VPS
 - The DevTools dashboard (`tools/`) — it's an unauthenticated local control plane.
 - Tailscale Serve exposure — that's for the local DevTools only.
