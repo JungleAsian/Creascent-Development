@@ -22,7 +22,7 @@ export { createQosRepository }                 from './qos.repository.js'
 export { createReportsRepository }             from './reports.repository.js'
 export { createPushSubscriptionsRepository }   from './push-subscriptions.repository.js'
 
-export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput }                          from './clinics.repository.js'
+export type { ClinicsRepository, CreateClinicInput, UpdateClinicInput, ClinicDirectoryStat }     from './clinics.repository.js'
 export type { ChannelAccountsRepository, CreateChannelAccountInput }                             from './channel-accounts.repository.js'
 export type { PatientsRepository, CreatePatientInput, UpdatePatientInput,
               CreatePatientContactInput }                                                          from './patients.repository.js'

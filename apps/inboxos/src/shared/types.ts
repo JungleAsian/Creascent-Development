@@ -52,6 +52,11 @@ export interface Conversation {
     contentType: ContentType
     role: MessageRole
   } | null
+  // The linked patient's display name, attached by GET /conversations (list) and
+  // GET /conversations/:id (detail) so the list row + thread header can show who the
+  // patient is instead of the raw channel handle (a phone number / IGSID). `null`
+  // when the thread has no patient or the patient has no name on file.
+  patientName?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -158,7 +163,27 @@ export interface Patient {
   updatedAt: string
 }
 
-export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show'
+// Screen 2 — the appointment lifecycle. 'arrived' (checked in) and 'in_progress'
+// (visit underway) sit between 'confirmed' and 'completed' (mirrors @docmee/db).
+export type AppointmentStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'arrived'
+  | 'in_progress'
+  | 'cancelled'
+  | 'completed'
+  | 'no_show'
+
+export type AppointmentEventType =
+  | 'created'
+  | 'confirmed'
+  | 'arrived'
+  | 'in_progress'
+  | 'cancelled'
+  | 'rescheduled'
+  | 'completed'
+  | 'no_show'
+  | 'reminder_sent'
 
 export interface Appointment {
   id: string
@@ -167,11 +192,16 @@ export interface Appointment {
   providerId: string | null
   doctorId: string | null
   serviceId: string | null
+  // Screen 2: present when the AI booked the appointment over a channel (WhatsApp).
+  // null when a staff member booked it by hand → drives the AI-vs-staff source mark.
+  conversationId: string | null
   googleEventId: string | null
   status: AppointmentStatus
   startTime: string
   endTime: string
   notes: string | null
+  // Screen 2: metadata.urgent flags an urgent appointment (red card + tag).
+  metadata: Record<string, unknown>
   createdAt: string
 }
 
@@ -182,6 +212,18 @@ export interface AppointmentWithNames extends Appointment {
   doctorName: string | null
   serviceName: string | null
   serviceDurationMinutes: number | null
+}
+
+/** A row of the calendar's "AI booking activity" feed (GET .../appointments/events). */
+export interface AppointmentEventFeedItem {
+  id: string
+  appointmentId: string
+  eventType: AppointmentEventType
+  createdAt: string
+  patientName: string | null
+  startTime: string
+  /** True when the underlying appointment was AI-booked over a channel. */
+  aiSourced: boolean
 }
 
 /** A bookable start time, returned by GET /clinics/:id/appointments/slots. */
@@ -223,6 +265,10 @@ export interface ClinicMetrics {
   transferRate: number
   noResponseRate: number
   peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
+  // Screen 14 (metrics dashboard) additions.
+  bookingsToday: number
+  resolutionSplit: { bot: number; human: number; urgent: number }
+  previous: { totalConversations: number; bookings: number }
 }
 
 // ── Quality of Service monitoring (Req 32) ─────────────────────────────────────
@@ -232,6 +278,8 @@ export interface QosAttentionItem {
   status: string
   channel: string
   reason: 'upset' | 'abandoned' | 'unclosed'
+  /** Who is handling the thread now — a human secretary owns it, or the bot is auto-answering. */
+  mode: 'bot' | 'human'
   lastMessageAt: string | null
 }
 
@@ -330,6 +378,10 @@ export interface ErrorReview {
   stackTrace: string | null
   context: Record<string, unknown>
   status: ErrorReviewStatus
+  // Set when an operator resolves the review; surfaced as the assignee + the
+  // "Resolved · 7d" stat on the Error Review queue (Screen 9).
+  reviewedBy: string | null
+  resolvedAt: string | null
   createdAt: string
 }
 

@@ -29,6 +29,21 @@ export interface MetricsDashboard {
   noResponseRate: number
   /** Message volume by weekday (0=Sun) × hour (0–23), clinic-local — the peak-hours grid. */
   peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
+  // --- Screen 14 (metrics dashboard mockup) ---
+  /** Conversations that produced a confirmed/completed appointment *today* (current local day). */
+  bookingsToday: number
+  /**
+   * How conversations in the window were resolved, as a mutually-exclusive 3-way split
+   * (counts, not rates — the UI derives percentages). Patient-safety first: a thread
+   * carrying an emergency/urgent/upset tag counts as `urgent` even if it was also handed
+   * off, so safety escalations are never hidden behind the human bucket.
+   */
+  resolutionSplit: { bot: number; human: number; urgent: number }
+  /**
+   * The same trailing window immediately *before* this one (period-over-period baseline
+   * for the trend deltas on the stat cards). Zero when there was no prior activity.
+   */
+  previous: { totalConversations: number; bookings: number }
 }
 
 const num = (value: string | number | null | undefined): number => {
@@ -65,6 +80,9 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
         bookings,
         noResp,
         peak,
+        bookingsToday,
+        split,
+        previous,
       ] = await Promise.all([
         sql<[{ count: string }]>`
           SELECT COUNT(*) AS count FROM conversations
@@ -168,6 +186,54 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
           GROUP BY 1, 2
           ORDER BY 1, 2
         `,
+        // Today's bookings — anchored to the current local day like the other "today"
+        // cards, independent of the period filter.
+        sql<[{ count: string }]>`
+          SELECT COUNT(DISTINCT c.id) AS count
+          FROM conversations c
+          JOIN appointments a ON a.conversation_id = c.id AND a.clinic_id = c.clinic_id
+          WHERE c.clinic_id = ${clinicId}
+            AND c.created_at >= date_trunc('day', NOW() AT TIME ZONE ${tz}) AT TIME ZONE ${tz}
+            AND a.status IN ('confirmed', 'completed')
+        `,
+        // Bot / human / urgent resolution split over the window. Each conversation lands
+        // in exactly one bucket; a patient-safety tag wins over a human handoff so urgent
+        // escalations are surfaced, never absorbed into the human count.
+        sql<[{ urgent: string; human: string; bot: string }]>`
+          WITH conv AS (
+            SELECT
+              c.id,
+              (c.status = 'handoff' OR c.assigned_to IS NOT NULL) AS is_human,
+              EXISTS (
+                SELECT 1 FROM conversation_tag_links l
+                JOIN conversation_tags t ON t.id = l.tag_id
+                WHERE l.conversation_id = c.id
+                  AND t.name IN ('emergency', 'medical_safety', 'urgent', 'patient_upset')
+              ) AS is_urgent
+            FROM conversations c
+            WHERE c.clinic_id = ${clinicId}
+              AND c.created_at >= NOW() - make_interval(days => ${days}::int)
+          )
+          SELECT
+            COUNT(*) FILTER (WHERE is_urgent)                         AS urgent,
+            COUNT(*) FILTER (WHERE NOT is_urgent AND is_human)        AS human,
+            COUNT(*) FILTER (WHERE NOT is_urgent AND NOT is_human)    AS bot
+          FROM conv
+        `,
+        // Period-over-period baseline: the window immediately before this one, for the
+        // trend deltas on the stat cards (conversations + bookings).
+        sql<[{ total: string; bookings: string }]>`
+          SELECT
+            COUNT(DISTINCT c.id)                                  AS total,
+            COUNT(DISTINCT c.id) FILTER (WHERE a.id IS NOT NULL)  AS bookings
+          FROM conversations c
+          LEFT JOIN appointments a
+            ON a.conversation_id = c.id AND a.clinic_id = c.clinic_id
+            AND a.status IN ('confirmed', 'completed')
+          WHERE c.clinic_id = ${clinicId}
+            AND c.created_at >= NOW() - make_interval(days => ${days * 2}::int)
+            AND c.created_at <  NOW() - make_interval(days => ${days}::int)
+        `,
       ])
 
       const inbound = num(replyRate[0]?.inbound)
@@ -194,6 +260,16 @@ export function createMetricsRepository(sql: Sql): MetricsRepository {
         transferRate: total > 0 ? transferred / total : 0,
         noResponseRate: withInbound > 0 ? noResponse / withInbound : 0,
         peakHours: peak.map((r) => ({ dayOfWeek: num(r.dow), hour: num(r.hour), count: num(r.count) })),
+        bookingsToday: num(bookingsToday[0]?.count),
+        resolutionSplit: {
+          bot: num(split[0]?.bot),
+          human: num(split[0]?.human),
+          urgent: num(split[0]?.urgent),
+        },
+        previous: {
+          totalConversations: num(previous[0]?.total),
+          bookings: num(previous[0]?.bookings),
+        },
       }
     },
   }

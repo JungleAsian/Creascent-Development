@@ -36,6 +36,8 @@ import type {
 const APPT_BADGE: Record<AppointmentStatus, string> = {
   pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   confirmed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  arrived: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+  in_progress: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
   cancelled: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
   completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   no_show: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
@@ -299,11 +301,13 @@ export function ConversationView({
         <div className="flex items-center gap-3 px-4 py-3">
           {/* Patient avatar. */}
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gray-200 text-[13px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200">
-            {avatarLabel(conversation?.channelContactHandle)}
+            {avatarLabel(conversation?.patientName || conversation?.channelContactHandle)}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-[15px] font-bold">{conversation?.channelContactHandle ?? '…'}</h3>
+              <h3 className="truncate text-[15px] font-bold">
+                {conversation?.patientName || conversation?.channelContactHandle || '…'}
+              </h3>
               {/* Mode pill (Req 5/6) — who is driving the thread. */}
               <span
                 className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
@@ -316,6 +320,14 @@ export function ConversationView({
               </span>
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-gray-400">
+              {/* When the title shows the patient's name, surface the raw handle
+                  (phone / IGSID) here so staff can still see/verify the number. */}
+              {conversation?.patientName && (
+                <>
+                  <span className="truncate">{conversation.channelContactHandle}</span>
+                  <span aria-hidden>·</span>
+                </>
+              )}
               {conversation && (
                 <span className={`inline-flex items-center gap-1 font-bold ${CHANNEL_META[conversation.channel].text}`}>
                   <span aria-hidden className={`h-2 w-2 rounded-full ${CHANNEL_META[conversation.channel].dot}`} />

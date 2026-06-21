@@ -106,6 +106,7 @@ export type {
   ClinicsRepository,
   CreateClinicInput,
   UpdateClinicInput,
+  ClinicDirectoryStat,
   ChannelAccountsRepository,
   CreateChannelAccountInput,
   PatientsRepository,

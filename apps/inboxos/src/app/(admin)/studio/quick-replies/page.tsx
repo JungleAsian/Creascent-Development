@@ -1,22 +1,29 @@
 'use client'
 
-// IA Studio — Quick reply template management (Gap #25). Pick a clinic, then list /
-// add / delete its canned replies. Secretaries pick from these in the composer.
-// Screen 4 pass: error+retry state, search filter, count summary, and a note that
-// these are inserted into the draft for in-window replies (distinct from the
-// approved WhatsApp templates that can reach a patient outside the 24h window).
+// Screen 4 (Quick replies & templates) — IA Studio canned in-window replies.
+// Pick a clinic, then list / add / edit / delete its quick replies. Secretaries
+// insert these into the composer for replies WITHIN the 24h service window (the
+// approved WhatsApp templates on the sibling tab are the only way to reach a
+// patient outside it). This pass rebuilds the surface to the design map: an
+// in-window-vs-template note, a card grid with a clear "In-window only" tag and
+// copy/edit/delete actions, search + count, and the loading / error / empty /
+// offline states the brief requires.
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
+import { StudioMessagingTabs } from '@/shared/components/StudioMessagingTabs'
 import { useI18n } from '@/shared/hooks/useI18n'
+import { useOnline } from '@/shared/hooks/useOnline'
 import type { QuickReplyTemplate } from '@/shared/types'
 
 export default function QuickRepliesPage() {
   const { t } = useI18n()
   const qc = useQueryClient()
+  const online = useOnline()
   const [clinicId, setClinicId] = useState('')
   const [search, setSearch] = useState('')
+  const [formOpen, setFormOpen] = useState(false)
 
   const key = ['quick-reply-templates', clinicId]
   const query = useQuery({
@@ -39,68 +46,126 @@ export default function QuickRepliesPage() {
   }, [all, search])
 
   return (
-    <div className="mx-auto max-w-4xl p-4 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">{t('studio.quickReplies.title')}</h1>
-        <ClinicSelect value={clinicId} onChange={setClinicId} label={t('studio.usage.selectClinic')} />
+    <div className="mx-auto max-w-5xl p-4 sm:p-6">
+      <StudioMessagingTabs />
+
+      {!online && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+          <p className="font-semibold text-amber-800 dark:text-amber-300">{t('conn.offline.title')}</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400">{t('conn.offline.body')}</p>
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold">{t('studio.quickReplies.title')}</h1>
+          <p className="mt-0.5 max-w-2xl text-xs text-gray-500">{t('studio.quickReplies.subhead')}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <ClinicSelect value={clinicId} onChange={setClinicId} label={t('studio.usage.selectClinic')} />
+          {clinicId && (
+            <button
+              type="button"
+              onClick={() => setFormOpen((v) => !v)}
+              className="shrink-0 rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+            >
+              {formOpen ? t('studio.templates.newClose') : `＋ ${t('studio.quickReplies.new')}`}
+            </button>
+          )}
+        </div>
       </div>
 
       {!clinicId ? (
         <p className="text-sm text-gray-400">{t('studio.quickReplies.selectClinic')}</p>
       ) : (
         <>
-          <p className="mb-3 text-xs text-gray-400">{t('studio.quickReplies.note')}</p>
-          <NewTemplateForm clinicId={clinicId} />
+          {/* In-window vs. template note (the design's safety framing). */}
+          <div className="mb-4 flex gap-3 rounded-xl border border-gray-200 bg-gray-50/60 p-3.5 dark:border-gray-800 dark:bg-gray-900/40">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-teal-50 text-base text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" aria-hidden>
+              ⚡
+            </span>
+            <div>
+              <p className="text-xs font-bold">{t('studio.quickReplies.noteTitle')}</p>
+              <p className="mt-0.5 text-xs text-gray-500">{t('studio.quickReplies.note')}</p>
+            </div>
+          </div>
 
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('studio.quickReplies.search')}
-            className="mb-3 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
-          />
+          {formOpen && <NewTemplateForm clinicId={clinicId} onCreated={() => setFormOpen(false)} />}
+
+          {/* Search + count */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="flex min-w-[12rem] flex-1 items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
+              <span aria-hidden className="text-gray-400">
+                🔍
+              </span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('studio.quickReplies.search')}
+                className="w-full bg-transparent text-sm outline-none"
+              />
+            </div>
+            {all.length > 0 && (
+              <span className="text-xs text-gray-400">
+                {t('studio.quickReplies.count', { n: filtered.length, m: all.length })} ·{' '}
+                {t('studio.quickReplies.uncategorized')}
+              </span>
+            )}
+          </div>
 
           {query.isLoading ? (
-            <div className="space-y-2" aria-busy="true">
-              {[0, 1, 2].map((i) => (
+            <div className="grid gap-3 sm:grid-cols-2" aria-busy="true">
+              {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="h-14 animate-pulse rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                  className="h-28 animate-pulse rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                 />
               ))}
             </div>
           ) : query.isError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm dark:border-red-900 dark:bg-red-950/40">
-              <p className="text-red-700 dark:text-red-300">{t('common.error')}</p>
-              <button
-                type="button"
-                onClick={() => query.refetch()}
-                className="mt-2 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40"
-              >
-                {t('common.retry')}
-              </button>
-            </div>
+            <ErrorState onRetry={() => query.refetch()} />
           ) : all.length === 0 ? (
-            <p className="text-sm text-gray-400">{t('studio.quickReplies.empty')}</p>
+            <EmptyState
+              icon="⚡"
+              title={t('studio.quickReplies.empty')}
+              hint={t('studio.quickReplies.subhead')}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setFormOpen(true)}
+                  className="mt-3 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
+                >
+                  ＋ {t('studio.quickReplies.new')}
+                </button>
+              }
+            />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-400">{t('studio.quickReplies.emptyFilter')}</p>
+            <EmptyState
+              icon="🔍"
+              title={t('studio.quickReplies.emptyFilter')}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  {t('conv.clearFilters')}
+                </button>
+              }
+            />
           ) : (
-            <>
-              <p className="mb-2 text-xs text-gray-400">
-                {t('studio.quickReplies.count', { n: filtered.length, m: all.length })}
-              </p>
-              <ul className="space-y-2">
-                {filtered.map((tpl) => (
-                  <TemplateRow
-                    key={tpl.id}
-                    clinicId={clinicId}
-                    template={tpl}
-                    onDelete={() => {
-                      if (confirm(t('studio.quickReplies.deleteConfirm'))) deleteMutation.mutate(tpl.id)
-                    }}
-                  />
-                ))}
-              </ul>
-            </>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {filtered.map((tpl) => (
+                <QuickReplyCard
+                  key={tpl.id}
+                  clinicId={clinicId}
+                  template={tpl}
+                  onDelete={() => {
+                    if (confirm(t('studio.quickReplies.deleteConfirm'))) deleteMutation.mutate(tpl.id)
+                  }}
+                />
+              ))}
+            </div>
           )}
         </>
       )}
@@ -108,8 +173,8 @@ export default function QuickRepliesPage() {
   )
 }
 
-// One template row with inline edit (closes the CRUD gap — add/edit/delete).
-function TemplateRow({
+// ── Card (view + inline edit) ──────────────────────────────────────────────────
+function QuickReplyCard({
   clinicId,
   template,
   onDelete,
@@ -121,6 +186,7 @@ function TemplateRow({
   const { t } = useI18n()
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [title, setTitle] = useState(template.title)
   const [content, setContent] = useState(template.content)
 
@@ -139,21 +205,27 @@ function TemplateRow({
     setEditing(true)
   }
 
+  function copy() {
+    void navigator.clipboard?.writeText(template.content)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+
   if (editing) {
     return (
-      <li className="space-y-2 rounded-lg border border-indigo-200 bg-white p-3 dark:border-indigo-900 dark:bg-gray-900">
+      <div className="space-y-2 rounded-xl border border-teal-200 bg-white p-3.5 dark:border-teal-900 dark:bg-gray-900">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={t('studio.quickReplies.titleField')}
-          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          className="w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
         />
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={3}
           placeholder={t('studio.quickReplies.content')}
-          className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          className="w-full resize-none rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
         />
         <div className="flex gap-2">
           <button
@@ -162,49 +234,62 @@ function TemplateRow({
             onClick={() => {
               if (title.trim() && content.trim()) updateMutation.mutate()
             }}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
           >
             {t('common.save')}
           </button>
           <button
             type="button"
             onClick={() => setEditing(false)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
           >
             {t('common.cancel')}
           </button>
         </div>
-      </li>
+      </div>
     )
   }
 
   return (
-    <li className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="min-w-0">
-        <p className="font-medium">{template.title}</p>
-        <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">{template.content}</p>
+    <div className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-3.5 dark:border-gray-800 dark:bg-gray-900">
+      <p className="font-semibold">{template.title}</p>
+      <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-500">
+        {template.content}
+      </p>
+      <div className="mt-auto flex items-center gap-2 pt-1">
+        <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500 dark:bg-gray-800">
+          {t('studio.quickReplies.inWindowTag')}
+        </span>
+        <div className="ml-auto flex gap-1.5">
+          <button
+            type="button"
+            onClick={copy}
+            className="rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            {copied ? `✓ ${t('studio.quickReplies.copied')}` : `⧉ ${t('studio.quickReplies.copy')}`}
+          </button>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="rounded-md border border-gray-300 px-2 py-1 text-[11px] hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            ✎ {t('common.edit')}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-md border border-red-200 px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+          >
+            {t('common.delete')}
+          </button>
+        </div>
       </div>
-      <div className="flex shrink-0 gap-2">
-        <button
-          type="button"
-          onClick={startEdit}
-          className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-        >
-          {t('common.edit')}
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-        >
-          {t('common.delete')}
-        </button>
-      </div>
-    </li>
+    </div>
   )
 }
 
-function NewTemplateForm({ clinicId }: { clinicId: string }) {
+// ── New quick reply ────────────────────────────────────────────────────────────
+function NewTemplateForm({ clinicId, onCreated }: { clinicId: string; onCreated: () => void }) {
   const { t } = useI18n()
   const qc = useQueryClient()
   const [title, setTitle] = useState('')
@@ -216,6 +301,7 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
       setTitle('')
       setContent('')
       qc.invalidateQueries({ queryKey: ['quick-reply-templates', clinicId] })
+      onCreated()
     },
   })
 
@@ -227,28 +313,81 @@ function NewTemplateForm({ clinicId }: { clinicId: string }) {
   return (
     <form
       onSubmit={onSubmit}
-      className="mb-6 space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+      className="mb-5 space-y-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
     >
+      <h3 className="text-sm font-bold">{t('studio.quickReplies.new')}</h3>
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder={t('studio.quickReplies.titleField')}
-        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+        className="w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
       />
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={3}
         placeholder={t('studio.quickReplies.content')}
-        className="w-full resize-none rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+        className="w-full resize-none rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
       />
-      <button
-        type="submit"
-        disabled={mutation.isPending || !title.trim() || !content.trim()}
-        className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-      >
-        {t('studio.quickReplies.add')}
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={mutation.isPending || !title.trim() || !content.trim()}
+          className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
+        >
+          {t('studio.quickReplies.add')}
+        </button>
+        <button
+          type="button"
+          onClick={onCreated}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          {t('common.cancel')}
+        </button>
+      </div>
     </form>
+  )
+}
+
+// ── Shared states ──────────────────────────────────────────────────────────────
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n()
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950/40">
+      <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-red-100 text-lg text-red-600 dark:bg-red-900/60" aria-hidden>
+        ⚠
+      </div>
+      <p className="text-sm font-semibold text-red-700 dark:text-red-300">{t('common.error')}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-3 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40"
+      >
+        ↻ {t('common.retry')}
+      </button>
+    </div>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: string
+  title: string
+  hint?: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
+      <div className="mx-auto mb-2 grid h-11 w-11 place-items-center rounded-xl bg-gray-100 text-lg text-gray-400 dark:bg-gray-800" aria-hidden>
+        {icon}
+      </div>
+      <p className="text-sm font-semibold">{title}</p>
+      {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
+      {action}
+    </div>
   )
 }

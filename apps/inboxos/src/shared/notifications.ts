@@ -55,3 +55,90 @@ export const PRIORITY_DOT: Record<AlertPriority, string> = {
   p2: 'bg-amber-500',
   standard: 'bg-gray-400',
 }
+
+/** Per-alert-type glyph for the feed row icon (Screen 11). Falls back to 🔔. */
+const ALERT_ICON: Record<string, string> = {
+  emergency: '🚑',
+  human_handoff_requested: '🙋',
+  bot_failed: '🤖',
+  upset_patient: '😟',
+  secretary_escalated: '⏫',
+  new_patient: '🧑',
+  booking_confirmed: '📅',
+  booking_cancelled: '❌',
+  booking_rescheduled: '🔁',
+  opted_out: '🚫',
+  appointment_reminder: '⏰',
+  conversation_assigned: '📌',
+  conversation_resolved: '✅',
+  stale_conversation: '🕒',
+  secretary_timeout: '⌛',
+  meta_token_expiring: '🔑',
+  daily_summary: '📊',
+  kb_miss_threshold: '❓',
+  license_expiring: '🔑',
+  license_expired: '🔑',
+}
+
+export function alertIcon(alertType: string | null | undefined): string {
+  return (alertType && ALERT_ICON[alertType]) || '🔔'
+}
+
+// Patient-safety alerts — an emergency keyword paused the bot. Always unmistakable
+// (solid-red badge). Mirrors router.ts: emergency → bot silenced, routed to a human.
+const SAFETY_ALERT_TYPES = new Set(['emergency'])
+export function isSafetyAlert(alertType: string | null | undefined): boolean {
+  return Boolean(alertType && SAFETY_ALERT_TYPES.has(alertType))
+}
+
+// Bot→human handoff alerts — the conversation needs a person (patient asked for one,
+// the bot failed, or a secretary escalated). Surfaced with a handoff badge.
+const HANDOFF_ALERT_TYPES = new Set([
+  'human_handoff_requested',
+  'bot_failed',
+  'secretary_escalated',
+])
+export function isHandoffAlert(alertType: string | null | undefined): boolean {
+  return Boolean(alertType && HANDOFF_ALERT_TYPES.has(alertType))
+}
+
+// Who is handling the conversation behind an alert, derived from the taxonomy
+// (the alert type encodes it): safety/handoff/upset → a human is/should be in the
+// loop; bot-driven patient events → the assistant handled it; everything else is a
+// system/info notice with no conversation mode. Drives the Bot/Human-mode badge.
+export type AlertHandling = 'human' | 'bot' | 'system'
+const HUMAN_HANDLED = new Set([
+  'emergency',
+  'human_handoff_requested',
+  'bot_failed',
+  'upset_patient',
+  'secretary_escalated',
+])
+const BOT_HANDLED = new Set([
+  'new_patient',
+  'booking_confirmed',
+  'booking_cancelled',
+  'booking_rescheduled',
+  'appointment_reminder',
+  'conversation_resolved',
+])
+export function alertHandling(alertType: string | null | undefined): AlertHandling {
+  if (alertType && HUMAN_HANDLED.has(alertType)) return 'human'
+  if (alertType && BOT_HANDLED.has(alertType)) return 'bot'
+  return 'system'
+}
+
+/** Friendly channel label from metadata.channel (proper nouns — not translated). */
+const CHANNEL_LABEL: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  messenger: 'Messenger',
+  instagram: 'Instagram',
+  webchat: 'Web chat',
+  system: 'System',
+  automation: 'Automation',
+  calendar: 'Calendar',
+}
+export function channelLabel(channel: unknown): string | null {
+  if (typeof channel !== 'string' || !channel) return null
+  return CHANNEL_LABEL[channel] ?? channel.charAt(0).toUpperCase() + channel.slice(1)
+}

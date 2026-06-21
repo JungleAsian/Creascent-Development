@@ -53,6 +53,23 @@ export interface ListInRangeOptions {
   doctorId?: string
 }
 
+/**
+ * One row of the Screen 2 "AI booking activity" feed: an appointment_event joined
+ * with the patient name + the appointment's start time + whether the underlying
+ * appointment originated from a conversation (the AI booked it over WhatsApp) or
+ * was created by staff. Powers the calendar rail's chronological activity log.
+ */
+export interface AppointmentEventFeedItem {
+  id: string
+  appointmentId: string
+  eventType: AppointmentEventType
+  createdAt: string
+  patientName: string | null
+  startTime: string
+  /** True when the appointment carries a conversation_id (AI-booked over a channel). */
+  aiSourced: boolean
+}
+
 export interface CreateProviderInput {
   clinicId: string
   fullName: string
@@ -81,6 +98,12 @@ export interface AppointmentsRepository {
    * (Screen 2) and its per-doctor free-slot computation.
    */
   listInRange(clinicId: string, options: ListInRangeOptions): Promise<AppointmentWithNames[]>
+  /**
+   * The day's appointment events (newest first), joined with patient name + the
+   * appointment start time + AI-vs-staff source — the calendar's activity feed.
+   * Scoped to appointments whose start_time falls in [from, to), optional doctor.
+   */
+  listEventsInRange(clinicId: string, options: ListInRangeOptions): Promise<AppointmentEventFeedItem[]>
   listByPatient(clinicId: string, patientId: string): Promise<Appointment[]>
   listByProvider(clinicId: string, providerId: string, from: string, to: string): Promise<Appointment[]>
   /** Completed appointments whose end_time falls in [from, to] — drives review requests (P18). */
@@ -139,6 +162,30 @@ export function createAppointmentsRepository(sql: Sql): AppointmentsRepository {
           AND a.start_time <  ${to}::timestamptz
           ${doctorFilter}
         ORDER BY a.start_time
+      `
+    },
+
+    async listEventsInRange(clinicId, { from, to, doctorId }) {
+      const doctorFilter = doctorId ? sql`AND a.doctor_id = ${doctorId}` : sql``
+      return sql<AppointmentEventFeedItem[]>`
+        -- appt:eventsInRange
+        SELECT
+          e.id,
+          e.appointment_id           AS appointment_id,
+          e.event_type               AS event_type,
+          e.created_at               AS created_at,
+          p.full_name                AS patient_name,
+          a.start_time               AS start_time,
+          (a.conversation_id IS NOT NULL) AS ai_sourced
+        FROM appointment_events e
+        JOIN appointments a ON a.id = e.appointment_id
+        LEFT JOIN patients p ON p.id = a.patient_id
+        WHERE e.clinic_id  = ${clinicId}
+          AND a.start_time >= ${from}::timestamptz
+          AND a.start_time <  ${to}::timestamptz
+          ${doctorFilter}
+        ORDER BY e.created_at DESC
+        LIMIT 40
       `
     },
 

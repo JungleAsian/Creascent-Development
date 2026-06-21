@@ -12,7 +12,16 @@ import { api } from '@/shared/api/client'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { useAuthStore } from '@/shared/store/auth'
 import { formatDateTime } from '@/shared/format'
-import { alertLabelKey, alertPriority, type AlertPriority } from '@/shared/notifications'
+import {
+  alertHandling,
+  alertIcon,
+  alertLabelKey,
+  alertPriority,
+  channelLabel,
+  isHandoffAlert,
+  isSafetyAlert,
+  type AlertPriority,
+} from '@/shared/notifications'
 import type { TranslationKey } from '@/shared/i18n'
 import type { NotificationEvent } from '@/shared/types'
 
@@ -38,6 +47,12 @@ const PRIORITY_BADGE: Record<AlertPriority, string> = {
   p1: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
   p2: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
   standard: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+}
+// Priority-tinted tile behind the per-alert icon (mirrors the mockup's coloured square).
+const PRIORITY_TILE: Record<AlertPriority, string> = {
+  p1: 'bg-red-50 dark:bg-red-950/50',
+  p2: 'bg-amber-50 dark:bg-amber-950/50',
+  standard: 'bg-gray-100 dark:bg-gray-800',
 }
 const PRIORITY_RANK: Record<AlertPriority, number> = { p1: 2, p2: 1, standard: 0 }
 
@@ -176,6 +191,10 @@ export default function AlertsPage() {
           {visible.map((n) => {
             const priority = alertPriority(n.alertType)
             const unreadRow = isUnread(n)
+            const safety = isSafetyAlert(n.alertType)
+            const handoff = isHandoffAlert(n.alertType)
+            const handling = alertHandling(n.alertType)
+            const channel = channelLabel((n.metadata as { channel?: unknown } | null)?.channel)
             return (
               <li
                 key={n.id}
@@ -183,17 +202,46 @@ export default function AlertsPage() {
                   unreadRow ? '' : 'opacity-70'
                 }`}
               >
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-3">
+                  <div
+                    aria-hidden
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${PRIORITY_TILE[priority]}`}
+                  >
+                    {alertIcon(n.alertType)}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {unreadRow && (
+                        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
+                      )}
+                      <span className="text-sm font-semibold">
+                        {n.alertType ? t(alertLabelKey(n.alertType)) : (n.subject ?? '')}
+                      </span>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${PRIORITY_BADGE[priority]}`}
                       >
                         {t(PRIORITY_LABEL[priority])}
                       </span>
-                      <span className="text-sm font-semibold">
-                        {n.alertType ? t(alertLabelKey(n.alertType)) : (n.subject ?? '')}
-                      </span>
+                      {safety && (
+                        <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+                          ⚠ {t('alerts.safety')}
+                        </span>
+                      )}
+                      {handoff && (
+                        <span className="rounded border border-dashed border-orange-400 bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-orange-700 dark:bg-orange-950 dark:text-orange-300">
+                          {t('alerts.handoff')}
+                        </span>
+                      )}
+                      {handling === 'human' && (
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                          {t('alerts.mode.human')}
+                        </span>
+                      )}
+                      {handling === 'bot' && (
+                        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                          {t('alerts.mode.bot')}
+                        </span>
+                      )}
                       {!unreadRow && (
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-400 dark:bg-gray-800">
                           {t('alerts.acknowledged')}
@@ -203,8 +251,13 @@ export default function AlertsPage() {
                     {n.content && (
                       <p className="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">{n.content}</p>
                     )}
-                    <div className="mt-1 flex flex-wrap items-center gap-3">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="text-xs text-gray-400">{formatDateTime(n.createdAt, language)}</span>
+                      {channel && (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          {channel}
+                        </span>
+                      )}
                       {n.conversationId && (
                         <Link
                           href={`/inbox?c=${n.conversationId}`}

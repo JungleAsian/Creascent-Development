@@ -54,19 +54,30 @@ const bookSchema = z.object({
   date: isoDate,
   start: hhmm,
   notes: z.string().max(2000).optional(),
+  // Screen 2: flag a booking urgent (drives the red card + "Urgent" tag). Stored
+  // on metadata so no schema migration is needed.
+  urgent: z.boolean().optional(),
 })
 
-// Either reschedule (date + start) or change status — at least one field required.
+// Either reschedule (date + start), change status, or toggle urgency — at least one
+// actionable field is required.
 const patchSchema = z
   .object({
     date: isoDate.optional(),
     start: hhmm.optional(),
-    status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show']).optional(),
+    status: z
+      .enum(['pending', 'confirmed', 'arrived', 'in_progress', 'cancelled', 'completed', 'no_show'])
+      .optional(),
     notes: z.string().max(2000).optional(),
+    urgent: z.boolean().optional(),
   })
-  .refine((b) => b.status !== undefined || (b.date !== undefined && b.start !== undefined), {
-    message: 'provide a status, or both date and start to reschedule',
-  })
+  .refine(
+    (b) =>
+      b.status !== undefined ||
+      b.urgent !== undefined ||
+      (b.date !== undefined && b.start !== undefined),
+    { message: 'provide a status, urgent flag, or both date and start to reschedule' },
+  )
 
 const toMin = (t: string): number => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
 const toHHMM = (m: number): string =>
@@ -84,6 +95,8 @@ function nextDay(date: string): string {
 const STATUS_EVENT: Record<AppointmentStatus, AppointmentEventType | null> = {
   pending: null,
   confirmed: 'confirmed',
+  arrived: 'arrived',
+  in_progress: 'in_progress',
   cancelled: 'cancelled',
   completed: 'completed',
   no_show: 'no_show',
@@ -119,6 +132,26 @@ const appointmentsRoute: FastifyPluginAsync = async (app) => {
     const patients = await withDb(async (sql) => createPatientsRepository(sql).list(clinicId))
     return { patients: patients.map((p) => ({ id: p.id, fullName: p.fullName })) }
   })
+
+  // ── AI booking activity feed (the calendar rail) ───────────────────────────
+  app.get<{ Params: { id: string }; Querystring: Record<string, string> }>(
+    '/clinics/:id/appointments/events',
+    async (request, reply) => {
+      const parsed = validate(listQuerySchema, request.query, reply)
+      if (!parsed.ok) return
+      const clinicId = resolveClinicScope(request, request.params.id)
+      if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
+
+      const events = await withDb(async (sql) =>
+        createAppointmentsRepository(sql).listEventsInRange(clinicId, {
+          from: parsed.data.from,
+          to: parsed.data.to,
+          doctorId: parsed.data.doctorId,
+        }),
+      )
+      return { events }
+    },
+  )
 
   // ── Free slots for a doctor on a date ──────────────────────────────────────
   app.get<{ Params: { id: string }; Querystring: Record<string, string> }>(
@@ -171,7 +204,7 @@ const appointmentsRoute: FastifyPluginAsync = async (app) => {
     if (!parsed.ok) return
     const clinicId = resolveClinicScope(request, request.params.id)
     if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-    const { patientId, doctorId, serviceId, date, start, notes } = parsed.data
+    const { patientId, doctorId, serviceId, date, start, notes, urgent } = parsed.data
 
     const result = await withDb(async (sql) => {
       const doctor = await createDoctorsRepository(sql).findById(clinicId, doctorId)
@@ -209,6 +242,9 @@ const appointmentsRoute: FastifyPluginAsync = async (app) => {
         startTime: `${date}T${start}:00`,
         endTime: `${date}T${toHHMM(endMin)}:00`,
         notes,
+        // A panel booking has no conversation_id (→ "Booked by staff"); the urgent
+        // flag lives on metadata so the calendar can colour the card red.
+        metadata: urgent ? { urgent: true } : undefined,
       })
       return { appointment }
     })
@@ -230,7 +266,7 @@ const appointmentsRoute: FastifyPluginAsync = async (app) => {
       if (!parsed.ok) return
       const clinicId = resolveClinicScope(request, request.params.id)
       if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-      const { date, start, status, notes } = parsed.data
+      const { date, start, status, notes, urgent } = parsed.data
 
       const appointment = await withDb(async (sql) => {
         const appts = createAppointmentsRepository(sql)
@@ -240,6 +276,10 @@ const appointmentsRoute: FastifyPluginAsync = async (app) => {
         const patch: Parameters<typeof appts.update>[2] = {}
         if (notes !== undefined) patch.notes = notes
         if (status !== undefined) patch.status = status
+        if (urgent !== undefined) {
+          // Merge the urgent flag into the existing metadata blob (don't clobber it).
+          patch.metadata = { ...(existing.metadata ?? {}), urgent }
+        }
         if (date !== undefined && start !== undefined) {
           // Preserve the original duration when moving the appointment.
           const duration = toMin(timeOf(existing.endTime)) - toMin(timeOf(existing.startTime))
