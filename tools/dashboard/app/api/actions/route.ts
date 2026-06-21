@@ -2155,6 +2155,15 @@ export async function POST(request: Request) {
     return redirect(request, 'message', 'Auto-resolve started — Claude plans each open item in turn, resolving the confident ones (≥8) and queuing the rest for your approval.')
   }
 
+  if (action === 'backlog-verify-all') {
+    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    }
+    runToolDetached(['backlog', 'verify-all'])
+    return redirect(request, 'message', 'Verify-all started — Claude verifies each item awaiting review; ≥8 marks it done, below leaves it flagged with a reason.')
+  }
+
   if (action === 'ai-add') {
     const name = String(form.get('name') ?? '').trim()
     if (!name) return redirect(request, 'error', 'AI name is required')

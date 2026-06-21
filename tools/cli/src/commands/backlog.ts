@@ -610,6 +610,49 @@ async function autoResolveAll(threshold: number): Promise<void> {
   log('backlog', `Auto-resolve complete: ${resolved} resolved, ${queued} awaiting approval, ${failed} failed.`)
 }
 
+// Bulk verify every item awaiting review: run the verification check on each
+// 'review' item in turn. >= threshold marks it done; below leaves it flagged
+// with a reason. Mirrors auto-resolve but for the review -> done step.
+async function verifyAllReview(threshold: number): Promise<void> {
+  const queue = getTasks().filter((task) => task.status === 'review')
+  const total = queue.length
+  if (total === 0) {
+    touchBacklogRun({ status: 'complete', verifyAll: true, autoResolve: false, total: 0, processed: 0, message: 'Verify-all: no items awaiting verification.' })
+    log('backlog', 'Verify-all: nothing to verify.')
+    return
+  }
+  let processed = 0
+  let resolved = 0
+  let queued = 0
+  let failed = 0
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), verifyAll: true, autoResolve: false, total, processed, resolved, queued, failed, message: `Verifying ${total} item(s) awaiting review (threshold ${threshold}/10)…` })
+  log('backlog', `Verify-all: starting on ${total} review item(s) at threshold ${threshold}/10.`)
+  for (const item of queue) {
+    touchBacklogRun({ status: 'running', verifyAll: true, total, processed, resolved, queued, failed, currentId: item.id, message: `(${processed + 1}/${total}) Verifying #${item.id}: ${item.title}` })
+    try {
+      await verifyTask(item.id, threshold)
+    } catch (error) {
+      log('backlog', `Verify-all: #${item.id} errored — ${(error as Error).message}`, 'error')
+    }
+    const after = getTasks().find((task) => task.id === item.id)
+    if (after?.status === 'done') resolved += 1
+    else if (after?.status === 'review') queued += 1
+    else failed += 1
+    processed += 1
+    touchBacklogRun({ status: 'running', verifyAll: true, total, processed, resolved, queued, failed, currentId: item.id, message: `(${processed}/${total}) ${resolved} verified · ${queued} need review · ${failed} failed` })
+  }
+  touchBacklogRun({ status: 'complete', verifyAll: true, total, processed, resolved, queued, failed, currentId: null, message: `Verify-all done: ${resolved} verified, ${queued} need review, ${failed} failed.` })
+  log('backlog', `Verify-all complete: ${resolved} verified, ${queued} need review, ${failed} failed.`)
+}
+
+backlogCmd
+  .command('verify-all')
+  .description('Verify every item awaiting review; confidence >= threshold marks done, else leaves it flagged with a reason')
+  .option('--threshold <n>', `Confidence needed to auto-mark done (default ${CONFIDENCE_THRESHOLD})`)
+  .action(async (opts: { threshold?: string }) => {
+    await verifyAllReview(Number(opts.threshold) || CONFIDENCE_THRESHOLD)
+  })
+
 backlogCmd
   .command('auto-resolve')
   .description('Sequentially plan every open todo item; auto-resolve those above the confidence threshold, queue the rest for approval')

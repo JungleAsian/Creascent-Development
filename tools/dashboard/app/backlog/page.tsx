@@ -14,7 +14,7 @@ const toolsRoot = path.resolve(process.cwd(), '..')
 const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
 const backlogRunFile = path.join(toolsRoot, 'logs', 'backlog-run.json')
 
-type BacklogRun = { status?: string; message?: string; autoResolve?: boolean; total?: number; processed?: number; resolved?: number; queued?: number; failed?: number; pid?: number; currentId?: number; heartbeatAt?: string }
+type BacklogRun = { status?: string; message?: string; autoResolve?: boolean; verifyAll?: boolean; total?: number; processed?: number; resolved?: number; queued?: number; failed?: number; pid?: number; currentId?: number; heartbeatAt?: string }
 
 function backlogRun(): BacklogRun {
   if (!fs.existsSync(backlogRunFile)) return {}
@@ -108,16 +108,22 @@ export default function BacklogPage({ searchParams }: PageProps) {
   const runLive = run.status === 'running' && pidAlive(run.pid) && isHeartbeatFresh(run.heartbeatAt)
   const activeId = runLive ? run.currentId : undefined
   const autoActive = Boolean(run.autoResolve) && runLive
+  const verifyActive = Boolean(run.verifyAll) && runLive
   const autoTotal = run.total ?? 0
   const autoResolved = run.resolved ?? 0
   const autoDonePercent = autoTotal ? Math.round((autoResolved / autoTotal) * 100) : 0
   const autoAllResolved = autoTotal > 0 && autoResolved >= autoTotal
-  // The run-state's autoResolve flag persists (touchBacklogRun merges), so gate
-  // the summary on freshness — show it only while running or recently finished,
+  // The run-state's batch flags persist (touchBacklogRun merges), so gate the
+  // summary on freshness — show it only while running or recently finished,
   // never as a stale "complete" banner after the backlog has moved on.
   const autoRecent = Boolean(run.heartbeatAt) && Date.now() - new Date(run.heartbeatAt ?? 0).getTime() < 10 * 60 * 1000
-  const showAutoBanner = Boolean(run.autoResolve) && autoTotal > 0 && (autoActive || autoRecent)
+  const batchKind: 'auto' | 'verify' | null = run.verifyAll ? 'verify' : run.autoResolve ? 'auto' : null
+  const showBatchBanner = Boolean(batchKind) && autoTotal > 0 && (runLive || autoRecent)
+  const batchVerb = batchKind === 'verify' ? 'Verify-all' : 'Auto-resolve'
+  const batchDoneWord = batchKind === 'verify' ? 'verified' : 'resolved'
+  const batchPendWord = batchKind === 'verify' ? 'need review' : 'need approval'
   const todoCount = rows.filter((row) => row.status === 'todo').length
+  const reviewCount = rows.filter((row) => row.status === 'review').length
   // Show the list open-first, then by priority — calmest reading order.
   const visible = [...filtered].sort((a, b) =>
     Number(a.status === 'done') - Number(b.status === 'done') ||
@@ -144,31 +150,41 @@ export default function BacklogPage({ searchParams }: PageProps) {
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="backlog-auto-resolve" />
             <button
-              disabled={autoActive || todoCount === 0}
-              title={autoActive ? 'Auto-resolve already running' : todoCount === 0 ? 'No open todo items to resolve' : `Plan + confidence-gate all ${todoCount} todo item(s)`}
+              disabled={runLive || todoCount === 0}
+              title={runLive ? 'A backlog run is in progress' : todoCount === 0 ? (reviewCount > 0 ? `No todo items — ${reviewCount} item(s) await verification (use Verify all)` : 'No open todo items to resolve') : `Plan + confidence-gate all ${todoCount} todo item(s)`}
               className="min-h-10 rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {autoActive ? 'Auto-resolving…' : 'Auto-resolve all'}
             </button>
           </form>
+          <form action="/api/actions" method="post">
+            <input type="hidden" name="action" value="backlog-verify-all" />
+            <button
+              disabled={runLive || reviewCount === 0}
+              title={runLive ? 'A backlog run is in progress' : reviewCount === 0 ? 'No items awaiting verification' : `Verify all ${reviewCount} item(s) in review — ≥8 marks done, below flags for review`}
+              className="min-h-10 rounded-md border border-sky-700 bg-sky-950/30 px-3 py-2 text-sm font-medium text-sky-100 hover:bg-sky-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {verifyActive ? 'Verifying…' : `Verify all${reviewCount > 0 ? ` (${reviewCount})` : ''}`}
+            </button>
+          </form>
         </div>
       </div>
 
-      {showAutoBanner && (
+      {showBatchBanner && (
         <div className="mt-3 rounded-lg border border-cyan-900 bg-cyan-950/20 p-3">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium text-cyan-100">{autoActive ? 'Auto-resolve running' : autoAllResolved ? 'Auto-resolve finished — all resolved' : 'Auto-resolve finished — needs follow-up'}</span>
-            <span className="text-xs text-slate-400">{run.processed ?? 0}/{autoTotal} processed · {autoResolved} resolved · {run.queued ?? 0} need approval · {run.failed ?? 0} failed</span>
+            <span className="font-medium text-cyan-100">{runLive ? `${batchVerb} running` : autoAllResolved ? `${batchVerb} finished — all done` : `${batchVerb} finished — needs follow-up`}</span>
+            <span className="text-xs text-slate-400">{run.processed ?? 0}/{autoTotal} processed · {autoResolved} {batchDoneWord} · {run.queued ?? 0} {batchPendWord} · {run.failed ?? 0} failed</span>
           </div>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800" title={`${autoResolved}/${autoTotal} resolved`}>
-            <div className={`h-full rounded ${autoActive ? 'bg-cyan-500' : autoAllResolved ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${autoDonePercent}%` }} />
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800" title={`${autoResolved}/${autoTotal} ${batchDoneWord}`}>
+            <div className={`h-full rounded ${runLive ? 'bg-cyan-500' : autoAllResolved ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${autoDonePercent}%` }} />
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            {autoActive
+            {runLive
               ? run.message
               : autoAllResolved
-                ? (run.message ?? 'All items resolved.')
-                : `${autoResolved}/${autoTotal} resolved · ${run.queued ?? 0} still need approval · ${run.failed ?? 0} failed — review the plan-review / review items below.`}
+                ? (run.message ?? 'All items done.')
+                : `${autoResolved}/${autoTotal} ${batchDoneWord} · ${run.queued ?? 0} ${batchPendWord} · ${run.failed ?? 0} failed — review the flagged items below.`}
           </p>
         </div>
       )}
