@@ -215,6 +215,14 @@ export default function DeployPage({ searchParams }: PageProps) {
       blockedText: !envChecked ? 'Run Check .env Readiness first' : !envReady ? 'Resolve .env readiness issues first' : 'Fill VPS settings first'
     },
     {
+      action: 'deploy-preflight',
+      label: 'Preflight VPS',
+      enabled: vpsReady,
+      tone: 'secondary',
+      readyText: 'Validates .env.production keys, NODE_ENV=production, Redis ≥5, and the toolchain on the VPS — run before deploying',
+      blockedText: 'Fill VPS settings first'
+    },
+    {
       action: 'deploy-vps',
       label: 'Deploy to VPS Plan',
       enabled: vpsReady && runtimeReady && envReady && phase1Ready,
