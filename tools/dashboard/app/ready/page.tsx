@@ -62,16 +62,29 @@ export default function ReadyPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <AutoRefresh seconds={15} />
-      <div className="mb-4">
-        <VerifyFlowStrip active="ready" />
-      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Readiness Gate</h1>
           <p className="mt-2 text-sm text-slate-400">Final check before starting the Docmee build.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-4">
+      </div>
+
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <VerifyFlowStrip active="ready" />
+      </div>
+
+      {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
+      {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
+
+      <div className={ready ? 'mt-4 rounded-md border border-emerald-700 bg-emerald-950/40 p-5' : 'mt-4 rounded-md border border-red-800 bg-red-950/40 p-5'}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">{ready ? 'DEVTOOLS READY' : 'NOT READY'}</h2>
+            <p className="mt-2 text-sm text-slate-300">{summary.pass} passed · {summary.warning} warnings · {summary.critical} critical</p>
+            {totalChecks > 0 && <p className="mt-1 text-sm text-slate-400">{passedChecks}/{totalChecks} checks passed</p>}
+            {data.createdAt && <p className="mt-1 text-xs text-slate-500">Last checked {new Date(data.createdAt).toLocaleString()}</p>}
+          </div>
           {totalChecks > 0 && (
             <BuildProgressGauge
               size="sm"
@@ -81,24 +94,16 @@ export default function ReadyPage({ searchParams }: PageProps) {
               message={`${passedChecks}/${totalChecks} checks`}
             />
           )}
-          <div className="flex flex-wrap gap-2">
-            <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-run" /><button className="min-h-11 rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Run Ready Check</button></form>
-            <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-fix" /><button className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Auto-Fix Local Items</button></form>
-          </div>
         </div>
-      </div>
-      {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
-      {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
-
-      <div className={ready ? 'mt-6 rounded-md border border-emerald-700 bg-emerald-950/40 p-5' : 'mt-6 rounded-md border border-red-800 bg-red-950/40 p-5'}>
-        <h2 className="text-lg font-semibold">{ready ? 'DEVTOOLS READY' : 'NOT READY'}</h2>
-        <p className="mt-2 text-sm text-slate-300">{summary.pass} passed · {summary.warning} warnings · {summary.critical} critical</p>
-        {data.createdAt && <p className="mt-1 text-xs text-slate-500">Last checked {new Date(data.createdAt).toLocaleString()}</p>}
-        {ready && (
-          <a href={continueHref} className="mt-4 inline-flex min-h-11 items-center rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
-            {continueLabel}
-          </a>
-        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-run" /><button className="min-h-11 rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Run Ready Check</button></form>
+          <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-fix" /><button className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Auto-Fix Local Items</button></form>
+          {ready && (
+            <a href={continueHref} className="inline-flex min-h-11 items-center rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+              {continueLabel}
+            </a>
+          )}
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4">
@@ -111,7 +116,7 @@ export default function ReadyPage({ searchParams }: PageProps) {
           const tone = critical > 0 ? 'red' : warnings > 0 ? 'amber' : 'emerald'
           const statusText = critical > 0 ? `${critical} critical` : warnings > 0 ? `${warnings} warnings` : 'ready'
           return (
-            <details key={category.id} open={critical > 0} className="rounded-md border border-slate-800 bg-slate-900">
+            <details key={category.id} className="rounded-md border border-slate-800 bg-slate-900">
               <summary className="flex cursor-pointer select-none items-center gap-3 px-4 py-3">
                 <LaneItemGauge percent={percent} tone={tone} title={`${category.label} — ${statusText}`} />
                 <span className="flex-1">

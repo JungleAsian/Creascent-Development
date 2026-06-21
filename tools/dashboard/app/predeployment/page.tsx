@@ -327,9 +327,7 @@ export default function PredeploymentPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <AutoRefresh seconds={15} />
-      <VerifyFlowStrip active="predeploy" />
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Pre-deployment</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
@@ -337,23 +335,11 @@ export default function PredeploymentPage({ searchParams }: PageProps) {
             production migration, and external service confirmations stay manual until separately approved.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <BuildProgressGauge
-            size="sm"
-            percent={overallPercent}
-            state={overallState}
-            label="Pre-deployment"
-            message={`${summary.pass} pass · ${summary.fail} fail`}
-          />
-          <form action="/api/predeployment/run" method="post">
-          <button
-            disabled={running?.status === 'running'}
-            className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-          >
-            {running?.status === 'running' ? 'Check Running' : 'Run Pre-deployment Check'}
-          </button>
-          </form>
-        </div>
+      </div>
+
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <VerifyFlowStrip active="predeploy" />
       </div>
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
@@ -375,28 +361,48 @@ export default function PredeploymentPage({ searchParams }: PageProps) {
         </div>
       )}
 
-      <div className="mt-6 grid gap-3 md:grid-cols-5">
-        <SummaryCard label="Last run" value={latest ? new Date(latest.createdAt).toLocaleString() : 'Not run yet'} />
-        <SummaryCard label="Passed" value={String(summary.pass)} tone="emerald" />
-        <SummaryCard label="Warnings" value={String(summary.warning)} tone="amber" />
-        <SummaryCard label="Failed" value={String(summary.fail)} tone="red" />
-        <SummaryCard label="Manual" value={String(summary.manual)} tone="sky" />
-      </div>
-
-      {blockers.length > 0 && (
-        <div className="mt-6 rounded-md border border-red-800 bg-red-950/30 p-4">
-          <h2 className="text-sm font-semibold text-red-200">Blockers</h2>
-          <div className="mt-3 grid gap-2">
-            {blockers.map((check) => (
-              <div key={check.id} className="rounded border border-red-900/80 bg-slate-950/30 p-3">
-                <div className="text-sm font-medium text-red-100">{check.name}</div>
-                <div className="mt-1 text-xs text-red-200/80">{check.stage}</div>
-                {check.message && <p className="mt-2 text-sm text-red-100">{check.message}</p>}
-              </div>
-            ))}
-          </div>
+      <div className="mt-4 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <BuildProgressGauge
+            size="md"
+            percent={overallPercent}
+            state={overallState}
+            label="Pre-deployment"
+            message={`${summary.pass} pass · ${summary.fail} fail`}
+          />
+          <form action="/api/predeployment/run" method="post">
+            <button
+              disabled={running?.status === 'running'}
+              className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+            >
+              {running?.status === 'running' ? 'Check Running' : 'Run Pre-deployment Check'}
+            </button>
+          </form>
         </div>
-      )}
+
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <SummaryCard label="Last run" value={latest ? new Date(latest.createdAt).toLocaleString() : 'Not run yet'} />
+          <SummaryCard label="Passed" value={String(summary.pass)} tone="emerald" />
+          <SummaryCard label="Warnings" value={String(summary.warning)} tone="amber" />
+          <SummaryCard label="Failed" value={String(summary.fail)} tone="red" />
+          <SummaryCard label="Manual" value={String(summary.manual)} tone="sky" />
+        </div>
+
+        {blockers.length > 0 && (
+          <div className="mt-4 rounded-md border border-red-800 bg-red-950/30 p-4">
+            <h2 className="text-sm font-semibold text-red-200">Blockers</h2>
+            <div className="mt-3 grid gap-2">
+              {blockers.map((check) => (
+                <div key={check.id} className="rounded border border-red-900/80 bg-slate-950/30 p-3">
+                  <div className="text-sm font-medium text-red-100">{check.name}</div>
+                  <div className="mt-1 text-xs text-red-200/80">{check.stage}</div>
+                  {check.message && <p className="mt-2 text-sm text-red-100">{check.message}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="mt-6 grid gap-4">
         {stages.map((stage) => {

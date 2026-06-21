@@ -106,24 +106,28 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <VerifyFlowStrip active="postdeploy" />
-      <AutoRefresh seconds={15} />
-
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Post-Deployment Log</h1>
           <p className="mt-2 text-sm text-slate-400">Issues found after development and before VPS deployment.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <BuildProgressGauge size="sm" percent={overallPercent} state={overallState} label="Post-deployment" message={overallMessage} />
-          <a href="/deploy" className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
-            Open Deployment Guide
-          </a>
-        </div>
+        <a href="/deploy" className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+          Open Deployment Guide
+        </a>
+      </div>
+
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <VerifyFlowStrip active="postdeploy" />
       </div>
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
+
+      <div className="mt-4 flex flex-wrap items-center gap-4 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <BuildProgressGauge size="sm" percent={overallPercent} state={overallState} label="Post-deployment" message={overallMessage} />
+        <div className="text-sm text-slate-400">Latest functionality check summary.</div>
+      </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-4">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -212,8 +216,8 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
-        <h2 className="text-sm font-semibold">History</h2>
+      <details className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-200 hover:text-white">Run history <span className="ml-1 text-xs font-normal text-slate-500">(show {runs.length} runs)</span></summary>
         <div className="mt-4 grid gap-2">
           {runs.slice(0, 10).map((run) => {
             const runTime = new Date(run.createdAt).toLocaleString()
@@ -254,7 +258,7 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
           )})}
           {runs.length === 0 && <p className="text-sm text-slate-400">No history yet.</p>}
         </div>
-      </div>
+      </details>
     </section>
   )
 }
