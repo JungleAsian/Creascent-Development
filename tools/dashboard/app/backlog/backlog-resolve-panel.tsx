@@ -101,39 +101,31 @@ export function BacklogResolvePanel({
             <textarea value={text} onChange={(event) => setText(event.target.value)} rows={6} className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100" />
           </div>
 
-          {agent === 'claude' ? (
-            <div className="space-y-2">
-              <form action="/api/actions" method="post">
-                <input type="hidden" name="action" value="backlog-plan" />
-                <input type="hidden" name="id" value={id} />
-                <button className="w-full rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400">Auto-plan &amp; resolve →</button>
-              </form>
-              <p className="text-xs text-slate-500">Claude drafts a plan + rates confidence: <span className="text-emerald-200">≥8 auto-approves &amp; resolves</span>; below that it pauses for your approval. After resolving it <span className="text-emerald-200">auto-verifies</span> — confidence ≥8 marks it done automatically.</p>
-              <form action="/api/actions" method="post">
-                <input type="hidden" name="action" value="backlog-resolve" />
-                <input type="hidden" name="id" value={id} />
-                <input type="hidden" name="plan" value={text} />
-                <button className="w-full rounded-md border border-emerald-700 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-950/40">{typeof confidence === 'number' && confidence < 8 ? 'Approve this plan & resolve →' : 'Resolve with this plan (skip auto-plan) →'}</button>
-              </form>
-            </div>
-          ) : provider.api ? (
-            <div className="space-y-2">
-              <form action="/api/actions" method="post">
-                <input type="hidden" name="action" value="backlog-resolve" />
-                <input type="hidden" name="id" value={id} />
-                <input type="hidden" name="provider" value={agent} />
-                <input type="hidden" name="plan" value={text} />
-                <button className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Run {provider.label} → Claude →</button>
-              </form>
-              <p className="text-xs text-amber-200/80">Hands-off: <span className="text-violet-100">{provider.label}</span> drafts the fix, then <span className="text-cyan-200">Claude implements &amp; commits</span> it, then it&apos;s <span className="text-emerald-200">auto-verified</span> (confidence ≥8 auto-approves). Needs <span className="font-mono">{agent.toUpperCase()}_API_KEY</span> in <span className="font-mono">.env.tools</span> — without it, Claude resolves directly.</p>
+          <div className="space-y-2">
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="backlog-plan" />
+              <input type="hidden" name="id" value={id} />
+              <input type="hidden" name="provider" value={agent} />
+              <button className="w-full rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400">Auto-plan &amp; resolve →</button>
+            </form>
+            <p className="text-xs text-slate-500">
+              {agent === 'claude' ? (
+                <>Claude drafts a plan + rates confidence: <span className="text-emerald-200">≥8 auto-approves &amp; resolves</span>; below that it pauses for your approval. Then it <span className="text-emerald-200">auto-verifies</span> — ≥8 marks it done automatically.</>
+              ) : (
+                <>Hands-off: <span className="text-violet-100">{provider.label}</span> drafts the fix, <span className="text-cyan-200">Claude implements &amp; commits</span>, then it <span className="text-emerald-200">auto-verifies</span> (≥8 auto-approves). {provider.api ? <>Needs <span className="font-mono">{agent.toUpperCase()}_API_KEY</span> in <span className="font-mono">.env.tools</span> — without it, Claude resolves directly.</> : <>No API for {provider.label}, so Claude resolves directly.</>}</>
+              )}
+            </p>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="backlog-resolve" />
+              <input type="hidden" name="id" value={id} />
+              <input type="hidden" name="provider" value={agent} />
+              <input type="hidden" name="plan" value={text} />
+              <button className="w-full rounded-md border border-emerald-700 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-950/40">{typeof confidence === 'number' && confidence < 8 ? 'Approve this plan & resolve →' : 'Resolve with this plan (skip auto-plan) →'}</button>
+            </form>
+            {agent !== 'claude' && provider.url && (
               <button type="button" onClick={copyAndOpen} className="text-xs text-cyan-300 underline">or copy the plan &amp; open {provider.label} manually ↗</button>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <button type="button" onClick={copyAndOpen} className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Copy plan + open {provider.label} →</button>
-              <p className="text-xs text-amber-200/80">{provider.label} runs manually (no API runner here): the plan is copied for you. When done, set the item to <span className="font-medium">review</span> and save the assignment / PR below.</p>
-            </div>
-          )}
+            )}
+          </div>
 
           {result && (
             <details className="rounded-md border border-violet-900 bg-violet-950/20 p-2" open>

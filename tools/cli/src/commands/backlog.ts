@@ -563,7 +563,7 @@ function parsePlan(output: string): { confidence: number; plan: string } {
 
 // Auto-plan: Claude drafts a plan + self-rates confidence. >= threshold → plan
 // auto-approved (and, with --auto, resolved immediately); below → plan-review.
-async function planTask(id: number, threshold: number, auto: boolean): Promise<void> {
+async function planTask(id: number, threshold: number, auto: boolean, provider = 'claude'): Promise<void> {
   const tasks = getTasks()
   const task = tasks.find((item) => item.id === id)
   if (!task) { log('backlog', `Task ${id} not found`, 'error'); process.exitCode = 1; return }
@@ -594,7 +594,7 @@ async function planTask(id: number, threshold: number, auto: boolean): Promise<v
     saveTasks(after)
     touchBacklogRun({ status: 'complete', message: `Plan auto-approved (confidence ${confidence}/10 ≥ ${threshold}).` })
     log('backlog', `Backlog #${id} plan confidence ${confidence}/10 ≥ ${threshold} — auto-approved.`)
-    if (auto) await resolveTask(id)
+    if (auto) await resolveTask(id, provider)
   } else {
     updated.planApproved = false
     updated.status = 'plan-review'
@@ -791,13 +791,15 @@ backlogCmd
 
 backlogCmd
   .command('plan')
-  .description('Auto-generate a resolution plan + confidence; auto-resolve when confidence is high enough')
+  .description('Auto-generate a resolution plan + confidence; auto-resolve (with the assigned AI) when confidence is high enough')
   .requiredOption('--id <id>')
   .option('--threshold <n>', `Confidence needed to auto-approve (default ${CONFIDENCE_THRESHOLD})`)
   .option('--auto', 'Resolve immediately when the plan is auto-approved')
-  .action(async (opts: { id: string; threshold?: string; auto?: boolean }) => {
+  .option('--provider <provider>', 'claude | codex | grok | gemini | deepseek | glm (defaults to the item assignee)')
+  .action(async (opts: { id: string; threshold?: string; auto?: boolean; provider?: string }) => {
     touchBacklogRun({ autoResolve: false })
-    await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto))
+    const assignee = getTasks().find((item) => item.id === Number(opts.id))?.assignee
+    await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto), opts.provider || assignee || 'claude')
   })
 
 backlogCmd

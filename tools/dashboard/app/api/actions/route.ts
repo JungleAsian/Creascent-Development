@@ -2116,12 +2116,14 @@ export async function POST(request: Request) {
 
   if (action === 'backlog-plan') {
     const id = String(form.get('id') ?? '')
+    const provider = String(form.get('provider') ?? 'claude') || 'claude'
     if (backlogRunBusy()) {
       return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish, or click Stop.')
     }
-    runTool(['backlog', 'update', '--id', id, '--assignee', 'claude'])
-    runToolDetached(['backlog', 'plan', '--id', id, '--auto'])
-    return redirect(request, 'message', `Auto-planning backlog #${id} — Claude drafts a plan, rates confidence, and auto-resolves if ≥8 (otherwise it waits for your approval).`)
+    runTool(['backlog', 'update', '--id', id, '--assignee', provider])
+    runToolDetached(['backlog', 'plan', '--id', id, '--auto', '--provider', provider])
+    const who = provider === 'claude' ? 'Claude' : `${provider} → Claude`
+    return redirect(request, 'message', `Auto-planning backlog #${id} (${who}) — plan + confidence gate, auto-resolve if ≥8, then auto-verify.`)
   }
 
   if (action === 'backlog-verify') {
