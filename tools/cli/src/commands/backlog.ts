@@ -1,10 +1,190 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { spawn, spawnSync } from 'node:child_process'
 import { Command } from 'commander'
 import { readJson, writeJson } from '../lib/json-store.js'
 import { log } from '../lib/logger.js'
+import { logsDir, toolsRoot } from '../lib/paths.js'
+import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'infrastructure'
-type Status = 'todo' | 'done'
-type Task = { id: number; phase: string; priority: Priority; title: string; status: Status }
+type Status = 'todo' | 'in-progress' | 'plan-review' | 'blocked' | 'review' | 'done'
+type Lane = 'backend' | 'frontend' | 'ui' | 'infra'
+type Assignee = 'claude' | 'codex'
+// `auto`/`key`/`source` mark items collected by `backlog sync` (TODO/FIXME scan)
+// so re-runs dedup by key and auto-remove items whose comment was deleted.
+// `assignee`/`plan`/`commit`/`pr` drive the resolution workflow + Claude handoff.
+type Task = {
+  id: number
+  phase: string
+  priority: Priority
+  title: string
+  status: Status
+  lane?: Lane
+  auto?: 'todo'
+  key?: string
+  source?: string
+  flag?: 'possibly-shipped'
+  assignee?: Assignee
+  plan?: string
+  confidence?: number
+  planApproved?: boolean
+  commit?: string
+  pr?: string
+}
+const STATUSES: Status[] = ['todo', 'in-progress', 'plan-review', 'blocked', 'review', 'done']
+const CONFIDENCE_THRESHOLD = 8
+
+const SCAN_DIRS = ['apps', 'packages']
+const SCAN_EXT = new Set(['.ts', '.tsx', '.js', '.jsx'])
+const SKIP_DIRS = new Set(['node_modules', 'dist', '.next', '.turbo', 'coverage', '.git'])
+
+function repoRoot() {
+  return path.resolve(toolsRoot, '..')
+}
+
+function walkFiles(dir: string, out: string[]) {
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (SKIP_DIRS.has(entry.name)) continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) walkFiles(full, out)
+    else if (SCAN_EXT.has(path.extname(entry.name))) out.push(full)
+  }
+}
+
+function laneForPath(rel: string): Lane {
+  if (rel.startsWith('apps/api') || rel.startsWith('apps/workers')) return 'backend'
+  if (rel.startsWith('apps/inboxos')) return 'frontend'
+  return 'infra'
+}
+
+type FoundTodo = { key: string; tag: string; text: string; lane: Lane; source: string }
+
+function scanTodos(): FoundTodo[] {
+  const root = repoRoot()
+  const found: FoundTodo[] = []
+  for (const base of SCAN_DIRS) {
+    const dir = path.join(root, base)
+    if (!fs.existsSync(dir)) continue
+    const files: string[] = []
+    walkFiles(dir, files)
+    for (const file of files) {
+      let lines: string[]
+      try {
+        lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+      } catch {
+        continue
+      }
+      lines.forEach((line, index) => {
+        const match = line.match(/\/\/\s*(TODO|FIXME|HACK)\b:?\s*(.*)$/i)
+        if (!match) return
+        const tag = match[1].toUpperCase()
+        const text = (match[2] || '').trim() || '(no description)'
+        const rel = path.relative(root, file).replace(/\\/g, '/')
+        found.push({ key: `${tag}:${rel}:${index + 1}`, tag, text, lane: laneForPath(rel), source: `${rel}:${index + 1}` })
+      })
+    }
+  }
+  return found
+}
+
+// Map of backlog id -> short commit hash, from commits whose message references
+// "backlog #N" (latest first). Drives automatic status advancement.
+function gitResolvedRefs(): Map<number, string> {
+  const map = new Map<number, string>()
+  try {
+    const result = spawnSync('git', ['log', '-i', '--grep=backlog #', '-n', '300', '--pretty=%h%x09%s'], { cwd: repoRoot(), encoding: 'utf8', timeout: 8000 })
+    if (result.status !== 0) return map
+    for (const line of (result.stdout || '').split(/\r?\n/)) {
+      const tab = line.indexOf('\t')
+      if (tab < 0) continue
+      const hash = line.slice(0, tab).trim()
+      const match = line.slice(tab + 1).match(/backlog #(\d+)/i)
+      if (hash && match && !map.has(Number(match[1]))) map.set(Number(match[1]), hash)
+    }
+  } catch {
+    // git unavailable — skip auto-advance.
+  }
+  return map
+}
+
+// Auto-collect: scan code for TODO/FIXME (add new, drop resolved), flag items
+// matching completed features/screens, and auto-advance items with a resolving
+// commit to review.
+export function syncBacklog() {
+  const tasks = getTasks()
+  const found = scanTodos()
+  const foundKeys = new Set(found.map((f) => f.key))
+  const existingAutoKeys = new Set(tasks.filter((t) => t.auto === 'todo' && t.key).map((t) => t.key as string))
+
+  // Drop auto items whose comment no longer exists in code.
+  const kept = tasks.filter((t) => !(t.auto === 'todo' && t.key && !foundKeys.has(t.key)))
+  const removed = tasks.length - kept.length
+
+  // Add newly-found TODO/FIXME comments.
+  let nextId = Math.max(0, ...kept.map((t) => t.id)) + 1
+  let added = 0
+  for (const f of found) {
+    if (existingAutoKeys.has(f.key)) continue
+    kept.push({
+      id: nextId++,
+      phase: 'TODO',
+      priority: f.tag === 'FIXME' ? 'high' : 'medium',
+      title: `${f.tag}: ${f.text}`,
+      status: 'todo',
+      lane: f.lane,
+      auto: 'todo',
+      key: f.key,
+      source: f.source
+    })
+    added += 1
+  }
+
+  // Staleness guard: close open manual items matching a completed feature/screen.
+  const features = readJson<Array<{ feature?: string; status?: string }>>('rev1-feature-coverage.json', [])
+  const screens = readJson<Array<{ screen?: string; status?: string }>>('ui-development-records.json', [])
+  const doneNames = [
+    ...features.filter((f) => f.status === 'complete').map((f) => (f.feature ?? '').toLowerCase().trim()),
+    ...screens.filter((s) => s.status === 'complete').map((s) => (s.screen ?? '').toLowerCase().trim())
+  ].filter((name) => name.length >= 5)
+  // Flag (do NOT auto-close) open manual items that look already-shipped, so the
+  // user reviews them — the coverage data can over-claim completion. Auto items
+  // are handled by the scan above. Self-clears the flag when no longer matching.
+  let flagged = 0
+  for (const t of kept) {
+    if (t.auto === 'todo') continue
+    const title = (t.title ?? '').toLowerCase().trim()
+    const looksShipped = t.status !== 'done' && title.length >= 6 && doneNames.some((name) => name.includes(title))
+    if (looksShipped) {
+      t.flag = 'possibly-shipped'
+      flagged += 1
+    } else if (t.flag === 'possibly-shipped') {
+      delete t.flag
+    }
+  }
+
+  // Auto-advance status from real signals: any open item with a commit that
+  // references "backlog #N" has been worked on → move it to review + record it.
+  let advanced = 0
+  const resolvedRefs = gitResolvedRefs()
+  for (const t of kept) {
+    const ref = resolvedRefs.get(t.id)
+    if (ref && ['todo', 'in-progress', 'blocked', 'plan-review'].includes(t.status)) {
+      t.status = 'review'
+      if (!t.commit) t.commit = ref
+      advanced += 1
+    }
+  }
+
+  saveTasks(kept)
+  return { added, removed, flagged, advanced, scanned: found.length }
+}
 
 const seedTitles = [
   ['P01', 'critical', 'missing exports'],
@@ -103,10 +283,12 @@ backlogCmd
   .requiredOption('--title <title>')
   .requiredOption('--phase <phase>')
   .requiredOption('--priority <priority>')
-  .action((opts: { title: string; phase: string; priority: Priority }) => {
+  .option('--lane <lane>', 'Target lane: backend, frontend, ui, or infra')
+  .action((opts: { title: string; phase: string; priority: Priority; lane?: string }) => {
     const tasks = getTasks()
     const nextId = Math.max(0, ...tasks.map((task) => task.id)) + 1
-    tasks.push({ id: nextId, title: opts.title, phase: opts.phase, priority: opts.priority, status: 'todo' })
+    const lane = (['backend', 'frontend', 'ui', 'infra'] as const).find((value) => value === opts.lane)
+    tasks.push({ id: nextId, title: opts.title, phase: opts.phase, priority: opts.priority, status: 'todo', ...(lane ? { lane } : {}) })
     saveTasks(tasks)
     log('backlog', `Added task ${nextId}`)
   })
@@ -126,4 +308,271 @@ backlogCmd
     task.status = 'done'
     saveTasks(tasks)
     log('backlog', `Marked task ${id} done`)
+  })
+
+backlogCmd
+  .command('set')
+  .description('Set a task status (todo, in-progress, blocked, done)')
+  .requiredOption('--id <id>')
+  .requiredOption('--status <status>')
+  .action((opts: { id: string; status: string }) => {
+    const id = Number(opts.id)
+    const status = opts.status as Status
+    if (!STATUSES.includes(status)) {
+      log('backlog', `Invalid status "${opts.status}". Use one of: ${STATUSES.join(', ')}`, 'error')
+      process.exitCode = 1
+      return
+    }
+    const tasks = getTasks()
+    const task = tasks.find((item) => item.id === id)
+    if (!task) {
+      log('backlog', `Task ${id} not found`, 'error')
+      process.exitCode = 1
+      return
+    }
+    task.status = status
+    saveTasks(tasks)
+    log('backlog', `Task ${id} set to ${status}`)
+  })
+
+backlogCmd
+  .command('remove')
+  .description('Delete a backlog task')
+  .requiredOption('--id <id>')
+  .action((opts: { id: string }) => {
+    const id = Number(opts.id)
+    const tasks = getTasks()
+    const next = tasks.filter((item) => item.id !== id)
+    if (next.length === tasks.length) {
+      log('backlog', `Task ${id} not found`, 'error')
+      process.exitCode = 1
+      return
+    }
+    saveTasks(next)
+    log('backlog', `Removed task ${id}`)
+  })
+
+backlogCmd
+  .command('update')
+  .description('Update resolution fields on a task (assignee, plan, commit, pr)')
+  .requiredOption('--id <id>')
+  .option('--assignee <assignee>', 'claude or codex')
+  .option('--plan <plan>')
+  .option('--commit <commit>')
+  .option('--pr <pr>')
+  .action((opts: { id: string; assignee?: string; plan?: string; commit?: string; pr?: string }) => {
+    const id = Number(opts.id)
+    const tasks = getTasks()
+    const task = tasks.find((item) => item.id === id)
+    if (!task) {
+      log('backlog', `Task ${id} not found`, 'error')
+      process.exitCode = 1
+      return
+    }
+    if (opts.assignee === 'claude' || opts.assignee === 'codex') task.assignee = opts.assignee
+    if (opts.plan !== undefined) task.plan = opts.plan
+    if (opts.commit !== undefined) task.commit = opts.commit
+    if (opts.pr !== undefined) task.pr = opts.pr
+    saveTasks(tasks)
+    log('backlog', `Task ${id} updated`)
+  })
+
+const backlogRunFile = path.join(logsDir, 'backlog-run.json')
+function touchBacklogRun(partial: Record<string, unknown>) {
+  let current: Record<string, unknown> = {}
+  try { current = JSON.parse(fs.readFileSync(backlogRunFile, 'utf8')) as Record<string, unknown> } catch { current = {} }
+  fs.mkdirSync(logsDir, { recursive: true })
+  fs.writeFileSync(backlogRunFile, `${JSON.stringify({ ...current, ...partial, workflow: 'backlog-resolve', heartbeatAt: new Date().toISOString() }, null, 2)}\n`)
+}
+
+// Single-shot headless Claude Code run; returns exit code + captured output.
+function runClaudeHeadless(prompt: string, message: string): Promise<{ code: number; output: string }> {
+  return new Promise((resolve) => {
+    let output = ''
+    const child = spawn(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
+      cwd: repoRoot(), env: claudeCodeEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
+    })
+    const heartbeat = setInterval(() => touchBacklogRun({ pid: child.pid, status: 'running', message }), 10000)
+    child.stdout.on('data', (chunk) => { output += String(chunk); log('backlog', String(chunk).trim()) })
+    child.stderr.on('data', (chunk) => { output += String(chunk); log('backlog', String(chunk).trim(), 'warn') })
+    child.on('close', (exit) => { clearInterval(heartbeat); resolve({ code: exit ?? 1, output }) })
+    child.stdin.end(prompt)
+  })
+}
+
+// Implement an item with Claude Code, capture the commit, move it to review.
+async function resolveTask(id: number): Promise<number> {
+  const tasks = getTasks()
+  const task = tasks.find((item) => item.id === id)
+  if (!task) { log('backlog', `Task ${id} not found`, 'error'); return 1 }
+  task.status = 'in-progress'
+  saveTasks(tasks)
+  const message = `Resolving backlog #${id}: ${task.title}`
+  const prompt = [
+    `Resolve Docmee backlog item #${task.id}: ${task.title}.`,
+    `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+    '',
+    'Plan / instruction:',
+    (task.plan && task.plan.trim()) || 'Investigate the relevant code, design a focused fix, and implement it.',
+    '',
+    'Requirements:',
+    '- Work locally; keep changes scoped to this item.',
+    '- Run the relevant local checks.',
+    `- Commit with a clear message referencing "backlog #${task.id}".`,
+    '- Report what you changed.'
+  ].join('\n')
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', message })
+  const { code } = await runClaudeHeadless(prompt, message)
+  touchBacklogRun({ status: code === 0 ? 'complete' : 'failed', message: code === 0 ? `Backlog #${id} resolved — ready for review.` : `Backlog #${id} resolution failed (exit ${code}).` })
+  const after = getTasks()
+  const updated = after.find((item) => item.id === id)
+  if (updated) {
+    updated.status = code === 0 ? 'review' : 'blocked'
+    if (code === 0) {
+      const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8' })
+      if (head.status === 0) updated.commit = (head.stdout || '').trim()
+    }
+    saveTasks(after)
+  }
+  return code
+}
+
+// Parse the planning run's JSON ({confidence, plan}); fall back to a low score
+// (so it errs toward requiring approval) if the model didn't return clean JSON.
+function parsePlan(output: string): { confidence: number; plan: string } {
+  const stripped = output.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
+  const tryParse = (text: string) => {
+    try {
+      const parsed = JSON.parse(text) as { confidence?: unknown; plan?: unknown }
+      if (typeof parsed.confidence === 'number') {
+        return { confidence: Math.max(1, Math.min(10, Math.round(parsed.confidence))), plan: String(parsed.plan ?? text) }
+      }
+    } catch {
+      // not JSON
+    }
+    return null
+  }
+  let result = tryParse(stripped)
+  if (!result) {
+    const match = stripped.match(/\{[\s\S]*\}/)
+    if (match) result = tryParse(match[0])
+  }
+  return result ?? { confidence: 5, plan: output.trim().slice(0, 2000) || 'No plan produced.' }
+}
+
+// Auto-plan: Claude drafts a plan + self-rates confidence. >= threshold → plan
+// auto-approved (and, with --auto, resolved immediately); below → plan-review.
+async function planTask(id: number, threshold: number, auto: boolean): Promise<void> {
+  const tasks = getTasks()
+  const task = tasks.find((item) => item.id === id)
+  if (!task) { log('backlog', `Task ${id} not found`, 'error'); process.exitCode = 1; return }
+  task.status = 'in-progress'
+  saveTasks(tasks)
+  const message = `Planning backlog #${id}: ${task.title}`
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', message })
+  const prompt = [
+    `Produce a resolution PLAN for Docmee backlog item #${task.id}: ${task.title}.`,
+    `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+    '',
+    'Investigate the relevant code, then write a concise numbered plan to resolve it.',
+    'Also rate your CONFIDENCE from 1-10 that this plan is correct and low-risk to auto-implement WITHOUT human review.',
+    'Do NOT change any code now — planning only.',
+    '',
+    'Respond with ONLY a JSON object (no prose, no code fences):',
+    '{"confidence": <integer 1-10>, "plan": "<numbered steps>"}'
+  ].join('\n')
+  const { output } = await runClaudeHeadless(prompt, message)
+  const { confidence, plan } = parsePlan(output)
+  const after = getTasks()
+  const updated = after.find((item) => item.id === id)
+  if (!updated) return
+  updated.plan = plan
+  updated.confidence = confidence
+  if (confidence >= threshold) {
+    updated.planApproved = true
+    saveTasks(after)
+    touchBacklogRun({ status: 'complete', message: `Plan auto-approved (confidence ${confidence}/10 ≥ ${threshold}).` })
+    log('backlog', `Backlog #${id} plan confidence ${confidence}/10 ≥ ${threshold} — auto-approved.`)
+    if (auto) await resolveTask(id)
+  } else {
+    updated.planApproved = false
+    updated.status = 'plan-review'
+    saveTasks(after)
+    touchBacklogRun({ status: 'complete', message: `Plan needs your approval (confidence ${confidence}/10 < ${threshold}).` })
+    log('backlog', `Backlog #${id} plan confidence ${confidence}/10 < ${threshold} — awaiting approval.`)
+  }
+}
+
+// Sequentially work the whole backlog: for each open "todo" item Claude drafts a
+// plan + confidence, then the gate decides — >= threshold auto-resolves (implement
+// + commit), below queues it to plan-review for the user. One item at a time so the
+// Claude runs never collide on git. Progress is streamed to backlog-run.json.
+async function autoResolveAll(threshold: number): Promise<void> {
+  const queue = getTasks().filter((task) => task.status === 'todo')
+  const total = queue.length
+  if (total === 0) {
+    touchBacklogRun({ status: 'complete', autoResolve: true, total: 0, processed: 0, message: 'Auto-resolve: no open todo items.' })
+    log('backlog', 'Auto-resolve: nothing to do.')
+    return
+  }
+  let processed = 0
+  let resolved = 0
+  let queued = 0
+  let failed = 0
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), autoResolve: true, total, processed, resolved, queued, failed, message: `Auto-resolving ${total} item(s) (threshold ${threshold}/10)…` })
+  log('backlog', `Auto-resolve: starting on ${total} todo item(s) at threshold ${threshold}/10.`)
+  for (const item of queue) {
+    const pre = getTasks()
+    const target = pre.find((task) => task.id === item.id)
+    if (target) { target.assignee = 'claude'; saveTasks(pre) }
+    touchBacklogRun({ status: 'running', autoResolve: true, total, processed, resolved, queued, failed, currentId: item.id, currentTitle: item.title, message: `(${processed + 1}/${total}) Planning #${item.id}: ${item.title}` })
+    try {
+      await planTask(item.id, threshold, true)
+    } catch (error) {
+      log('backlog', `Auto-resolve: #${item.id} errored — ${(error as Error).message}`, 'error')
+    }
+    const after = getTasks().find((task) => task.id === item.id)
+    if (after?.status === 'review' || after?.status === 'done') resolved += 1
+    else if (after?.status === 'plan-review') queued += 1
+    else failed += 1
+    processed += 1
+    touchBacklogRun({ status: 'running', autoResolve: true, total, processed, resolved, queued, failed, currentId: item.id, message: `(${processed}/${total}) ${resolved} resolved · ${queued} need approval · ${failed} failed` })
+  }
+  touchBacklogRun({ status: 'complete', autoResolve: true, total, processed, resolved, queued, failed, currentId: null, message: `Auto-resolve done: ${resolved} resolved, ${queued} need approval, ${failed} failed.` })
+  log('backlog', `Auto-resolve complete: ${resolved} resolved, ${queued} awaiting approval, ${failed} failed.`)
+}
+
+backlogCmd
+  .command('auto-resolve')
+  .description('Sequentially plan every open todo item; auto-resolve those above the confidence threshold, queue the rest for approval')
+  .option('--threshold <n>', `Confidence needed to auto-resolve (default ${CONFIDENCE_THRESHOLD})`)
+  .action(async (opts: { threshold?: string }) => {
+    await autoResolveAll(Number(opts.threshold) || CONFIDENCE_THRESHOLD)
+  })
+
+backlogCmd
+  .command('resolve')
+  .description('Hand a backlog item to Claude Code to implement, then move it to review')
+  .requiredOption('--id <id>')
+  .action(async (opts: { id: string }) => {
+    const code = await resolveTask(Number(opts.id))
+    if (code !== 0) process.exitCode = code
+  })
+
+backlogCmd
+  .command('plan')
+  .description('Auto-generate a resolution plan + confidence; auto-resolve when confidence is high enough')
+  .requiredOption('--id <id>')
+  .option('--threshold <n>', `Confidence needed to auto-approve (default ${CONFIDENCE_THRESHOLD})`)
+  .option('--auto', 'Resolve immediately when the plan is auto-approved')
+  .action(async (opts: { id: string; threshold?: string; auto?: boolean }) => {
+    await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto))
+  })
+
+backlogCmd
+  .command('sync')
+  .description('Auto-collect: scan code for TODO/FIXME and close items matching completed features/screens')
+  .action(() => {
+    const result = syncBacklog()
+    log('backlog', `Backlog sync: +${result.added} new, -${result.removed} resolved, ${result.flagged} flagged, ${result.advanced} advanced to review (${result.scanned} TODO/FIXME found)`)
   })
