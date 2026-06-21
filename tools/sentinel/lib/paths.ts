@@ -20,6 +20,10 @@ export const daemonPidFile = path.join(logsDir, 'sentinel-daemon.pid')
 export const issuesFile = path.join(logsDir, 'sentinel-issues.json')
 export const auditFile = path.join(logsDir, 'sentinel-audit.json')
 export const tasksDir = path.join(logsDir, 'sentinel-tasks')
+export const featureCoverageFile = path.join(logsDir, 'rev1-feature-coverage.json')
+export const featureRunFile = path.join(logsDir, 'feature-run.json')
+export const deploymentRecordsFile = path.join(logsDir, 'docmee-deployment-records.json')
+export const startReadinessFile = path.join(logsDir, 'start-readiness.json')
 
 // Sub-system heartbeats.
 export const forgeHeartbeatFile = path.join(logsDir, 'forge-heartbeat.json')

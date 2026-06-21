@@ -16,4 +16,6 @@ export interface SubsystemDeps {
   recomputeTray(): void
   /** Report an internal heartbeat to the daemon supervisor (every cycle). */
   reportAlive(): void
+  /** Optional safe correction hook for derived log/status files. */
+  refreshDerivedDeploymentRecords?(): boolean
 }

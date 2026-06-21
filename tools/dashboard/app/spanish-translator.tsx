@@ -440,10 +440,76 @@ const wordTranslations: Record<string, string> = {
   updated: 'actualizado',
   warning: 'advertencia',
   warnings: 'advertencias',
-  workflow: 'flujo'
+  workflow: 'flujo',
+  Enhancement: 'Mejora',
+  Enhancements: 'Mejoras',
+  enhancement: 'mejora',
+  enhancements: 'mejoras',
+  Verification: 'Verificacion',
+  verification: 'verificacion',
+  Verify: 'Verificar',
+  verify: 'verificar',
+  Readiness: 'Preparacion',
+  readiness: 'preparacion',
+  Resolution: 'Resolucion',
+  resolution: 'resolucion',
+  Resolve: 'Resolver',
+  resolve: 'resolver',
+  Resolved: 'Resuelto',
+  Mockup: 'Maqueta',
+  mockup: 'maqueta',
+  Coverage: 'Cobertura',
+  coverage: 'cobertura',
+  Confidence: 'Confianza',
+  confidence: 'confianza',
+  Threshold: 'Umbral',
+  Recovery: 'Recuperacion',
+  Severity: 'Severidad',
+  Incident: 'Incidente',
+  Integrity: 'Integridad',
+  Provider: 'Proveedor',
+  Providers: 'Proveedores',
+  provider: 'proveedor',
+  Routing: 'Enrutamiento',
+  Channel: 'Canal',
+  Channels: 'Canales',
+  channel: 'canal',
+  channels: 'canales',
+  Reachability: 'Accesibilidad',
+  Subsystem: 'Subsistema',
+  Subsystems: 'Subsistemas',
+  Generate: 'Generar',
+  Approve: 'Aprobar',
+  Preview: 'Vista previa',
+  Commit: 'Confirmar',
+  Push: 'Enviar',
+  Timeline: 'Cronologia',
+  Messages: 'Mensajes',
+  Setup: 'Configuracion'
 }
 
 const phraseTranslations: Array<[RegExp, string]> = [
+  [/\bRun Full Verification\b/g, 'Ejecutar verificacion completa'],
+  [/\bFull Verification\b/g, 'Verificacion completa'],
+  [/\bContinue to Deploy\b/g, 'Continuar al despliegue'],
+  [/\bAuto-resolve all\b/g, 'Resolver todo automaticamente'],
+  [/\bAuto-plan & resolve\b/g, 'Auto-planificar y resolver'],
+  [/\bLaunch App Locally\b/g, 'Abrir aplicacion localmente'],
+  [/\bResolution flow\b/g, 'Flujo de resolucion'],
+  [/\bScreen workflow\b/g, 'Flujo de pantallas'],
+  [/\bDocmee UI Development\b/g, 'Desarrollo de UI de Docmee'],
+  [/\bReadiness Gate\b/g, 'Puerta de preparacion'],
+  [/\bFeature automation\b/g, 'Automatizacion de funciones'],
+  [/\bEnhancement automation\b/g, 'Automatizacion de mejoras'],
+  [/\bLocal app check\b/g, 'Comprobacion de app local'],
+  [/\bLocal UI verify\b/g, 'Verificacion de UI local'],
+  [/\bGenerate mockup\b/g, 'Generar maqueta'],
+  [/\bApprove & build\b/g, 'Aprobar y construir'],
+  [/\bCommit & push\b/g, 'Confirmar y enviar'],
+  [/\bSetup ready\b/g, 'Configuracion lista'],
+  [/\bStart check\b/g, 'Comprobacion de inicio'],
+  [/\bPost-deploy\b/g, 'Post-despliegue'],
+  [/\bAdd a task\b/g, 'Agregar una tarea'],
   [/\bStart Frontend Development\b/g, 'Iniciar desarrollo frontend'],
   [/\bFrontend Start Check\b/g, 'Comprobacion de inicio frontend'],
   [/\bFrontend Build Control\b/g, 'Control de compilacion frontend'],
@@ -501,6 +567,22 @@ const phraseTranslations: Array<[RegExp, string]> = [
 ]
 
 const originals = new WeakMap<Text, string>()
+// API-backed fallback: full-string LLM translations fetched for anything the
+// static dictionary does not cover, cached in-memory (server persists to disk).
+const apiTranslations = new Map<string, string>()
+const requested = new Set<string>()
+
+// Mirror the server's skip rules so we never ship data (hashes, paths, env keys,
+// pure numbers) to the translate endpoint.
+function looksTranslatable(value: string) {
+  const t = value.trim()
+  if (t.length < 2 || t.length > 600) return false
+  if (!/[A-Za-z]/.test(t)) return false
+  if (/^[0-9a-f]{7,40}$/i.test(t)) return false
+  if (/^(https?:\/\/|\/|\.\/|~\/|[A-Za-z]:\\)/.test(t)) return false
+  if (/^[A-Z0-9_]{3,}$/.test(t) && t.includes('_')) return false
+  return true
+}
 
 function preserveCase(source: string, translated: string) {
   if (source.toUpperCase() === source && source.length > 1) return translated.toUpperCase()
@@ -526,6 +608,9 @@ function translateText(value: string) {
 
   const exact = exactTranslations[trimmed]
   if (exact) return value.replace(trimmed, exact)
+
+  const fromApi = apiTranslations.get(trimmed)
+  if (fromApi) return value.replace(trimmed, fromApi)
 
   const resumeMatch = trimmed.match(/^Resume from (P\d{2})$/)
   if (resumeMatch) return value.replace(trimmed, `Reanudar desde ${resumeMatch[1]}`)
@@ -602,6 +687,31 @@ function translate(root: HTMLElement, language: 'en' | 'es') {
   }
 }
 
+// Gather visible UI strings the static dictionary hasn't fully covered (anything
+// without an exact or already-fetched translation) so the API can translate them.
+function collectUntranslated(root: HTMLElement): string[] {
+  const out = new Set<string>()
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    if (shouldSkip(node)) continue
+    const trimmed = (node.nodeValue ?? '').trim()
+    if (!trimmed || !looksTranslatable(trimmed)) continue
+    if (exactTranslations[trimmed] || apiTranslations.has(trimmed) || requested.has(trimmed)) continue
+    out.add(trimmed)
+  }
+  for (const element of Array.from(root.querySelectorAll<HTMLElement>('[title], [aria-label], [placeholder]'))) {
+    if (element.closest('script, style, code, pre, [data-no-translate]')) continue
+    for (const attribute of ['title', 'aria-label', 'placeholder']) {
+      const value = (element.getAttribute(`data-original-${attribute}`) ?? element.getAttribute(attribute) ?? '').trim()
+      if (!value || !looksTranslatable(value)) continue
+      if (exactTranslations[value] || apiTranslations.has(value) || requested.has(value)) continue
+      out.add(value)
+    }
+  }
+  return [...out]
+}
+
 export function SpanishTranslator({ children, language }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -621,17 +731,50 @@ export function SpanishTranslator({ children, language }: Props) {
     // the observer (a MutationObserver callback is async, so an in-callback
     // re-entrancy flag cannot prevent that self-trigger). Re-observe afterward
     // to keep picking up real content changes from React re-renders.
-    const apply = () => {
+    const retranslate = () => {
       if (cancelled || !observer) return
       observer.disconnect()
       translate(root, language)
       if (!cancelled) observer.observe(root, observeConfig)
+    }
+    // Fetch full LLM translations for anything the dictionary missed, then re-apply.
+    // The `requested` guard + the write-only-on-change guard in translate() make
+    // this converge (no fetch/observe loop).
+    const backfill = async () => {
+      if (cancelled || language !== 'es') return
+      const missing = collectUntranslated(root)
+      if (missing.length === 0) return
+      missing.forEach((value) => requested.add(value))
+      try {
+        const response = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ strings: missing })
+        })
+        if (!response.ok || cancelled) return
+        const map = await response.json() as Record<string, string>
+        let added = false
+        for (const [english, spanish] of Object.entries(map)) {
+          if (spanish && spanish !== english && !apiTranslations.has(english)) {
+            apiTranslations.set(english, spanish)
+            added = true
+          }
+        }
+        if (added && !cancelled) retranslate()
+      } catch {
+        // Offline or no LLM key configured — keep the dictionary result.
+      }
+    }
+    const apply = () => {
+      retranslate()
+      void backfill()
     }
     const timer = window.setTimeout(() => {
       if (cancelled) return
       observer = new MutationObserver(apply)
       translate(root, language)
       observer.observe(root, observeConfig)
+      void backfill()
     }, 750)
     return () => {
       cancelled = true

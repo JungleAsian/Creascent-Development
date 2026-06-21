@@ -1,4 +1,5 @@
 import { severityClass, type PlatformIssue } from './lib/sentinel-platform'
+import { DetailButton } from './detail-button'
 
 export function IssueList({ issues, emptyLabel }: { issues: PlatformIssue[]; emptyLabel: string }) {
   if (issues.length === 0) {
@@ -33,10 +34,15 @@ export function IssueList({ issues, emptyLabel }: { issues: PlatformIssue[]; emp
               ))}
             </ul>
           )}
-          <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span>Env: {issue.environment}</span>
             <span>Updated: {new Date(issue.updatedAt).toLocaleString()}</span>
             <span>{issue.requiresApproval ? 'Approval required' : 'Safe-fix eligible'}</span>
+            <DetailButton
+              buttonLabel="Full details"
+              title={issue.diagnosis}
+              body={`Suggested fix:\n${issue.suggestedFix}\n\nEvidence:\n${issue.evidence.length ? issue.evidence.map((e) => `• ${e}`).join('\n') : '(none)'}`}
+            />
           </div>
         </article>
       ))}

@@ -127,7 +127,7 @@ export class Executor {
   /** Deterministic agents (Diagnostics/Session/Notion) — call DevTools modules directly. */
   private runDirect(role: SentinelAgentRole): boolean {
     if (role === 'diagnostics') {
-      const r = spawnSync('pnpm', ['tool', 'diagnose', '--quick'], { cwd: toolsRoot, encoding: 'utf8', shell: true })
+      const r = spawnSync('pnpm', ['tool', 'diagnose', '--quick'], { cwd: toolsRoot, encoding: 'utf8', shell: true, windowsHide: true })
       return r.status === 0 || r.status === 1 // diagnose exits 1 on criticals but still ran
     }
     // session / notion direct calls: no destructive action — report-only here.
@@ -140,12 +140,12 @@ export class Executor {
     const logPath = taskLogPath(issue.id)
     let result
     if (provider === 'claude-code') {
-      result = spawnSync(cfg.providers.claudeCode.command, ['--print', '--task-file', file], { encoding: 'utf8', shell: true, timeout: 10 * 60 * 1000 })
+      result = spawnSync(cfg.providers.claudeCode.command, ['--print', '--task-file', file], { encoding: 'utf8', shell: true, timeout: 10 * 60 * 1000, windowsHide: true })
     } else if (provider === 'codex') {
-      result = spawnSync(cfg.providers.codex.command, ['--task-file', file], { encoding: 'utf8', shell: true, timeout: 10 * 60 * 1000 })
+      result = spawnSync(cfg.providers.codex.command, ['--task-file', file], { encoding: 'utf8', shell: true, timeout: 10 * 60 * 1000, windowsHide: true })
     } else {
       // local-model: best-effort POST of the task file content.
-      const r = spawnSync('node', ['-e', localPostScript(cfg.providers.localModel.endpoint, cfg.providers.localModel.model, file)], { encoding: 'utf8', shell: true, timeout: 10 * 60 * 1000 })
+      const r = spawnSync('node', ['-e', localPostScript(cfg.providers.localModel.endpoint, cfg.providers.localModel.model, file)], { encoding: 'utf8', shell: true, timeout: 10 * 60 * 1000, windowsHide: true })
       result = r
     }
     const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim()

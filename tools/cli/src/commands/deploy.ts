@@ -34,7 +34,8 @@ function ssh(args: string[]) {
   const result = spawnSync('ssh', ['-i', keyPath(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', target, ...args], {
     encoding: 'utf8',
     shell: true,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   return { ok: result.status === 0, output }
@@ -70,7 +71,7 @@ deployCmd.command('keygen').action(() => {
   const publicKey = `${privateKey}.pub`
   if (!fs.existsSync(privateKey)) {
     fs.mkdirSync(path.dirname(privateKey), { recursive: true })
-    const result = spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', privateKey, '-N', '', '-C', 'docmee-devtools'], { encoding: 'utf8', stdio: 'pipe' })
+    const result = spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', privateKey, '-N', '', '-C', 'docmee-devtools'], { encoding: 'utf8', stdio: 'pipe', windowsHide: true })
     if (result.status !== 0) {
       log('deploy', `SSH key generation failed: ${result.stderr || result.stdout}`, 'error')
       process.exitCode = 1
@@ -97,9 +98,83 @@ deployCmd.command('env').action(() => {
 })
 
 deployCmd.command('vps').action(async () => {
+  if (!requireVpsConfig()) {
+    process.exitCode = 1
+    return
+  }
   recordLock('vps')
-  log('deploy', 'VPS deploy plan: git push, SSH git pull, pnpm install, pnpm build, migrations, PM2 reload, health check.')
-  await sendNotification('VPS deployment requested. Confirm settings before running production deployment.', 'critical')
+  const branch = process.env.GITHUB_BRANCH || 'main'
+  const deployPath = process.env.VPS_DEPLOY_PATH as string
+  const ecosystem = process.env.PM2_ECOSYSTEM_FILE || 'ecosystem.config.cjs'
+  // Build product apps in dependency order (db first). Overridable for unusual setups.
+  const buildCmd = process.env.VPS_BUILD_CMD
+    || 'pnpm install --frozen-lockfile && pnpm --filter @docmee/db --filter @docmee/api --filter @docmee/workers --filter @docmee/inboxos build'
+  const migrateCmd = process.env.VPS_MIGRATE_CMD || 'pnpm --filter @docmee/db db:migrate'
+
+  // 1) Push the current HEAD to the deploy branch the VPS pulls from.
+  log('deploy', `Pushing HEAD to origin/${branch}...`)
+  const push = spawnSync('git', ['push', 'origin', `HEAD:${branch}`], {
+    cwd: path.resolve(toolsRoot, '..'),
+    encoding: 'utf8',
+    stdio: 'pipe',
+    windowsHide: true
+  })
+  if (push.status !== 0) {
+    log('deploy', `git push failed: ${(push.stderr || push.stdout || '').trim()}`, 'error')
+    await sendNotification('VPS deploy aborted: git push failed.', 'critical')
+    await closeDiscordClient()
+    process.exitCode = 1
+    return
+  }
+
+  // Repo URL the VPS clones from on first deploy (the VPS needs its own GitHub
+  // auth — a deploy key/token — for a private repo).
+  const repoUrl = process.env.DEPLOY_REPO_URL
+    || (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: path.resolve(toolsRoot, '..'), encoding: 'utf8', windowsHide: true }).stdout || '').trim()
+
+  // 2) On the VPS: bootstrap the clone if missing, then sync to the pushed
+  // commit, install, build, migrate, and reload PM2.
+  const remote = [
+    `mkdir -p $(dirname ${deployPath})`,
+    `if [ ! -d ${deployPath}/.git ]; then git clone ${repoUrl} ${deployPath}; fi`,
+    `cd ${deployPath}`,
+    'git fetch --all --prune',
+    `git reset --hard origin/${branch}`,
+    buildCmd,
+    migrateCmd,
+    `pm2 startOrReload ${ecosystem} --update-env`,
+    'pm2 save'
+  ].join(' && ')
+  log('deploy', 'Running remote deploy (sync, install, build, migrate, PM2 reload)...')
+  const remoteResult = ssh([`"${remote}"`])
+  if (remoteResult.output) log('deploy', remoteResult.output)
+  if (!remoteResult.ok) {
+    log('deploy', 'Remote deploy step failed. The VPS may be in a partial state — review the output above.', 'error')
+    await sendNotification('VPS deploy failed during the remote build/reload step.', 'critical')
+    await closeDiscordClient()
+    process.exitCode = 1
+    return
+  }
+
+  // 3) Health check the API.
+  const host = process.env.VPS_DOMAIN || process.env.VPS_HOST
+  const apiPort = process.env.API_PORT || '3001'
+  const healthUrl = `http://${host}:${apiPort}/health`
+  let healthy = false
+  try {
+    const response = await fetch(healthUrl)
+    healthy = response.ok
+    log('deploy', `Health ${healthUrl}: HTTP ${response.status}`, response.ok ? 'info' : 'warn')
+  } catch (error) {
+    log('deploy', `Health check ${healthUrl} failed: ${String(error)}`, 'warn')
+  }
+  if (!healthy) process.exitCode = 1
+  await sendNotification(
+    healthy
+      ? `VPS deploy succeeded (branch ${branch}). API health OK.`
+      : `VPS deploy ran but the API health check did not pass — verify the VPS.`,
+    healthy ? 'development' : 'critical'
+  )
   await closeDiscordClient()
 })
 
@@ -108,7 +183,7 @@ deployCmd
   .option('--no-browser', 'Do not open a browser (used by the Playwright webServer)')
   .action(() => {
     const compose = path.resolve(toolsRoot, '..', 'docker-compose.yml')
-    if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true })
+    if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true, windowsHide: true })
     log('deploy', 'Local deploy requested. Product app processes start after Docmee app phases create /apps.')
   })
 

@@ -1,6 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
+import { PhaseStrip } from '../phase-strip'
+import { AutoRefresh } from '../auto-refresh'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
@@ -70,7 +73,12 @@ function builderLabel(builder: string) {
 export default function PhasesPage({ searchParams }: PageProps) {
   const state = phases()
   const byId = new Map(state.map((phase) => [phase.id, phase]))
+  const total = state.length
   const done = state.filter((phase) => phase.status === 'done').length
+  const inProgress = state.filter((phase) => phase.status === 'in-progress').length
+  const overallState: 'complete' | 'progressing' | 'halted' | 'stopped' =
+    done === total ? 'complete' : inProgress > 0 ? 'progressing' : done === 0 ? 'stopped' : 'halted'
+  const overallPercent = total > 0 ? Math.round((done / total) * 100) : 0
   const p11Done = byId.get('P11')?.status === 'done'
   const readyBlocked = definitions
     .filter(([id, , , , prompt]) => prompt === 'ready' && !promptInfo(id).exists)
@@ -82,18 +90,24 @@ export default function PhasesPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
+      <AutoRefresh seconds={15} />
       <div className="sticky top-14 z-20 flex flex-wrap items-start justify-between gap-4 bg-slate-950 py-2 md:static md:bg-transparent md:py-0">
         <div>
           <h1 className="text-2xl font-semibold">Phase Progress</h1>
-          <p className="mt-2 text-sm text-slate-400">{done}/19 phases complete</p>
+          <p className="mt-2 text-sm text-slate-400">{done}/{total} phases complete</p>
         </div>
         <div className="flex w-full items-center gap-4 md:w-auto">
-          <BuildProgressGauge size="md" />
-          <div className="h-3 min-w-40 flex-1 rounded bg-slate-800 md:w-72"><div className="h-3 rounded bg-cyan-500" style={{ width: `${Math.round((done / 19) * 100)}%` }} /></div>
+          <BuildProgressGauge size="sm" percent={overallPercent} state={overallState} label="Phases" message={`${done}/${total} done`} />
+          <div className="h-3 min-w-40 flex-1 rounded bg-slate-800 md:w-72"><div className="h-3 rounded bg-cyan-500" style={{ width: `${overallPercent}%` }} /></div>
         </div>
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
+
+      <div className="mt-4">
+        <PhaseStrip phases={definitions.map(([id, name]) => ({ id, name, status: byId.get(id)?.status ?? 'not-started' }))} />
+      </div>
+
       {p11Done && <div className="mt-4 rounded-md border border-amber-500 bg-amber-950/40 p-4 text-sm text-amber-200">Submit to Meta NOW. WhatsApp approval should start after P11, not after P19.</div>}
 
       <div id="build-panel" className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -127,6 +141,11 @@ export default function PhasesPage({ searchParams }: PageProps) {
           return (
             <div key={id} className="rounded-md border border-slate-800 bg-slate-900 p-4">
               <div className="flex flex-wrap items-center gap-3">
+                <LaneItemGauge
+                  percent={phase.status === 'done' ? 100 : phase.status === 'in-progress' ? 50 : 6}
+                  tone={phase.status === 'done' ? 'emerald' : phase.status === 'in-progress' ? 'amber' : 'slate'}
+                  title={`${id} ${phase.status}`}
+                />
                 <BuildProgressGauge phaseId={id} size="sm" showLabel={false} />
                 <strong className="w-14">{id}</strong>
                 <div className="min-w-0 flex-1 md:min-w-64">

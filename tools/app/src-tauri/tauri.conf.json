@@ -1,6 +1,6 @@
 {
   "build": {
-    "beforeDevCommand": "cd ../dashboard && pnpm dev",
+    "beforeDevCommand": "cd ../dashboard && node_modules\\.bin\\next.cmd dev -p 4000 -H 127.0.0.1",
     "devPath": "http://127.0.0.1:4000",
     "distDir": "../dashboard/.next"
   },

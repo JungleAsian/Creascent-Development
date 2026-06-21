@@ -1,4 +1,7 @@
-import { readProvider } from '../lib/sentinel-platform'
+import { readAudit, readProvider } from '../lib/sentinel-platform'
+import { CompactSection } from '../compact-ui'
+import { DecisionBoard, EventTimeline, NextActionPanel, SystemStatusBanner, WorkQueuePriorityBoard } from '../sentinel-visuals'
+import { AutoRefresh } from '../auto-refresh'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +26,7 @@ export default function CortexPage() {
 
   return (
     <section className="w-full space-y-6">
+      <AutoRefresh seconds={15} />
       <div>
         <h1 className="text-2xl font-semibold">🧠 Cortex</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-400">
@@ -33,6 +37,13 @@ export default function CortexPage() {
           and adds provider selection, per-agent overrides, and the guided switch flow. Switching is performed by the daemon (pnpm sentinel cortex switch &lt;provider&gt;) so in-flight executions are handled safely.
         </p>
       </div>
+
+      <SystemStatusBanner
+        title="Cortex Decision Control"
+        question="What should happen next?"
+        state="active"
+        detail="Cortex coordinates provider choice, agent assignment, recommendations, work queue priority, and knowledge handoff."
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         {PROVIDERS.map((p) => (
@@ -67,6 +78,25 @@ export default function CortexPage() {
         </table>
         <p className="mt-3 text-xs text-slate-500">Direct-call agents (Diagnostics, Session, Notion) never invoke an AI provider — zero token cost.</p>
       </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <DecisionBoard />
+        <WorkQueuePriorityBoard />
+      </div>
+
+      <CompactSection title="Decision Events and Guided Actions" subtitle="Detailed Cortex decision history and next-action reasoning.">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <EventTimeline title="Recent Decision Events" audit={readAudit().filter((entry) => /cortex|provider|agent|decision|queue|notion|github/i.test(`${entry.subsystem ?? ''} ${entry.action ?? ''} ${entry.message ?? ''}`))} />
+          <NextActionPanel
+            title="Guided Next Action"
+            actions={[
+              'Confirm the correct provider is active before starting long-running development.',
+              'Open the highest priority work queue item and let Forge or Guardian handle the execution path.',
+              'Record final decisions to Notion after each major workflow change.'
+            ]}
+          />
+        </div>
+      </CompactSection>
     </section>
   )
 }

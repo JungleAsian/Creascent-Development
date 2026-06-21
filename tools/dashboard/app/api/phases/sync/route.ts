@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     cwd: toolsRoot,
     encoding: 'utf8',
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   return redirect(

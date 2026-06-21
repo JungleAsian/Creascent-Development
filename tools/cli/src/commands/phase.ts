@@ -116,7 +116,7 @@ function updateEnvValue(name: string, value: string) {
 }
 
 function git(args: string[]) {
-  return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: false, stdio: 'pipe' })
+  return spawnSync('git', args, { cwd: path.resolve(promptsDir, '..', '..'), encoding: 'utf8', shell: false, stdio: 'pipe', windowsHide: true })
 }
 
 function repoRoot() {
@@ -664,7 +664,8 @@ function runClaudeWithHeartbeat(phaseId: string, prompt: string) {
       cwd: repoRoot(),
       env: claudeCodeEnvironment(),
       shell: false,
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
     })
     const chunks: string[] = []
     const heartbeat = setInterval(() => {

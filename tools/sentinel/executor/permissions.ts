@@ -10,7 +10,7 @@ export interface PermissionEnvelope {
 
 /** DevTools Healer envelope (Platform + Daemon spec). The only deterministic recoverer. */
 export const HEALER_PERMISSIONS: PermissionEnvelope = {
-  allowedActions: ['kill-dashboard-process', 'clear-next-cache', 'restart-dashboard-process', 'kill-port-conflict'],
+  allowedActions: ['kill-dashboard-process', 'clear-next-cache', 'restart-dashboard-process', 'kill-port-conflict', 'refresh-derived-deployment-records'],
   deniedActions: ['modify-source-files', 'run-git-commands', 'modify-env-files', 'touch-build-watcher', 'modify-phase-state'],
   maxRestartsPerHour: 3,
   cooldownSeconds: 120,

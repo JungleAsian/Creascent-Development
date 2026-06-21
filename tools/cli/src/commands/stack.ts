@@ -157,7 +157,8 @@ async function updateAllPackages() {
       cwd: toolsRoot,
       encoding: 'utf8',
       shell: false,
-      stdio: 'pipe'
+      stdio: 'pipe',
+      windowsHide: true
     })
     if (install.status !== 0) {
       throw new Error(`${install.stdout ?? ''}${install.stderr ?? ''}`.trim() || 'pnpm install failed')

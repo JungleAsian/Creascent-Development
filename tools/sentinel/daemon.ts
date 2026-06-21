@@ -5,6 +5,7 @@ import { daemonPidFile, configDefaultsFile, configLocalFile } from './lib/paths.
 import { loadConfig, updateLocalConfig, redactConfig, ensureLocalConfigExists } from './config/index.js'
 import { validateConfig, type SentinelConfig } from './config/schema.js'
 import { configureLogger, logEvent, writeDailySummary } from './lib/logger.js'
+import { syncBacklog } from '../cli/src/commands/backlog.js'
 import { appendAudit, auditSize, detectAuditTamper } from './lib/audit.js'
 import { readSessionStatus } from './executor/session-guard.js'
 import {
@@ -113,6 +114,7 @@ export class SentinelDaemon {
     this.startConfigWatch()
     this.startDailySummary()
     this.startCortexAutoFallback()
+    this.startBacklogAutoSync()
     this.recomputeTray(false)
     logEvent('daemon', 'info', 'startup.complete', 'Sentinel daemon ready')
     this.installSignalHandlers()
@@ -137,12 +139,9 @@ export class SentinelDaemon {
       notifyActivity: (title: string, msg: string) => void this.notifier.activity(title, msg),
       push: (sev: SentinelSeverity, title: string, msg: string) => this.push.send(sev, title, msg),
       recomputeTray: () => this.recomputeTray(false),
-      reportAlive: () => this.markAlive(name)
+      reportAlive: () => this.markAlive(name),
+      refreshDerivedDeploymentRecords: name === 'forge' ? () => this.healer.refreshDerivedDeploymentRecords() : undefined
     })
-
-    this.forge = new ForgeScanner(subDeps('forge'))
-    this.guardian = new GuardianScanner(subDeps('guardian'))
-    this.aegis = new AegisScanner(subDeps('aegis'))
 
     this.cortex = new Cortex({
       getConfig: () => this.config,
@@ -175,6 +174,10 @@ export class SentinelDaemon {
       resolveHeartbeatTarget: (targetId, message) => this.resolveHeartbeatTarget(targetId, message),
       escalateIssue: (draft) => this.writeSourceIssues('devtools-healer', [draft])
     })
+
+    this.forge = new ForgeScanner(subDeps('forge'))
+    this.guardian = new GuardianScanner(subDeps('guardian'))
+    this.aegis = new AegisScanner(subDeps('aegis'))
 
     this.api = new SentinelApi(this.buildApiContext())
   }
@@ -348,6 +351,21 @@ export class SentinelDaemon {
       }
     }
     this.timers.push(setInterval(tick, 60_000))
+  }
+
+  private startBacklogAutoSync() {
+    // Auto-collect TODO/FIXME and close shipped items every 10 minutes, even when
+    // the dashboard is closed. In-process; backlog sync is idempotent.
+    const run = () => {
+      try {
+        const result = syncBacklog()
+        logEvent('daemon', 'info', 'backlog.sync', `Backlog sync: +${result.added} new, -${result.removed} resolved, ${result.flagged} flagged, ${result.advanced} advanced`)
+      } catch (err) {
+        logEvent('daemon', 'warn', 'backlog.sync-failed', `Backlog sync failed: ${(err as Error).message}`)
+      }
+    }
+    run()
+    this.timers.push(setInterval(run, 10 * 60_000))
   }
 
   private startCortexAutoFallback() {

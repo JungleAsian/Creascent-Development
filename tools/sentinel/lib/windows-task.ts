@@ -19,7 +19,7 @@ export function registerWindowsTaskOnce() {
     const command = `cmd /c cd /d "${toolsRoot}" && pnpm sentinel:start`
     // Run at logon, restart up to 3 times on failure with a 30s delay.
     const args = ['/Create', '/F', '/TN', TASK_NAME, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/TR', command]
-    const out = spawnSync('schtasks', args, { encoding: 'utf8', shell: true })
+    const out = spawnSync('schtasks', args, { encoding: 'utf8', shell: true, windowsHide: true })
     if (out.status === 0) {
       fs.writeFileSync(REGISTERED_FLAG, new Date().toISOString())
       logEvent('daemon', 'info', 'task.registered', `Registered Windows Task Scheduler entry ${TASK_NAME}`)

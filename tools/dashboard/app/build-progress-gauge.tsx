@@ -123,7 +123,7 @@ export function BuildProgressGauge({ phaseId, size = 'md', showLabel = true, per
   const background = useMemo(() => `conic-gradient(${color} ${percent * 3.6}deg, rgba(100,116,139,.28) 0deg)`, [color, percent])
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex min-w-0 items-center gap-3">
       <div
         className={`${sizeClass(size)} ${pulse} grid shrink-0 place-items-center rounded-full p-1`}
         style={{ background }}

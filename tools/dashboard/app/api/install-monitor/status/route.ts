@@ -10,6 +10,7 @@ const sessionWindowMs = 5 * 60 * 60 * 1000
 const heartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
 const featureHeartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
 const uiHeartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
+const frontendHeartbeatSamples: Array<{ at: string; status: string; ageMs: number | null; value: number }> = []
 
 const phases = [
   ['P01', 'Repository Foundation'],
@@ -122,6 +123,12 @@ function updateUiHeartbeatSamples(status: string, heartbeatAgeMs: number | null)
   return uiHeartbeatSamples
 }
 
+function updateFrontendHeartbeatSamples(status: string, heartbeatAgeMs: number | null) {
+  frontendHeartbeatSamples.push({ at: new Date().toISOString(), status, ageMs: heartbeatAgeMs, value: sampleValue(status) })
+  while (frontendHeartbeatSamples.length > 80) frontendHeartbeatSamples.shift()
+  return frontendHeartbeatSamples
+}
+
 function tokenTotal(usage?: Record<string, number>) {
   if (!usage) return 0
   return Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0) + Number(usage.cache_creation_input_tokens ?? 0) + Number(usage.cache_read_input_tokens ?? 0)
@@ -226,6 +233,7 @@ export function GET() {
   type RunState = { pid?: number; phase?: string; workflow?: string; status?: string; startedAt?: string; heartbeatAt?: string; resumeAt?: string; message?: string }
   const run = readJson<RunState>('build-run.json', { status: 'idle' })
   const featureRun = readJson<RunState>('feature-run.json', { status: 'idle', workflow: 'features-development' })
+  const frontendRun = readJson<RunState>('frontend-run.json', { status: 'idle', workflow: 'frontend-development' })
   const uiRun = readJson<RunState>('ui-run.json', { status: 'idle', workflow: 'ui-development', phase: 'UI-DEVELOPMENT' })
   const ready = readJson<{ ready?: boolean; summary?: { pass?: number; warning?: number; critical?: number }; createdAt?: string }>('ready.json', { ready: false, summary: { pass: 0, warning: 0, critical: 1 } })
   const start = readJson<{ ready?: boolean; phase?: string; createdAt?: string; steps?: unknown[] }>('start-readiness.json', { ready: false, steps: [] })
@@ -237,12 +245,15 @@ export function GET() {
     || rows[0]
   const live = isAlive(run.pid) && ['starting', 'running', 'paused'].includes(run.status ?? '')
   const featureLive = isAlive(featureRun.pid) && ['starting', 'running', 'paused'].includes(featureRun.status ?? '')
+  const frontendLive = isAlive(frontendRun.pid) && ['starting', 'running', 'paused'].includes(frontendRun.status ?? '')
   const uiLive = isAlive(uiRun.pid) && ['starting', 'running', 'paused'].includes(uiRun.status ?? '')
   const heartbeatAgeMs = run.heartbeatAt ? Date.now() - new Date(run.heartbeatAt).getTime() : null
   const featureHeartbeatAgeMs = featureRun.heartbeatAt ? Date.now() - new Date(featureRun.heartbeatAt).getTime() : null
+  const frontendHeartbeatAgeMs = frontendRun.heartbeatAt ? Date.now() - new Date(frontendRun.heartbeatAt).getTime() : null
   const uiHeartbeatAgeMs = uiRun.heartbeatAt ? Date.now() - new Date(uiRun.heartbeatAt).getTime() : null
   const heartbeat = heartbeatStatus(run, live, heartbeatAgeMs, active)
   const featureHeartbeat = heartbeatStatus(featureRun, featureLive, featureHeartbeatAgeMs)
+  const frontendHeartbeat = heartbeatStatus(frontendRun, frontendLive, frontendHeartbeatAgeMs)
   const uiHeartbeat = heartbeatStatus(uiRun, uiLive, uiHeartbeatAgeMs)
   const done = rows.filter((row) => row.phaseStatus === 'done' || row.buildStatus === 'complete').length
   const total = rows.length
@@ -260,6 +271,9 @@ export function GET() {
     featureLive,
     featureRun: { ...featureRun, heartbeatAgeMs: featureHeartbeatAgeMs },
     featureHeartbeat: { status: featureHeartbeat, samples: updateFeatureHeartbeatSamples(featureHeartbeat, featureHeartbeatAgeMs) },
+    frontendLive,
+    frontendRun: { ...frontendRun, heartbeatAgeMs: frontendHeartbeatAgeMs },
+    frontendHeartbeat: { status: frontendHeartbeat, samples: updateFrontendHeartbeatSamples(frontendHeartbeat, frontendHeartbeatAgeMs) },
     uiLive,
     uiRun: { ...uiRun, heartbeatAgeMs: uiHeartbeatAgeMs },
     uiHeartbeat: { status: uiHeartbeat, samples: updateUiHeartbeatSamples(uiHeartbeat, uiHeartbeatAgeMs) },

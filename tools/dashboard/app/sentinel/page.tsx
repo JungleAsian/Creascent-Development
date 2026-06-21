@@ -17,6 +17,19 @@ import {
 } from '../lib/sentinel-platform'
 import { CompactSection } from '../compact-ui'
 import { IssueList } from '../sentinel-shared'
+import { AutoRefresh } from '../auto-refresh'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
+
+type LaneTone = 'slate' | 'cyan' | 'amber' | 'sky' | 'emerald' | 'red' | 'violet'
+
+// Map a subsystem liveness string to a 0-100 health percent + matching gauge tone.
+function subsystemHealth(state: string): { percent: number; tone: LaneTone } {
+  if (state === 'running' || state === 'normal') return { percent: 100, tone: 'emerald' }
+  if (state === 'not-configured') return { percent: 0, tone: 'slate' }
+  if (state === 'stale' || state === 'delayed') return { percent: 50, tone: 'amber' }
+  return { percent: 0, tone: 'red' }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -75,8 +88,29 @@ export default function SentinelPage({ searchParams }: { searchParams?: { filter
   ]
   const dependencies = dependencyNodes(subsystems, tunnel, summary)
 
+  // Overall platform health, derived only from values the page already computes:
+  // share of healthy subsystems, gated down by open critical/active issues.
+  const healthySubsystems = subsystems.filter((s) => s.state === 'running' || s.state === 'normal').length
+  const subsystemPercent = subsystems.length > 0 ? Math.round((healthySubsystems / subsystems.length) * 100) : 0
+  const overallPercent = summary.critical > 0 ? 0 : summary.active > 0 ? Math.min(subsystemPercent, 60) : subsystemPercent
+  const runActive = audit.some((entry) => (entry.outcome ?? '').toLowerCase() === 'running' || (entry.action ?? '').toLowerCase().includes('running'))
+  const overallState: 'complete' | 'progressing' | 'halted' | 'stopped' =
+    summary.critical > 0 || summary.active > 0
+      ? 'halted'
+      : runActive
+        ? 'progressing'
+        : healthySubsystems === subsystems.length && daemon.running
+          ? 'complete'
+          : 'stopped'
+  const overallMessage = summary.critical > 0
+    ? `${summary.critical} critical · ${summary.active} active`
+    : summary.active > 0
+      ? `${summary.active} active issue${summary.active === 1 ? '' : 's'}`
+      : `${healthySubsystems}/${subsystems.length} subsystems healthy`
+
   return (
     <section className="w-full space-y-6">
+      <AutoRefresh seconds={15} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">🛡️ Sentinel</h1>
@@ -84,9 +118,18 @@ export default function SentinelPage({ searchParams }: { searchParams?: { filter
             The intelligence platform for Docmee. Beacon watches it all. Forge builds it. Guardian runs it. Aegis protects it. Cortex directs it. Runs as an independent daemon — this dashboard is a read-only client of its log files.
           </p>
         </div>
-        <a href="/sentinel-pwa/index.html" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
-          Open Mobile PWA
-        </a>
+        <div className="flex items-center gap-4">
+          <BuildProgressGauge
+            size="sm"
+            percent={overallPercent}
+            state={overallState}
+            label="Platform health"
+            message={overallMessage}
+          />
+          <a href="/sentinel-pwa/index.html" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
+            Open Mobile PWA
+          </a>
+        </div>
       </div>
 
       {searchParams?.message && <p className="rounded-md border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{searchParams.message}</p>}
@@ -117,14 +160,20 @@ export default function SentinelPage({ searchParams }: { searchParams?: { filter
       </div>
 
       <div className="grid gap-3 md:grid-cols-5">
-        {subsystems.map((s) => (
-          <Link key={s.name} href={s.href} className={`rounded-md border p-4 ${livenessClass(s.state)}`}>
-            <div className="text-sm font-semibold">
-              {s.emoji} {s.name}
-            </div>
-            <div className="mt-1 text-xs capitalize opacity-80">{s.state}</div>
-          </Link>
-        ))}
+        {subsystems.map((s) => {
+          const health = subsystemHealth(s.state)
+          return (
+            <Link key={s.name} href={s.href} className={`rounded-md border p-4 ${livenessClass(s.state)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">
+                  {s.emoji} {s.name}
+                </div>
+                <LaneItemGauge percent={health.percent} tone={health.tone} title={`${s.name} · ${s.state}`} />
+              </div>
+              <div className="mt-1 text-xs capitalize opacity-80">{s.state}</div>
+            </Link>
+          )
+        })}
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">

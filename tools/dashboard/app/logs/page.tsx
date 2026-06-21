@@ -1,5 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { AutoRefresh } from '../auto-refresh'
+import { DetailButton } from '../detail-button'
+import { WorkflowStages } from '../workflow-stages'
+import { StatusSymbol } from '../status-symbol'
 
 const logsDir = path.resolve(process.cwd(), '..', 'logs')
 type PageProps = { searchParams?: { file?: string; q?: string } }
@@ -39,11 +43,6 @@ function readRows(file?: string, query?: string) {
     .reverse()
 }
 
-function levelTone(level: string) {
-  if (level === 'ERROR') return 'text-red-300'
-  if (level === 'WARN') return 'text-amber-300'
-  return 'text-emerald-300'
-}
 
 export default function LogsPage({ searchParams }: PageProps) {
   const files = logFiles()
@@ -61,12 +60,17 @@ export default function LogsPage({ searchParams }: PageProps) {
         <span className="rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">{rows.length} entries</span>
       </div>
 
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <WorkflowStages active="monitor" />
+      </div>
+
       <form className="mt-5 grid gap-3 md:grid-cols-[260px_1fr_auto]">
-        <select name="file" className="min-h-11 rounded-md border border-slate-700 bg-slate-900 px-3 py-2" defaultValue={selectedFile}>
+        <select name="file" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm" defaultValue={selectedFile}>
           {files.length === 0 ? <option>Select log file</option> : files.map((file) => <option key={file}>{file}</option>)}
         </select>
-        <input name="q" className="min-h-11 rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search logs" defaultValue={query} />
-        <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950">Apply</button>
+        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm" placeholder="Search logs" defaultValue={query} />
+        <button className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950">Apply</button>
       </form>
 
       <div className="mt-5 max-h-[calc(100vh-220px)] overflow-auto rounded-lg border border-slate-800">
@@ -79,8 +83,15 @@ export default function LogsPage({ searchParams }: PageProps) {
               <tr key={`${row.timestamp}-${index}`} className="bg-slate-950/60">
                 <td className="whitespace-nowrap p-3 text-xs text-slate-400">{row.timestamp ? new Date(row.timestamp).toLocaleString() : '-'}</td>
                 <td className="p-3 font-mono text-xs">{row.source}</td>
-                <td className={`p-3 text-xs font-semibold ${levelTone(row.level)}`}>{row.level}</td>
-                <td className="p-3 text-slate-200">{row.message}</td>
+                <td className="p-3 text-xs font-semibold"><StatusSymbol status={row.level} label={row.level} /></td>
+                <td className="p-3 text-slate-200">
+                  {row.message.length > 160 ? (
+                    <span className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1">{row.message.slice(0, 160)}…</span>
+                      <DetailButton buttonLabel="View" title={`${row.source} · ${row.level}`} body={row.message} />
+                    </span>
+                  ) : row.message}
+                </td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td className="p-3 text-slate-400" colSpan={4}>No log entries found.</td></tr>}

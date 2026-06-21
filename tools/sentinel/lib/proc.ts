@@ -14,7 +14,7 @@ export function isProcessAlive(pid?: number) {
 /** Cross-platform: find PID(s) listening on a TCP port. */
 export function findPidsOnPort(port: number): number[] {
   if (process.platform === 'win32') {
-    const out = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8', shell: true })
+    const out = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8', shell: true, windowsHide: true })
     const pids = new Set<number>()
     for (const line of (out.stdout ?? '').split(/\r?\n/)) {
       // Proto  Local Address  Foreign Address  State  PID
@@ -40,7 +40,7 @@ export function killPid(pid: number, force = false): boolean {
     if (process.platform === 'win32') {
       const args = ['/PID', String(pid), '/T']
       if (force) args.push('/F')
-      const out = spawnSync('taskkill', args, { encoding: 'utf8', shell: true })
+      const out = spawnSync('taskkill', args, { encoding: 'utf8', shell: true, windowsHide: true })
       return out.status === 0
     }
     process.kill(pid, force ? 'SIGKILL' : 'SIGTERM')
@@ -62,7 +62,8 @@ export function spawnDetached(command: string, args: string[], opts: { cwd?: str
     env: { ...process.env, ...opts.env },
     detached: true,
     stdio: 'ignore',
-    shell: process.platform === 'win32'
+    shell: process.platform === 'win32',
+    windowsHide: true
   })
   child.unref()
   return { child, pid: child.pid }

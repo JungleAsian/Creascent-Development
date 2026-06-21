@@ -33,7 +33,10 @@ export const agentServices: AgentService[] = [
   { id: 'claude-api', label: 'Claude API live runtime', provider: 'Anthropic', mode: 'api', env: 'ANTHROPIC_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5'] },
   { id: 'codex-pro', label: 'Codex Pro', provider: 'OpenAI', mode: 'manual', env: 'OPENAI_API_KEY', models: ['o3', 'o4-mini'] },
   { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI', mode: 'api', env: 'OPENAI_API_KEY', models: ['gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'] },
-  { id: 'google-gemini', label: 'Gemini', provider: 'Google', mode: 'api', env: 'GOOGLE_GEMINI_API_KEY', models: ['gemini-2.5-pro', 'gemini-2.5-flash'] },
+  { id: 'google-gemini', label: 'Gemini', provider: 'Google', mode: 'api', env: 'GOOGLE_GEMINI_API_KEY', models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'] },
+  { id: 'grok', label: 'Grok', provider: 'xAI', mode: 'api', env: 'GROK_API_KEY', models: ['grok-3', 'grok-2-latest'] },
+  { id: 'cursor', label: 'Cursor', provider: 'Cursor', mode: 'manual', models: ['auto'] },
+  { id: 'glm', label: 'GLM', provider: 'Zhipu', mode: 'api', env: 'GLM_API_KEY', models: ['glm-4-flash', 'glm-4'] },
   { id: 'mistral', label: 'Mistral', provider: 'Mistral', mode: 'api', env: 'MISTRAL_API_KEY', models: ['mistral-large', 'codestral'] },
   { id: 'deepseek', label: 'DeepSeek', provider: 'DeepSeek', mode: 'api', env: 'DEEPSEEK_API_KEY', models: ['deepseek-chat', 'deepseek-coder'] },
   { id: 'custom', label: 'Custom', provider: 'Any', mode: 'api', env: 'CUSTOM_AI_API_KEY', models: ['custom'] }
@@ -254,6 +257,28 @@ agentsCmd.command('run')
     data[index] = { ...agent, lastRun: { phase: opts.phase, status: 'queued/manual-ready', createdAt: new Date().toISOString() } }
     saveAgents(data)
     log('agents', `${agent.label} prepared for ${opts.phase}. Use the configured ${agent.service} workflow to execute the prompt.`)
+  })
+
+agentsCmd.command('set')
+  .description('Switch an agent to a different AI service / model')
+  .requiredOption('--role <role>')
+  .option('--service <service>', agentServices.map((service) => service.id).join(' | '))
+  .option('--model <model>')
+  .action((opts: { role: string; service?: string; model?: string }) => {
+    if (opts.service && !serviceFor(opts.service)) {
+      log('agents', `Unknown service: ${opts.service}. Use one of: ${agentServices.map((service) => service.id).join(', ')}`, 'error')
+      process.exitCode = 1
+      return
+    }
+    updateAgent(opts.role, (agent) => {
+      const service = opts.service ? serviceFor(opts.service) : undefined
+      return {
+        ...agent,
+        service: service ? service.id : agent.service,
+        mode: service ? service.mode : agent.mode,
+        model: opts.model || (service ? (service.models[0] ?? agent.model) : agent.model)
+      }
+    })
   })
 
 agentsCmd.command('reset').action(() => {

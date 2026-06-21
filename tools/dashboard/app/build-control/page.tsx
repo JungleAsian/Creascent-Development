@@ -1,6 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { BuildProgressGauge } from '../build-progress-gauge'
+import { CompactSection, SimpleStatusCard } from '../compact-ui'
+import { AutoRefresh } from '../auto-refresh'
+import { LaneFlowStrip } from '../lane-flow-strip'
+import { LaneItemGauge } from '../lane-item-gauge'
+import { runLiveness, isProcessAlive } from '../lib/run-live'
+import { readJson } from '../lib/read-json'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
@@ -41,15 +47,6 @@ type ReadyResult = { ready?: boolean; summary?: { critical?: number; warning?: n
 type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
 type BuildRun = { pid?: number; phase?: string; status?: string; startedAt?: string; heartbeatAt?: string; resumeAt?: string; message?: string }
 
-function readJson<T>(file: string, fallback: T) {
-  if (!fs.existsSync(file)) return fallback
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
-
 function phaseState() {
   const fallback: Phase[] = definitions.map(([id]) => ({ id, status: 'not-started' as const }))
   const current = readJson<Phase[]>(phasesFile, fallback)
@@ -72,19 +69,10 @@ function startReadinessState() {
   return readJson<StartReadiness>(startReadinessFile, { ready: false, steps: [] })
 }
 
-function isProcessAlive(pid?: number) {
-  if (!pid) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
 function buildRunState() {
   const run = readJson<BuildRun>(buildRunFile, { status: 'idle' })
-  return { ...run, live: isProcessAlive(run.pid) && ['starting', 'running', 'paused'].includes(run.status ?? '') }
+  const { live, stale } = runLiveness(run, isProcessAlive(run.pid))
+  return { ...run, live, stale }
 }
 
 function promptInfo(id: string) {
@@ -104,6 +92,12 @@ function statusClass(status: string) {
   return 'bg-slate-800 text-slate-300'
 }
 
+function phaseGauge(status?: string): { percent: number; tone: 'emerald' | 'amber' | 'slate' } {
+  if (status === 'done') return { percent: 100, tone: 'emerald' }
+  if (status === 'in-progress') return { percent: 50, tone: 'amber' }
+  return { percent: 6, tone: 'slate' }
+}
+
 function githubCommitUrl(hash?: string) {
   return hash ? `https://github.com/JungleAsian/Creascent-Development/commit/${hash}` : ''
 }
@@ -121,6 +115,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
   const [currentId, currentName, currentBuilder] = currentDefinition
   const currentControl = controlById.get(currentId) ?? { phaseId: currentId, status: 'pending', updatedAt: new Date(0).toISOString() }
   const done = phases.filter((phase) => phase.status === 'done').length
+  const allComplete = done === definitions.length
   const currentPrompt = promptInfo(currentId)
   const ready = readyState()
   const readyCritical = ready.summary?.critical ?? 1
@@ -139,15 +134,43 @@ export default function BuildControlPage({ searchParams }: PageProps) {
     <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Build Control</h1>
-          <p className="mt-2 text-sm text-slate-400">Full automation for all 19 phases through Claude Code.</p>
+          <h1 className="text-2xl font-semibold">Build Control{allComplete && <span className="ml-2 rounded bg-emerald-900 px-2 py-0.5 align-middle text-xs font-medium text-emerald-100">complete</span>}</h1>
+          <p className="mt-2 text-sm text-slate-400">{allComplete ? 'The 19-phase build is finished — this page is now a historical record.' : 'Full automation for all 19 phases through Claude Code.'}</p>
         </div>
         <a href={buildControlUrl} target="_blank" rel="noreferrer" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open Notion spec</a>
       </div>
 
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <LaneFlowStrip
+          label="Workflow"
+          stages={[
+            { label: 'Setup ready', tone: 'slate' },
+            { label: 'Start check', tone: 'cyan' },
+            { label: 'Build · Claude', tone: 'amber' },
+            { label: 'Gates', tone: 'sky' },
+            { label: 'Commit & push', tone: 'violet' },
+            { label: 'Launch', tone: 'emerald' }
+          ]}
+        />
+      </div>
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
+      {!allComplete && buildRun.stale && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">⚠ The build watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
 
+      {allComplete && (
+        <div className="mt-4 rounded-md border border-emerald-800 bg-emerald-950/30 p-4">
+          <h2 className="text-sm font-semibold text-emerald-100">Build complete — 19/19 phases</h2>
+          <p className="mt-1 text-sm text-slate-300">The phased build pipeline is finished, so there is nothing to start here. Day-to-day work now runs through <a href="/backlog" className="text-cyan-300 underline">Backlog</a> / <a href="/overview" className="text-cyan-300 underline">Mission Control</a>; any future phased builds are driven from <a href="/rev1-coverage" className="text-cyan-300 underline">Features Development</a>. The full phase record and local-launch / deploy actions remain below.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="/rev1-coverage" className="min-h-10 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Features Development →</a>
+            <a href="/deploy" className="min-h-10 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Deploy →</a>
+            <a href="/overview" className="min-h-10 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Mission Control →</a>
+          </div>
+        </div>
+      )}
+
+      {!allComplete && (
       <div className={startLocked ? 'mt-4 rounded-md border border-amber-800 bg-amber-950/30 p-4' : 'mt-4 rounded-md border border-emerald-800 bg-emerald-950/30 p-4'}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -171,26 +194,10 @@ export default function BuildControlPage({ searchParams }: PageProps) {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
-            <div className="text-xs text-slate-500">Claude Pro</div>
-            <div className={claudeCheck?.status === 'pass' && claudeAccount?.status === 'pass' ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-red-300'}>{claudeCheck?.status === 'pass' && claudeAccount?.status === 'pass' ? 'Connected' : 'Needs attention'}</div>
-            <div className="mt-1 text-xs text-slate-500">{claudeAccount?.message ?? claudeInstalled?.message ?? 'Run Ready Check'}</div>
-          </div>
-          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
-            <div className="text-xs text-slate-500">Notion</div>
-            <div className={notionCheck?.status === 'pass' ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-red-300'}>{notionCheck?.status === 'pass' ? 'Connected' : 'Needs attention'}</div>
-            <div className="mt-1 text-xs text-slate-500">{notionCheck?.message ?? 'Run Ready Check'}</div>
-          </div>
-          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
-            <div className="text-xs text-slate-500">GitHub</div>
-            <div className={githubCheck?.status === 'pass' ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-red-300'}>{githubCheck?.status === 'pass' ? 'Reachable' : 'Needs attention'}</div>
-            <div className="mt-1 text-xs text-slate-500">{githubCheck?.message ?? 'Run Ready Check'}</div>
-          </div>
-          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
-            <div className="text-xs text-slate-500">Safe Build Test</div>
-            <div className={startCheckPassed ? 'mt-1 text-sm text-emerald-300' : 'mt-1 text-sm text-amber-300'}>{startCheckPassed ? 'Passed' : 'Not checked'}</div>
-            <div className="mt-1 text-xs text-slate-500">{startReadiness.createdAt && startCheckCurrent ? new Date(startReadiness.createdAt).toLocaleString() : `Waiting for ${currentId}`}</div>
-          </div>
+          <SimpleStatusCard label="Claude Pro" value={claudeCheck?.status === 'pass' && claudeAccount?.status === 'pass' ? 'Connected' : 'Needs attention'} detail={claudeAccount?.message ?? claudeInstalled?.message ?? 'Run Ready Check'} tone={claudeCheck?.status === 'pass' && claudeAccount?.status === 'pass' ? 'emerald' : 'red'} />
+          <SimpleStatusCard label="Notion" value={notionCheck?.status === 'pass' ? 'Connected' : 'Needs attention'} detail={notionCheck?.message ?? 'Run Ready Check'} tone={notionCheck?.status === 'pass' ? 'emerald' : 'red'} />
+          <SimpleStatusCard label="GitHub" value={githubCheck?.status === 'pass' ? 'Reachable' : 'Needs attention'} detail={githubCheck?.message ?? 'Run Ready Check'} tone={githubCheck?.status === 'pass' ? 'emerald' : 'red'} />
+          <SimpleStatusCard label="Safe Build Test" value={startCheckPassed ? 'Passed' : 'Not checked'} detail={startReadiness.createdAt && startCheckCurrent ? new Date(startReadiness.createdAt).toLocaleString() : `Waiting for ${currentId}`} tone={startCheckPassed ? 'emerald' : 'amber'} />
         </div>
 
         <div className="mt-4 rounded border border-slate-800 bg-slate-950/40 p-3">
@@ -211,7 +218,9 @@ export default function BuildControlPage({ searchParams }: PageProps) {
         </div>
 
         {(startReadiness.steps ?? []).length > 0 && startCheckCurrent && (
-          <div className="mt-4 grid gap-2">
+          <div className="mt-4">
+          <CompactSection title="Start Check Details" subtitle="Technical checks from the latest safe-start validation.">
+          <div className="grid gap-2">
             {startReadiness.steps?.map((step) => (
               <div key={step.name} className="flex flex-wrap items-start gap-2 rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm">
                 <span className={step.status === 'pass' ? 'rounded bg-emerald-900 px-2 py-1 text-xs text-emerald-100' : 'rounded bg-red-900 px-2 py-1 text-xs text-red-100'}>{step.status === 'pass' ? 'pass' : 'needs attention'}</span>
@@ -222,9 +231,13 @@ export default function BuildControlPage({ searchParams }: PageProps) {
               </div>
             ))}
           </div>
+          </CompactSection>
+          </div>
         )}
       </div>
+      )}
 
+      {!allComplete && (
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -260,7 +273,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-build-watch" />
               <input type="hidden" name="from" value={currentId} />
-              <button disabled={startLocked} className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
+              <button disabled={startLocked} title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !startCheckPassed ? `Run the start check for ${currentId} first` : buildRun.live ? 'A build is already running' : `Start the automated build from ${currentId}`} className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Automated Build</button>
             </form>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-context" />
@@ -281,14 +294,16 @@ export default function BuildControlPage({ searchParams }: PageProps) {
         </div>
 
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-          <h2 className="text-sm font-semibold">How to continue</h2>
-          <div className="mt-4 space-y-3 text-sm text-slate-300">
-            <p>1. Click Set Up Build Control once if the Notion database is not ready.</p>
-            <p>2. Click Start Automated Build.</p>
-            <p>3. DevTools sends each prepared context file to Claude Code automatically.</p>
-            <p>4. After each phase, DevTools runs gates, commits, pushes, notifies Discord, and advances.</p>
-            <p>5. After all phases complete, launch locally for checking, then request VPS deployment.</p>
-          </div>
+          <details className="group">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-200 hover:text-white">How to continue <span className="ml-1 text-xs font-normal text-slate-500">(show guide)</span></summary>
+            <div className="mt-4 space-y-3 text-sm text-slate-300">
+              <p>1. Click Set Up Build Control once if the Notion database is not ready.</p>
+              <p>2. Click Start Automated Build.</p>
+              <p>3. DevTools sends each prepared context file to Claude Code automatically.</p>
+              <p>4. After each phase, DevTools runs gates, commits, pushes, notifies Discord, and advances.</p>
+              <p>5. After all phases complete, launch locally for checking, then request VPS deployment.</p>
+            </div>
+          </details>
           <div className="mt-5 rounded border border-slate-800 p-3">
             <div className="text-xs text-slate-500">Polling check</div>
             <form action="/api/actions" method="post" className="mt-3 flex flex-wrap gap-2">
@@ -300,8 +315,10 @@ export default function BuildControlPage({ searchParams }: PageProps) {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+      <div className="mt-6">
+      <CompactSection title="Build Progress" subtitle="Full 19-phase progress list and final local/deploy actions." badge={<span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{done}/19 complete</span>}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">Build Progress</h2>
           <BuildProgressGauge size="md" />
@@ -311,17 +328,17 @@ export default function BuildControlPage({ searchParams }: PageProps) {
             const phase = phaseById.get(id)
             const control = controlById.get(id)
             const hash = phase?.commitHash ?? control?.commitHash
+            const gauge = phaseGauge(phase?.status)
             return (
               <div key={id} className="flex flex-wrap items-center gap-3 rounded border border-slate-800 px-3 py-2">
-                <BuildProgressGauge phaseId={id} size="sm" showLabel={false} />
+                <LaneItemGauge percent={gauge.percent} tone={gauge.tone} title={phase?.status ?? 'not-started'} />
                 <strong className="w-12">{id}</strong>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-slate-200">{name}</div>
                   <div className="text-xs text-slate-500">Business phase {business} · {builderLabel(builder)}</div>
                 </div>
                 <span className={`rounded px-2 py-1 text-xs ${statusClass(control?.status ?? 'pending')}`}>{control?.status ?? 'pending'}</span>
-                <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{phase?.status ?? 'not-started'}</span>
-                {hash && <a href={githubCommitUrl(hash)} target="_blank" rel="noreferrer" className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-300 hover:bg-slate-800">commit {hash}</a>}
+                {hash &&<a href={githubCommitUrl(hash)} target="_blank" rel="noreferrer" className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-300 hover:bg-slate-800">commit {hash}</a>}
               </div>
             )
           })}
@@ -343,7 +360,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
                   disabled={done !== 19}
                   className="min-h-11 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                 >
-                  Launch Application
+                  Launch App Locally
                 </button>
               </form>
             </div>
@@ -360,32 +377,33 @@ export default function BuildControlPage({ searchParams }: PageProps) {
               <BuildProgressGauge size="sm" showLabel={false} />
               <strong className="w-16">Deploy</strong>
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-slate-200">Final deployment to VPS</div>
+                <div className="text-sm text-slate-200">Open deployment guide</div>
                 <div className="text-xs text-slate-500">
                   {done === 19
-                    ? 'Requests the VPS deployment plan and posts a critical Discord confirmation.'
+                    ? 'Continue in the guided Deploy page for checks, VPS verification, and final deployment request.'
                     : 'Available after all 19 build phases are complete.'}
                 </div>
               </div>
-              <form action="/api/actions" method="post">
-                <input type="hidden" name="action" value="deploy-vps" />
-                <button
-                  disabled={done !== 19}
-                  className="min-h-11 rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                >
-                  Deploy to VPS
+              {done === 19 ? (
+                <a href="/deploy" className="min-h-11 rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500">
+                  Continue to Deploy →
+                </a>
+              ) : (
+                <button disabled className="min-h-11 rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-slate-400">
+                  Open Guide
                 </button>
-              </form>
+              )}
             </div>
             {done === 19 && (
               <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
                 <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Target: VPS/domain from Settings</div>
                 <div className="rounded border border-slate-800 bg-slate-950/40 p-2">Type: production deployment request</div>
-                <a href="/deploy" className="rounded border border-slate-800 bg-slate-950/40 p-2 text-sky-300 hover:bg-slate-900">Open Deploy page</a>
+                <a href="/deploy" className="rounded border border-slate-800 bg-slate-950/40 p-2 text-sky-300 hover:bg-slate-900">Continue to Deploy →</a>
               </div>
             )}
           </div>
         </div>
+      </CompactSection>
       </div>
     </section>
   )
