@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { readJson } from '../lib/read-json'
 import { isProcessAlive, isHeartbeatFresh } from '../lib/run-live'
 import { AutoRefresh } from '../auto-refresh'
+import { Icon } from '../icon'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,7 +85,7 @@ export default function OverviewPage() {
           </div>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="backlog-stop" />
-            <button className="shrink-0 rounded-md border border-red-700 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/50">Stop run</button>
+            <button className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-700 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/50"><Icon name="stop" className="h-3.5 w-3.5" />Stop run</button>
           </form>
         </div>
       )}
@@ -104,15 +105,15 @@ export default function OverviewPage() {
         <div className="mt-2 flex flex-wrap gap-2">
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="backlog-auto-resolve" />
-            <button disabled={runLive || todo === 0} className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50" title={todo === 0 ? 'No open todo items' : `Resolve all ${todo} todo item(s)`}>Auto-resolve all{todo > 0 ? ` (${todo})` : ''}</button>
+            <button disabled={runLive || todo === 0} className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50" title={todo === 0 ? 'No open todo items' : `Resolve all ${todo} todo item(s)`}><Icon name="auto" className="h-4 w-4" />Auto-resolve all{todo > 0 ? ` (${todo})` : ''}</button>
           </form>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="backlog-verify-all" />
-            <button disabled={runLive || review === 0} className="rounded-md border border-sky-700 bg-sky-950/30 px-3 py-2 text-sm font-medium text-sky-100 hover:bg-sky-950/60 disabled:cursor-not-allowed disabled:opacity-50" title={review === 0 ? 'No items in review' : `Verify all ${review} item(s)`}>Verify all{review > 0 ? ` (${review})` : ''}</button>
+            <button disabled={runLive || review === 0} className="inline-flex items-center gap-1 rounded-md border border-sky-700 bg-sky-950/30 px-3 py-2 text-sm font-medium text-sky-100 hover:bg-sky-950/60 disabled:cursor-not-allowed disabled:opacity-50" title={review === 0 ? 'No items in review' : `Verify all ${review} item(s)`}><Icon name="check" className="h-4 w-4" />Verify all{review > 0 ? ` (${review})` : ''}</button>
           </form>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="backlog-sync" />
-            <button disabled={runLive} className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50">Sync backlog</button>
+            <button disabled={runLive} className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"><Icon name="refresh" className="h-4 w-4" />Sync backlog</button>
           </form>
           <Link href="/ready" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Readiness</Link>
           <Link href="/journal" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">+ Journal note</Link>

@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { readJson } from '../lib/read-json'
+import { Icon } from '../icon'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,7 +95,7 @@ export default function JournalPage({ searchParams }: { searchParams?: { type?: 
                 <form action="/api/actions" method="post">
                   <input type="hidden" name="action" value="journal-remove" />
                   <input type="hidden" name="id" value={e.id} />
-                  <button className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950/40" title="Delete">✕</button>
+                  <button className="inline-flex items-center justify-center rounded border border-red-800 p-1 text-red-300 hover:bg-red-950/40" title="Delete" aria-label="Delete entry"><Icon name="trash" className="h-3.5 w-3.5" /></button>
                 </form>
               </div>
             </div>
