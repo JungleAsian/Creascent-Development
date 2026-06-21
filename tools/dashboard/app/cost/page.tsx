@@ -331,8 +331,6 @@ export default async function CostPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <AutoRefresh seconds={15} />
-      <WorkflowStages active="monitor" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Development Cost</h1>
@@ -340,7 +338,7 @@ export default async function CostPage({ searchParams }: PageProps) {
           <p className="mt-1 text-xs text-slate-500">Exchange rate: 1 USD = {exchange.rates.CAD.toFixed(4)} CAD / {exchange.rates.GTQ.toFixed(4)} GTQ · Updated {new Date(exchange.updatedAt).toLocaleDateString()} · Display: {display.toUpperCase()}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <form action="/api/settings/env" method="post" className="flex min-h-11 overflow-hidden rounded-md border border-cyan-700">
+          <form action="/api/settings/env" method="post" className="flex overflow-hidden rounded-md border border-cyan-700">
             <input type="hidden" name="action" value="cost-currency" />
             <input type="hidden" name="returnTo" value="/cost" />
             <label className="sr-only" htmlFor="cost-currency">Display currency</label>
@@ -349,24 +347,29 @@ export default async function CostPage({ searchParams }: PageProps) {
               <option value="cad">CAD</option>
               <option value="gtq">GTQ</option>
             </select>
-            <button className="border-l border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
+            <button className="border-l border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
               Convert
             </button>
           </form>
-          <a href="/api/cost/pdf" className="grid min-h-11 place-items-center rounded-md border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-950/40">Export PDF</a>
+          <a href="/api/cost/pdf" className="grid place-items-center rounded-md border border-emerald-700 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-950/40">Export PDF</a>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="cost-dev-sync-claude" />
-            <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950" title="Manual override — cost also syncs automatically every 5 min">Sync Claude Now</button>
+            <button className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950" title="Manual override — cost also syncs automatically every 5 min">Sync Claude Now</button>
           </form>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="cost-dev-sync-codex" />
-            <button className="min-h-11 rounded-md bg-violet-500 px-4 py-2 text-sm font-medium text-slate-950" title="Manual override — cost also syncs automatically every 5 min">Sync Codex Now</button>
+            <button className="rounded-md bg-violet-500 px-3 py-2 text-sm font-medium text-slate-950" title="Manual override — cost also syncs automatically every 5 min">Sync Codex Now</button>
           </form>
           <p className="w-full text-right text-xs text-emerald-300/80">● Auto-syncing Claude + Codex cost every 5 min (incremental) · last {autoSyncAgo}</p>
         </div>
       </div>
-      {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
-      {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
+
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <WorkflowStages active="monitor" />
+      </div>
+      {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
+      {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-semibold">Cost to date</h2><p className="mt-2 text-2xl">{money(devTotal)}</p></div>
@@ -383,7 +386,12 @@ export default async function CostPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 2xl:grid-cols-[420px_1fr]">
+      <details className="mt-5 rounded-md border border-slate-800 bg-slate-900/40 p-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2">
+          <span className="text-sm font-semibold">Detailed breakdowns</span>
+          <span className="text-xs text-slate-400">By tool · feature · phase · support — open / collapse</span>
+        </summary>
+        <div className="mt-4 grid gap-5 2xl:grid-cols-[420px_1fr]">
         <div className="space-y-5">
           <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
             <details>
@@ -541,7 +549,8 @@ export default async function CostPage({ searchParams }: PageProps) {
           </div>
 
         </div>
-      </div>
+        </div>
+      </details>
     </section>
   )
 }

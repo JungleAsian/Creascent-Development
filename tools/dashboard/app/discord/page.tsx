@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { WorkflowStages } from '../workflow-stages'
+import { AutoRefresh } from '../auto-refresh'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -61,7 +62,6 @@ export default function DiscordPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <WorkflowStages active="monitor" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Discord Status</h1>
@@ -69,28 +69,42 @@ export default function DiscordPage({ searchParams }: PageProps) {
         </div>
         <form action="/api/actions" method="post">
           <input type="hidden" name="action" value="discord-test" />
-          <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950">Test Notification</button>
+          <button className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950">Test Notification</button>
         </form>
       </div>
-      {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
-      {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
 
-      <div className="mt-5 grid gap-3 md:grid-cols-5">
-        <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Discord setup</p>
-          <p className={isConfigured ? 'mt-2 text-lg font-semibold text-emerald-300' : 'mt-2 text-lg font-semibold text-red-300'}>{isConfigured ? 'configured' : 'needs setup'}</p>
-        </div>
-        {routes.map((route) => (
-          <div key={route.key} className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <p className="text-xs text-slate-500">{route.label}</p>
-            <p className={route.ready ? 'mt-2 text-lg font-semibold text-emerald-300' : 'mt-2 text-lg font-semibold text-amber-300'}>{route.ready ? 'ready' : 'fallback only'}</p>
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <WorkflowStages active="monitor" />
+      </div>
+      {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
+      {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
+
+      <div className="mt-4 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs text-slate-500">Discord setup</p>
+            <p className={isConfigured ? 'mt-1 text-lg font-semibold text-emerald-300' : 'mt-1 text-lg font-semibold text-red-300'}>{isConfigured ? 'configured' : 'needs setup'}</p>
           </div>
-        ))}
+          <div className="text-right text-xs text-slate-500">{routes.filter((route) => route.ready).length}/{routes.length} channels ready</div>
+        </div>
+
+        <details className="group mt-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-200 hover:text-white">Channel routing <span className="ml-1 text-xs font-normal text-slate-500">(show details)</span></summary>
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            {routes.map((route) => (
+              <div key={route.key} className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                <p className="text-xs text-slate-500">{route.label}</p>
+                <p className={route.ready ? 'mt-2 text-sm font-semibold text-emerald-300' : 'mt-2 text-sm font-semibold text-amber-300'}>{route.ready ? 'ready' : 'fallback only'}</p>
+              </div>
+            ))}
+          </div>
+        </details>
       </div>
 
       <form className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
-        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search Discord messages" defaultValue={searchParams?.q ?? ''} />
-        <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm">Apply</button>
+        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm" placeholder="Search Discord messages" defaultValue={searchParams?.q ?? ''} />
+        <button className="rounded-md border border-slate-700 px-3 py-2 text-sm">Apply</button>
       </form>
 
       <div className="mt-5 max-h-[calc(100vh-300px)] overflow-auto rounded-lg border border-slate-800">

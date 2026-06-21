@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { AutoRefresh } from '../auto-refresh'
 import { DetailButton } from '../detail-button'
 import { WorkflowStages } from '../workflow-stages'
 
@@ -55,7 +56,6 @@ export default function LogsPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <WorkflowStages active="monitor" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Logs</h1>
@@ -64,12 +64,17 @@ export default function LogsPage({ searchParams }: PageProps) {
         <span className="rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">{rows.length} entries</span>
       </div>
 
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <WorkflowStages active="monitor" />
+      </div>
+
       <form className="mt-5 grid gap-3 md:grid-cols-[260px_1fr_auto]">
-        <select name="file" className="min-h-11 rounded-md border border-slate-700 bg-slate-900 px-3 py-2" defaultValue={selectedFile}>
+        <select name="file" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm" defaultValue={selectedFile}>
           {files.length === 0 ? <option>Select log file</option> : files.map((file) => <option key={file}>{file}</option>)}
         </select>
-        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search logs" defaultValue={query} />
-        <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950">Apply</button>
+        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm" placeholder="Search logs" defaultValue={query} />
+        <button className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950">Apply</button>
       </form>
 
       <div className="mt-5 max-h-[calc(100vh-220px)] overflow-auto rounded-lg border border-slate-800">
