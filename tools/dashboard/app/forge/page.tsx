@@ -3,6 +3,8 @@ import { CompactSection } from '../compact-ui'
 import { IssueList, SubsystemHeader } from '../sentinel-shared'
 import { BlockerPanel, BuildPipelineView, EventTimeline, HeartbeatVisual, NextActionPanel, SystemStatusBanner } from '../sentinel-visuals'
 import { AutoRefresh } from '../auto-refresh'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +18,16 @@ export default function ForgePage() {
   const featureRun = readFeatureRun()
   const featureProcess = featureRunProcessState(featureRun)
   const frontendCoverage = frontendCoverageSummary()
+
+  const coveragePercent = frontendCoverage.total > 0 ? Math.round((frontendCoverage.complete / frontendCoverage.total) * 100) : 0
+  const forgeState: 'complete' | 'progressing' | 'halted' | 'stopped' =
+    featureRun.status === 'failed'
+      ? 'halted'
+      : frontendCoverage.total > 0 && frontendCoverage.open === 0
+        ? 'complete'
+        : ['starting', 'running', 'paused'].includes(featureRun.status ?? '')
+          ? 'progressing'
+          : 'stopped'
 
   return (
     <section className="w-full space-y-6">
@@ -34,6 +46,16 @@ export default function ForgePage() {
         state={liveness}
         detail="Forge watches build phases, development execution, GitHub handoff, provider sessions, and development cost signals."
       />
+
+      <div className="flex flex-wrap items-center gap-4 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <BuildProgressGauge
+          size="sm"
+          percent={coveragePercent}
+          state={forgeState}
+          label="Frontend coverage"
+          message={`${frontendCoverage.complete}/${frontendCoverage.total} screens complete`}
+        />
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1.2fr]">
         <HeartbeatVisual label="Forge" heartbeat={hb} />
@@ -99,7 +121,11 @@ function FeatureRunInsight({ run, processState, coverage }: { run: ReturnType<ty
       <div className="mt-4 grid gap-3 md:grid-cols-4">
         <MiniStat label="Workflow" value={run.workflow ?? 'none'} />
         <MiniStat label="Heartbeat" value={heartbeatAge === null ? 'none' : `${heartbeatAge}s ago`} />
-        <MiniStat label="Frontend open" value={`${coverage.open}/${coverage.total}`} />
+        <MiniStat
+          label="Frontend complete"
+          value={`${coverage.complete}/${coverage.total}`}
+          gauge={coverage.total > 0 ? { percent: Math.round((coverage.complete / coverage.total) * 100), tone: coverage.open === 0 ? 'emerald' : 'cyan' } : undefined}
+        />
         <MiniStat label="GitHub" value={run.githubStatus ?? 'none'} />
       </div>
       {run.message ? <p className="mt-4 rounded-md border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300">{run.message}</p> : null}
@@ -107,11 +133,14 @@ function FeatureRunInsight({ run, processState, coverage }: { run: ReturnType<ty
   )
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value, gauge }: { label: string; value: string; gauge?: { percent: number; tone: 'slate' | 'cyan' | 'amber' | 'sky' | 'emerald' | 'red' | 'violet' } }) {
   return (
-    <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 break-words text-sm font-medium text-slate-100">{value}</div>
+    <div className="flex items-center gap-3 rounded-md border border-slate-800 bg-slate-950 p-3">
+      {gauge ? <LaneItemGauge percent={gauge.percent} tone={gauge.tone} title={`${label} ${gauge.percent}%`} /> : null}
+      <div className="min-w-0">
+        <div className="text-xs text-slate-500">{label}</div>
+        <div className="mt-1 break-words text-sm font-medium text-slate-100">{value}</div>
+      </div>
     </div>
   )
 }

@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
 
 const logsDir = path.resolve(process.cwd(), '..', 'logs')
 const diagnosticsFile = path.join(logsDir, 'diagnostics.json')
@@ -29,6 +31,14 @@ export default function DiagnosticsPage({ searchParams }: PageProps) {
   const categories = run?.categories ?? []
   const issues = categories.flatMap((category) => category.checks.filter((check) => check.status === 'critical' || check.status === 'warning').map((check) => ({ ...check, category: category.label })))
 
+  const allChecks = categories.flatMap((category) => category.checks)
+  const totalChecks = allChecks.length
+  const passedChecks = allChecks.filter((check) => check.status === 'pass').length
+  const overallPercent = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0
+  const hasFailures = allChecks.some((check) => check.status === 'critical' || check.status === 'warning')
+  const overallState: 'complete' | 'progressing' | 'halted' | 'stopped' =
+    totalChecks === 0 ? 'stopped' : hasFailures ? 'halted' : passedChecks === totalChecks ? 'complete' : 'progressing'
+
   return (
     <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -36,9 +46,18 @@ export default function DiagnosticsPage({ searchParams }: PageProps) {
           <h1 className="text-2xl font-semibold">Diagnostics</h1>
           <p className="mt-2 text-sm text-slate-400">Targeted checks for Windows, DevTools, services, Notion, Discord, VPS, and build readiness.</p>
         </div>
-        <div className="flex gap-2">
-          <form action="/api/actions" method="post"><input type="hidden" name="action" value="diagnose-run" /><button className="rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white">Run All</button></form>
-          <form action="/api/actions" method="post"><input type="hidden" name="action" value="diagnose-quick" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Quick Check</button></form>
+        <div className="flex flex-wrap items-center gap-4">
+          <BuildProgressGauge
+            size="sm"
+            percent={overallPercent}
+            state={overallState}
+            label={`${passedChecks}/${totalChecks} passed`}
+            message={totalChecks === 0 ? 'No checks run yet' : `${issues.length} issue${issues.length === 1 ? '' : 's'} to review`}
+          />
+          <div className="flex gap-2">
+            <form action="/api/actions" method="post"><input type="hidden" name="action" value="diagnose-run" /><button className="rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white">Run All</button></form>
+            <form action="/api/actions" method="post"><input type="hidden" name="action" value="diagnose-quick" /><button className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Quick Check</button></form>
+          </div>
         </div>
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
@@ -77,11 +96,14 @@ export default function DiagnosticsPage({ searchParams }: PageProps) {
         {categories.map((category) => {
           const passed = category.checks.filter((check) => check.status === 'pass').length
           const worst = category.checks.some((check) => check.status === 'critical') ? 'critical' : category.checks.some((check) => check.status === 'warning') ? 'warning' : 'pass'
+          const categoryPercent = category.checks.length > 0 ? (passed / category.checks.length) * 100 : 0
+          const categoryTone: 'red' | 'amber' | 'emerald' = worst === 'critical' ? 'red' : worst === 'warning' ? 'amber' : 'emerald'
           return (
             <details key={category.id} className="rounded-md border border-slate-800 bg-slate-950">
-              <summary className="cursor-pointer select-none px-4 py-3">
+              <summary className="flex cursor-pointer select-none items-center gap-3 px-4 py-3">
+                <LaneItemGauge percent={categoryPercent} tone={categoryTone} title={`${category.label} — ${worst}`} />
                 <span className="font-semibold">{category.label}</span>
-                <span className={`ml-3 text-sm ${tone(worst)}`}>{passed}/{category.checks.length}</span>
+                <span className={`ml-auto text-sm ${tone(worst)}`}>{passed}/{category.checks.length}</span>
               </summary>
               <div className="space-y-2 border-t border-slate-800 p-4">
                 <form action="/api/actions" method="post">

@@ -3,6 +3,8 @@ import { CompactSection } from '../compact-ui'
 import { IssueList, SubsystemHeader } from '../sentinel-shared'
 import { BlockerPanel, EventTimeline, HeartbeatVisual, IncidentRecoveryView, NextActionPanel, SystemStatusBanner } from '../sentinel-visuals'
 import { AutoRefresh } from '../auto-refresh'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +24,14 @@ export default function AegisPage() {
   const active = activeIssues(issuesBySource('aegis'))
   const safetyFailing = active.filter((i) => i.checkCategory === 'safety')
 
+  const totalChecks = checks.length
+  const passedChecks = checks.filter((c) => c.status === 'pass').length
+  const overallPercent = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0
+  const anyFailing = checks.some((c) => c.status === 'fail')
+  const anyWarning = checks.some((c) => c.status === 'warn')
+  const overallState: 'complete' | 'progressing' | 'halted' | 'stopped' =
+    totalChecks === 0 ? 'stopped' : anyFailing ? 'halted' : anyWarning ? 'progressing' : 'complete'
+
   return (
     <section className="w-full space-y-6">
       <AutoRefresh seconds={15} />
@@ -32,6 +42,20 @@ export default function AegisPage() {
         liveness={liveness}
         detail={liveness === 'not-configured' ? 'Configure DB connection to activate' : age === null ? 'no heartbeat' : `heartbeat ${age}s ago`}
       />
+
+      <div className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div>
+          <div className="text-sm font-semibold">Product Integrity Health</div>
+          <div className="text-xs text-slate-500">{passedChecks}/{totalChecks} checks passing</div>
+        </div>
+        <BuildProgressGauge
+          size="sm"
+          percent={overallPercent}
+          state={overallState}
+          label={`${overallPercent}% passing`}
+          message={anyFailing ? 'Failing safety/integrity checks' : anyWarning ? 'Warnings present' : 'All checks healthy'}
+        />
+      </div>
 
       <SystemStatusBanner
         title="Aegis Product Protection"
@@ -56,9 +80,16 @@ export default function AegisPage() {
         {CATEGORIES.map((cat) => {
           const rows = checks.filter((c) => c.category === cat.id)
           const failing = rows.filter((r) => r.status === 'fail' || r.status === 'warn').length
+          const passed = rows.filter((r) => r.status === 'pass').length
+          const pct = rows.length > 0 ? Math.round((passed / rows.length) * 100) : 0
+          const worst = rows.some((r) => r.status === 'fail') ? 'fail' : rows.some((r) => r.status === 'warn') ? 'warn' : 'pass'
+          const tone = worst === 'fail' ? 'red' : worst === 'warn' ? 'amber' : 'emerald'
           return (
             <div key={cat.id} className={`rounded-md border p-4 ${cat.id === 'safety' ? 'border-red-900/60 bg-red-950/10' : 'border-slate-800 bg-slate-900'}`}>
-              <div className="text-xs font-semibold">{cat.label}</div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xs font-semibold">{cat.label}</div>
+                <LaneItemGauge percent={pct} tone={tone} title={`${cat.label} — ${worst}`} />
+              </div>
               <div className="mt-2 text-2xl font-semibold">{failing}</div>
               <div className="text-xs text-slate-500">active</div>
             </div>

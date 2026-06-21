@@ -148,11 +148,11 @@ const sideRailGroups: NavGroup[] = [
   },
   {
     label: 'Develop',
-    items: ['Build Control', 'Features Development', 'Frontend Build Control', 'Docmee - UI', 'Enhancements']
+    items: ['Build Control', 'Phase Progress', 'Features Development', 'Frontend Build Control', 'Docmee - UI', 'Enhancements']
   },
   {
     label: 'Verify',
-    items: ['Ready', 'Phase Progress', 'Six Gates', 'Pre-deployment', 'Post-Deployment Log']
+    items: ['Ready', 'Six Gates', 'Pre-deployment', 'Post-Deployment Log']
   },
   {
     label: 'Deploy',

@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { activeIssues, readAudit, readIssues, readTray } from '../lib/sentinel-platform'
 import { AutoRefresh } from '../auto-refresh'
 import { readJson } from '../lib/read-json'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +61,15 @@ export default function HealerPage({ searchParams }: { searchParams?: { message?
   const frontendOk = matches({ designedFeatures: 0, complete: 0, pending: 0, needsAudit: 0, ...actualFrontend }, expectedFrontend)
   const queueStep = readiness.steps?.find((step) => step.name === 'Frontend Queue')
   const driftClear = backendOk && frontendOk
+  // Overall recovery health: derived-record alignment counts for most of the
+  // signal, with open Healer issues docking the score so the header gauge
+  // reflects both drift and outstanding corrections.
+  const driftHealth = (backendOk ? 50 : 0) + (frontendOk ? 50 : 0)
+  const healthPercent = issues.length > 0 ? Math.max(0, driftHealth - 25) : driftHealth
+  const healthState = healthPercent >= 100 ? 'complete' : healthPercent === 0 ? 'halted' : 'progressing'
+  const healthMessage = driftClear && issues.length === 0 ? 'Derived records aligned' : !driftClear ? 'Drift in derived records' : `${issues.length} open issue${issues.length === 1 ? '' : 's'}`
+  const backendPercent = expectedBackend.designedFeatures > 0 ? (expectedBackend.complete / expectedBackend.designedFeatures) * 100 : 0
+  const frontendPercent = expectedFrontend.designedFeatures > 0 ? (expectedFrontend.complete / expectedFrontend.designedFeatures) * 100 : 0
 
   return (
     <section className="w-full space-y-6">
@@ -71,9 +82,12 @@ export default function HealerPage({ searchParams }: { searchParams?: { message?
             Deterministic recovery and safe correction. Forge detects development signal drift; Healer performs only allowed, low-risk corrections.
           </p>
         </div>
-        <div className="responsive-actions">
-          <Link href="/sentinel" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">Sentinel</Link>
-          <Link href="/forge" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-950/40">Forge</Link>
+        <div className="flex flex-col items-stretch gap-3 sm:items-end">
+          <BuildProgressGauge size="sm" percent={healthPercent} state={healthState} label="Recovery health" message={healthMessage} />
+          <div className="responsive-actions">
+            <Link href="/sentinel" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">Sentinel</Link>
+            <Link href="/forge" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-950/40">Forge</Link>
+          </div>
         </div>
       </div>
 
@@ -103,8 +117,8 @@ export default function HealerPage({ searchParams }: { searchParams?: { message?
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <DriftRow title="Backend summary" ok={backendOk} expected={displaySummary(expectedBackend)} actual={displaySummary(actualBackend)} />
-            <DriftRow title="Frontend summary" ok={frontendOk} expected={displaySummary(expectedFrontend)} actual={displaySummary(actualFrontend)} />
+            <DriftRow title="Backend summary" ok={backendOk} expected={displaySummary(expectedBackend)} actual={displaySummary(actualBackend)} percent={backendPercent} />
+            <DriftRow title="Frontend summary" ok={frontendOk} expected={displaySummary(expectedFrontend)} actual={displaySummary(actualFrontend)} percent={frontendPercent} />
           </div>
           <div className="mt-3 rounded border border-slate-800 bg-slate-950/40 p-3 text-sm">
             <div className="text-xs text-slate-500">Frontend Queue message</div>
@@ -154,10 +168,13 @@ function StatusCard({ label, value, tone }: { label: string; value: string; tone
   )
 }
 
-function DriftRow({ title, ok, expected, actual }: { title: string; ok: boolean; expected: string; actual: string }) {
+function DriftRow({ title, ok, expected, actual, percent }: { title: string; ok: boolean; expected: string; actual: string; percent: number }) {
   return (
     <div className={`rounded-md border p-3 ${ok ? 'border-emerald-800 bg-emerald-950/20' : 'border-amber-800 bg-amber-950/20'}`}>
-      <div className={ok ? 'text-sm font-semibold text-emerald-200' : 'text-sm font-semibold text-amber-200'}>{title}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className={ok ? 'text-sm font-semibold text-emerald-200' : 'text-sm font-semibold text-amber-200'}>{title}</div>
+        <LaneItemGauge percent={percent} tone={ok ? 'emerald' : 'amber'} title={`${title} complete`} />
+      </div>
       <div className="mt-2 text-xs text-slate-400">Expected: {expected}</div>
       <div className="mt-1 text-xs text-slate-400">Actual: {actual}</div>
     </div>
