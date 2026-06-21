@@ -1,6 +1,9 @@
 import path from 'node:path'
 import Link from 'next/link'
 import { readJson } from '../lib/read-json'
+import { WorkflowStages } from '../workflow-stages'
+import { AutoRefresh } from '../auto-refresh'
+import { BuildProgressGauge } from '../build-progress-gauge'
 
 type PageProps = { searchParams?: { message?: string; error?: string } }
 
@@ -73,14 +76,33 @@ export default function DocmeeUpdatePage({ searchParams }: PageProps) {
     }
   ] as UpdateStep[]
 
+  const passedSteps = workflow.filter((step) => step.status === 'pass').length
+  const progressPercent = Math.round((passedSteps / workflow.length) * 100)
+  const anyFailed = workflow.some((step) => step.status === 'fail')
+  const gaugeState = vpsReady ? 'complete' : anyFailed ? 'halted' : 'progressing'
+
   return (
     <section className="w-full">
+      <WorkflowStages active="deploy" />
+      <AutoRefresh seconds={15} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Docmee Technology Update</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-400">
-            Product updates are handled locally first, then verified, then deployed to the VPS. This protects completed work and keeps future updates traceable.
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-4">
+            <BuildProgressGauge
+              size="sm"
+              percent={progressPercent}
+              state={gaugeState}
+              label={`${passedSteps}/${workflow.length} steps`}
+              message="Local-first update readiness"
+            />
+          </div>
+          <details className="mt-3 max-w-3xl text-sm text-slate-400">
+            <summary className="cursor-pointer text-slate-300">How updates flow</summary>
+            <p className="mt-2">
+              Product updates are handled locally first, then verified, then deployed to the VPS. This protects completed work and keeps future updates traceable.
+            </p>
+          </details>
         </div>
         <div className="flex flex-wrap gap-2">
           <form action="/api/actions" method="post">
@@ -136,7 +158,10 @@ export default function DocmeeUpdatePage({ searchParams }: PageProps) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">Actions</h2>
-              <p className="mt-1 text-xs text-slate-400">These are ordered so the VPS deploy step cannot be treated as ready until local checks pass.</p>
+              <details className="mt-1 text-xs text-slate-400">
+                <summary className="cursor-pointer text-slate-300">Why this order</summary>
+                <p className="mt-1">These are ordered so the VPS deploy step cannot be treated as ready until local checks pass.</p>
+              </details>
             </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">

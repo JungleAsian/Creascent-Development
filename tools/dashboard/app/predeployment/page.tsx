@@ -3,6 +3,9 @@ import path from 'node:path'
 import { StatusDot } from '../status-dot'
 import { DetailButton } from '../detail-button'
 import { AutoRefresh } from '../auto-refresh'
+import { VerifyFlowStrip } from '../verify-flow-strip'
+import { LaneItemGauge } from '../lane-item-gauge'
+import { BuildProgressGauge } from '../build-progress-gauge'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const predeploymentFile = path.join(toolsRoot, 'logs', 'predeployment.json')
@@ -317,10 +320,16 @@ export default function PredeploymentPage({ searchParams }: PageProps) {
   const summary = latest?.summary ?? { 'not-run': stages.flatMap((stage) => stage.checks).filter((check) => check.status === 'not-run').length, pass: 0, warning: 0, fail: 0, manual: stages.flatMap((stage) => stage.checks).filter((check) => check.status === 'manual').length }
   const blockers = stages.flatMap((stage) => stage.checks.map((check) => ({ ...check, stage: stage.title }))).filter((check) => check.status === 'fail')
 
+  const totalChecks = summary.pass + summary.warning + summary.fail + summary.manual + summary['not-run']
+  const overallPercent = totalChecks > 0 ? (summary.pass / totalChecks) * 100 : 0
+  const overallState: 'complete' | 'progressing' | 'halted' | 'stopped' =
+    summary.fail > 0 ? 'halted' : summary.pass === totalChecks && totalChecks > 0 ? 'complete' : summary.pass + summary.warning === 0 ? 'stopped' : 'progressing'
+
   return (
     <section className="w-full">
       <AutoRefresh seconds={15} />
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <VerifyFlowStrip active="predeploy" />
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Pre-deployment</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
@@ -328,14 +337,23 @@ export default function PredeploymentPage({ searchParams }: PageProps) {
             production migration, and external service confirmations stay manual until separately approved.
           </p>
         </div>
-        <form action="/api/predeployment/run" method="post">
+        <div className="flex flex-wrap items-center gap-4">
+          <BuildProgressGauge
+            size="sm"
+            percent={overallPercent}
+            state={overallState}
+            label="Pre-deployment"
+            message={`${summary.pass} pass · ${summary.fail} fail`}
+          />
+          <form action="/api/predeployment/run" method="post">
           <button
             disabled={running?.status === 'running'}
             className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
           >
             {running?.status === 'running' ? 'Check Running' : 'Run Pre-deployment Check'}
           </button>
-        </form>
+          </form>
+        </div>
       </div>
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
@@ -386,12 +404,18 @@ export default function PredeploymentPage({ searchParams }: PageProps) {
           const warnings = stage.checks.filter((check) => check.status === 'warning').length
           const passed = stage.checks.filter((check) => check.status === 'pass').length
           const manualCount = stage.checks.filter((check) => check.status === 'manual').length
+          const total = stage.checks.length
+          const stagePercent = total > 0 ? (passed / total) * 100 : 0
+          const stageTone = failed > 0 ? 'red' : warnings > 0 ? 'amber' : passed > 0 ? 'emerald' : 'slate'
           return (
-            <details key={stage.id} open={failed > 0 || stage.id === 'stage-1'} className="rounded-md border border-slate-800 bg-slate-900">
-              <summary className="cursor-pointer select-none px-4 py-3">
-                <span className="text-sm font-semibold">{stage.title}</span>
-                <span className={failed > 0 ? 'ml-3 text-sm text-red-300' : warnings > 0 ? 'ml-3 text-sm text-amber-300' : passed > 0 ? 'ml-3 text-sm text-emerald-300' : 'ml-3 text-sm text-slate-400'}>
-                  {passed} passed · {warnings} warnings · {failed} failed · {manualCount} manual
+            <details key={stage.id} className="rounded-md border border-slate-800 bg-slate-900">
+              <summary className="flex cursor-pointer select-none items-center gap-3 px-4 py-3">
+                <LaneItemGauge percent={stagePercent} tone={stageTone} title={stage.title} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{stage.title}</span>
+                  <span className={failed > 0 ? 'text-xs text-red-300' : warnings > 0 ? 'text-xs text-amber-300' : passed > 0 ? 'text-xs text-emerald-300' : 'text-xs text-slate-400'}>
+                    {passed}/{total} passed · {warnings} warnings · {failed} failed · {manualCount} manual
+                  </span>
                 </span>
               </summary>
               <div className="grid gap-2 border-t border-slate-800 p-4">

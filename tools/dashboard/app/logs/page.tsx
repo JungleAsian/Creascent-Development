@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DetailButton } from '../detail-button'
+import { WorkflowStages } from '../workflow-stages'
 
 const logsDir = path.resolve(process.cwd(), '..', 'logs')
 type PageProps = { searchParams?: { file?: string; q?: string } }
@@ -54,6 +55,7 @@ export default function LogsPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
+      <WorkflowStages active="monitor" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Logs</h1>

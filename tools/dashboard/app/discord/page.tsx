@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { WorkflowStages } from '../workflow-stages'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -60,6 +61,7 @@ export default function DiscordPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
+      <WorkflowStages active="monitor" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Discord Status</h1>

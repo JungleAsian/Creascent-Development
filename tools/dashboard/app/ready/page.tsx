@@ -1,5 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { AutoRefresh } from '../auto-refresh'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { LaneItemGauge } from '../lane-item-gauge'
+import { VerifyFlowStrip } from '../verify-flow-strip'
 
 const readyFile = path.resolve(process.cwd(), '..', 'logs', 'ready.json')
 const startReadinessFile = path.resolve(process.cwd(), '..', 'logs', 'start-readiness.json')
@@ -47,16 +51,40 @@ export default function ReadyPage({ searchParams }: PageProps) {
   const continueHref = startReadiness.phase === 'FRONTEND' ? '/frontend-build-control' : '/build-control'
   const continueLabel = startReadiness.phase === 'FRONTEND' ? 'Continue to Frontend Build Control' : 'Continue to Backend Build Control'
 
+  const categories = data.categories ?? []
+  const allChecks = categories.flatMap((category) => category.checks)
+  const totalChecks = allChecks.length
+  const passedChecks = allChecks.filter((check) => check.status === 'pass').length
+  const hasCritical = allChecks.some((check) => check.status === 'critical')
+  const overallPercent = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0
+  const overallState: 'complete' | 'progressing' | 'halted' =
+    totalChecks > 0 && passedChecks === totalChecks ? 'complete' : hasCritical ? 'halted' : 'progressing'
+
   return (
     <section className="w-full">
+      <AutoRefresh seconds={15} />
+      <div className="mb-4">
+        <VerifyFlowStrip active="ready" />
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Readiness Gate</h1>
           <p className="mt-2 text-sm text-slate-400">Final check before starting the Docmee build.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-run" /><button className="min-h-11 rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Run Ready Check</button></form>
-          <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-fix" /><button className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Auto-Fix Local Items</button></form>
+        <div className="flex flex-wrap items-center gap-4">
+          {totalChecks > 0 && (
+            <BuildProgressGauge
+              size="sm"
+              percent={overallPercent}
+              state={overallState}
+              label="Readiness"
+              message={`${passedChecks}/${totalChecks} checks`}
+            />
+          )}
+          <div className="flex flex-wrap gap-2">
+            <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-run" /><button className="min-h-11 rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950">Run Ready Check</button></form>
+            <form action="/api/actions" method="post"><input type="hidden" name="action" value="ready-fix" /><button className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Auto-Fix Local Items</button></form>
+          </div>
         </div>
       </div>
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
@@ -74,16 +102,25 @@ export default function ReadyPage({ searchParams }: PageProps) {
       </div>
 
       <div className="mt-6 grid gap-4">
-        {(data.categories ?? []).map((category) => {
+        {categories.map((category) => {
+          const total = category.checks.length
+          const passed = category.checks.filter((check) => check.status === 'pass').length
           const critical = category.checks.filter((check) => check.status === 'critical').length
           const warnings = category.checks.filter((check) => check.status === 'warning').length
+          const percent = total > 0 ? Math.round((passed / total) * 100) : 0
+          const tone = critical > 0 ? 'red' : warnings > 0 ? 'amber' : 'emerald'
+          const statusText = critical > 0 ? `${critical} critical` : warnings > 0 ? `${warnings} warnings` : 'ready'
           return (
             <details key={category.id} open={critical > 0} className="rounded-md border border-slate-800 bg-slate-900">
-              <summary className="cursor-pointer select-none px-4 py-3">
-                <span className="text-sm font-semibold">{category.label}</span>
-                <span className={critical > 0 ? 'ml-3 text-sm text-red-300' : warnings > 0 ? 'ml-3 text-sm text-amber-300' : 'ml-3 text-sm text-emerald-300'}>
-                  {critical > 0 ? `${critical} critical` : warnings > 0 ? `${warnings} warnings` : 'ready'}
+              <summary className="flex cursor-pointer select-none items-center gap-3 px-4 py-3">
+                <LaneItemGauge percent={percent} tone={tone} title={`${category.label} — ${statusText}`} />
+                <span className="flex-1">
+                  <span className="text-sm font-semibold">{category.label}</span>
+                  <span className={critical > 0 ? 'ml-3 text-sm text-red-300' : warnings > 0 ? 'ml-3 text-sm text-amber-300' : 'ml-3 text-sm text-emerald-300'}>
+                    {statusText}
+                  </span>
                 </span>
+                <span className="text-xs tabular-nums text-slate-500">{passed}/{total} passed</span>
               </summary>
               <div className="grid gap-2 border-t border-slate-800 p-4">
                 {category.checks.map((check) => (
@@ -100,7 +137,7 @@ export default function ReadyPage({ searchParams }: PageProps) {
             </details>
           )
         })}
-        {(data.categories ?? []).length === 0 && <p className="rounded-md border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">Run the ready check to populate this page.</p>}
+        {categories.length === 0 && <p className="rounded-md border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">Run the ready check to populate this page.</p>}
       </div>
     </section>
   )

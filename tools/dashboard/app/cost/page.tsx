@@ -3,6 +3,7 @@ import path from 'node:path'
 import { costDisplayCurrency, formatCost, getUsdToCad } from '../lib/currency'
 import { maybeAutoSyncCost, lastAutoSyncAt } from '../lib/cost-autosync'
 import { AutoRefresh } from '../auto-refresh'
+import { WorkflowStages } from '../workflow-stages'
 
 const costFile = path.resolve(process.cwd(), '..', 'logs', 'cost.json')
 const coverageFile = path.resolve(process.cwd(), '..', 'logs', 'rev1-feature-coverage.json')
@@ -331,6 +332,7 @@ export default async function CostPage({ searchParams }: PageProps) {
   return (
     <section className="w-full">
       <AutoRefresh seconds={15} />
+      <WorkflowStages active="monitor" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Development Cost</h1>

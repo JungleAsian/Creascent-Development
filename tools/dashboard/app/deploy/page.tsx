@@ -4,6 +4,9 @@ import { CompactSection, SimpleStatusCard } from '../compact-ui'
 import { DeployActionButton } from './deploy-action-button'
 import { ResetDeploymentButton } from './reset-deployment-button'
 import { DeployEverythingPanel } from '../deploy-everything-panel'
+import { WorkflowStages } from '../workflow-stages'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { AutoRefresh } from '../auto-refresh'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -305,10 +308,39 @@ export default function DeployPage({ searchParams }: PageProps) {
   const latestIssue = latestIssueRun?.checks.find((check) => check.status === 'fail') ?? latestIssueRun?.checks.find((check) => check.status === 'warning')
   const verifiedVps = vpsVerified ? latestVps : undefined
 
+  // Overall deploy readiness reflected in the header gauge, derived only from
+  // values already computed above (phase completion + run/issue signals).
+  const allPhaseIds = deploymentPhases.flatMap((phase) => phase.phaseIds)
+  const phasesTotal = allPhaseIds.length
+  const phasesDone = allPhaseIds.filter((id) => phaseStatus.get(id) === 'done').length
+  const deployPercent = phasesTotal > 0 ? Math.round((phasesDone / phasesTotal) * 100) : 0
+  const hasBlockers = runtimeIssues.length > 0 || envIssues.length > 0 || vpsIssues.length > 0
+  const deployInProgress = deployLock?.action === 'vps' && !vpsVerified
+  const deployGaugeState: 'complete' | 'progressing' | 'halted' | 'stopped' = vpsVerified
+    ? 'complete'
+    : deployInProgress
+      ? 'progressing'
+      : hasBlockers
+        ? 'halted'
+        : 'stopped'
+
   return (
     <section className="w-full">
-      <h1 className="text-2xl font-semibold">Deploy</h1>
-      <p className="mt-2 text-sm text-slate-400">Local machine and Hostinger VPS deployment controls.</p>
+      <WorkflowStages active="deploy" />
+      <AutoRefresh seconds={15} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold">Deploy</h1>
+          <p className="mt-2 text-sm text-slate-400">Local machine and Hostinger VPS deployment controls.</p>
+        </div>
+        <BuildProgressGauge
+          size="sm"
+          percent={deployPercent}
+          state={deployGaugeState}
+          label="Deploy readiness"
+          message={`${phasesDone}/${phasesTotal} phases`}
+        />
+      </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && (
         <a
@@ -363,7 +395,12 @@ export default function DeployPage({ searchParams }: PageProps) {
             {guideSteps.filter((step) => step.complete).length}/{guideSteps.length} complete
           </span>
         </div>
-        <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+        <details className="mt-4 group">
+          <summary className="cursor-pointer list-none text-xs text-cyan-200/80 hover:text-cyan-100">
+            <span className="group-open:hidden">Show all steps</span>
+            <span className="hidden group-open:inline">Hide steps</span>
+          </summary>
+          <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
           {guideSteps.map((step, index) => (
             <div
               key={step.id}
@@ -382,7 +419,8 @@ export default function DeployPage({ searchParams }: PageProps) {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </details>
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">

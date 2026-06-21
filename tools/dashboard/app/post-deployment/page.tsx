@@ -2,6 +2,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { StatusDot } from '../status-dot'
 import { DetailButton } from '../detail-button'
+import { VerifyFlowStrip } from '../verify-flow-strip'
+import { LaneItemGauge } from '../lane-item-gauge'
+import { BuildProgressGauge } from '../build-progress-gauge'
+import { AutoRefresh } from '../auto-refresh'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const postDeploymentFile = path.join(toolsRoot, 'logs', 'post-deployment.json')
@@ -61,6 +65,27 @@ function checkAnchor(run: PostDeploymentRun, check: PostDeploymentCheck) {
   return `check-${slug(runKey(run))}-${slug(check.name)}`
 }
 
+function runTotal(run: PostDeploymentRun) {
+  return run.summary.pass + run.summary.warning + run.summary.fail
+}
+
+function runPercent(run: PostDeploymentRun) {
+  const total = runTotal(run)
+  return total > 0 ? (run.summary.pass / total) * 100 : 0
+}
+
+function runTone(run: PostDeploymentRun): 'red' | 'amber' | 'emerald' {
+  if (run.summary.fail > 0) return 'red'
+  if (run.summary.warning > 0) return 'amber'
+  return 'emerald'
+}
+
+function runTargetLabel(run: PostDeploymentRun) {
+  if (run.target === 'vps') return 'Automated VPS verification'
+  if (run.target === 'env') return 'Automated .env readiness check'
+  return 'Automated local functionality check'
+}
+
 export default function PostDeploymentPage({ searchParams }: PageProps) {
   const runs = readRuns()
   const selectedRun = runs.find((run) => runKey(run) === searchParams?.run) ?? runs[0]
@@ -69,16 +94,32 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
   const warnings = latest?.checks.filter((check) => check.status === 'warning') ?? []
   const selectedCheckSlug = searchParams?.check
 
+  const overallPercent = latest ? runPercent(latest) : 0
+  const overallState: 'complete' | 'progressing' | 'halted' | 'stopped' = !latest
+    ? 'stopped'
+    : latest.summary.fail > 0
+      ? 'halted'
+      : latest.summary.warning === 0
+        ? 'complete'
+        : 'progressing'
+  const overallMessage = latest ? `${latest.summary.pass} pass · ${latest.summary.fail} fail` : 'No runs yet'
+
   return (
     <section className="w-full">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <VerifyFlowStrip active="postdeploy" />
+      <AutoRefresh seconds={15} />
+
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Post-Deployment Log</h1>
           <p className="mt-2 text-sm text-slate-400">Issues found after development and before VPS deployment.</p>
         </div>
-        <a href="/deploy" className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
-          Open Deployment Guide
-        </a>
+        <div className="flex flex-wrap items-center gap-4">
+          <BuildProgressGauge size="sm" percent={overallPercent} state={overallState} label="Post-deployment" message={overallMessage} />
+          <a href="/deploy" className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+            Open Deployment Guide
+          </a>
+        </div>
       </div>
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
@@ -174,25 +215,43 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <h2 className="text-sm font-semibold">History</h2>
         <div className="mt-4 grid gap-2">
-          {runs.slice(0, 10).map((run) => (
-            <div id={`run-${slug(runKey(run))}`} key={run.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2 text-sm">
-              <div>
-                <div className="text-slate-200">{new Date(run.createdAt).toLocaleString()}</div>
-                <div className="text-xs text-slate-500">
-                  {run.target === 'vps'
-                    ? 'Automated VPS verification'
-                    : run.target === 'env'
-                      ? 'Automated .env readiness check'
-                      : 'Automated local functionality check'}
+          {runs.slice(0, 10).map((run) => {
+            const runTime = new Date(run.createdAt).toLocaleString()
+            const gaugeTitle = `${runTargetLabel(run)} · ${runTime}`
+            return (
+            <div id={`run-${slug(runKey(run))}`} key={run.id} className="rounded border border-slate-800 px-3 py-2 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <LaneItemGauge percent={runPercent(run)} tone={runTone(run)} title={gaugeTitle} />
+                  <div>
+                    <div className="text-slate-200">{runTime}</div>
+                    <div className="text-xs text-slate-500">{runTargetLabel(run)}</div>
+                  </div>
+                </div>
+                <div className="flex gap-2 text-xs">
+                  <span className="rounded bg-emerald-950 px-2 py-1 text-emerald-200">{run.summary.pass} pass</span>
+                  <span className="rounded bg-amber-950 px-2 py-1 text-amber-200">{run.summary.warning} warnings</span>
+                  <span className="rounded bg-red-950 px-2 py-1 text-red-200">{run.summary.fail} issues</span>
                 </div>
               </div>
-              <div className="flex gap-2 text-xs">
-                <span className="rounded bg-emerald-950 px-2 py-1 text-emerald-200">{run.summary.pass} pass</span>
-                <span className="rounded bg-amber-950 px-2 py-1 text-amber-200">{run.summary.warning} warnings</span>
-                <span className="rounded bg-red-950 px-2 py-1 text-red-200">{run.summary.fail} issues</span>
-              </div>
+              {run.checks.length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">View {run.checks.length} checks</summary>
+                  <div className="mt-2 grid gap-1.5">
+                    {run.checks.map((check) => (
+                      <div key={check.name} className="flex items-center justify-between gap-2 rounded border border-slate-800/70 px-2 py-1 text-xs">
+                        <span className="flex items-center gap-2">
+                          <StatusDot tone={statusDotTone(check.status)} label={statusLabel(check.status)} />
+                          <span className="text-slate-300">{check.name}</span>
+                        </span>
+                        <span className="truncate text-slate-500">{check.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
-          ))}
+          )})}
           {runs.length === 0 && <p className="text-sm text-slate-400">No history yet.</p>}
         </div>
       </div>
