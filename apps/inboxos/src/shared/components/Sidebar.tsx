@@ -28,7 +28,7 @@ export function Sidebar({ links, title }: { links: NavLink[]; title: string }) {
         <p className="text-xs text-gray-400">{title}</p>
       </div>
 
-      <nav className="flex-1 space-y-0.5 p-2">
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
         {links.map((link) => {
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`)
           return (
