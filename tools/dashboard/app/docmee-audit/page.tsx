@@ -385,13 +385,13 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
 
       <div className="mt-4 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
+          <div className="min-w-0 lg:flex-1">
             <h2 className="text-lg font-semibold text-cyan-100">UI Development Control</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-100/80">
               Run the same safe-start pattern as backend and frontend automation. The runner creates the UI development prompt from the 17-screen map, works through the full open queue, and keeps the DevTool heartbeat updated.
             </p>
           </div>
-          <div className="flex flex-col items-start gap-1 lg:items-end">
+          <div className="flex w-full min-w-0 flex-col items-start gap-1 lg:w-auto lg:max-w-sm lg:shrink-0 lg:items-end">
             <BuildProgressGauge
               size="md"
               percent={uiDevelopmentProgress}
