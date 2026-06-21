@@ -3,7 +3,7 @@
 import { useRef } from 'react'
 
 // Browses saved reference mockups (tools/mockup-library/) with view links.
-export function MockupLibrary({ files }: { files: string[] }) {
+export function MockupLibrary({ files, report }: { files: string[]; report?: string }) {
   const ref = useRef<HTMLDialogElement>(null)
   const close = () => ref.current?.close()
 
@@ -27,6 +27,17 @@ export function MockupLibrary({ files }: { files: string[] }) {
           <button type="button" onClick={close} aria-label="Close" className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800">✕</button>
         </div>
         <div className="max-h-[70vh] overflow-auto px-4 py-3">
+          {report && (
+            <a
+              href={`/api/mockup-library/${encodeURIComponent(report)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-3 flex items-center justify-between gap-3 rounded-md border border-sky-700 bg-sky-950/30 px-3 py-2 text-sm font-medium text-sky-100 hover:bg-sky-950/60"
+            >
+              <span>📄 UI Design Report (all screens, PDF)</span>
+              <span className="shrink-0 text-xs text-sky-300">Open ↗</span>
+            </a>
+          )}
           {files.length === 0 ? (
             <p className="text-sm text-slate-400">No saved mockups yet. Generate a mockup on a screen, then click <span className="font-medium text-amber-200">Save</span> to keep it here as a reference.</p>
           ) : (

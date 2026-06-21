@@ -393,7 +393,17 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
           >
             Review screens in app →
           </a>
-          <MockupLibrary files={savedMockups()} />
+          <MockupLibrary files={savedMockups()} report={fs.existsSync(path.join(savedMockupsDir, 'UI-Design-Report.pdf')) ? 'UI-Design-Report.pdf' : undefined} />
+          <form action="/api/actions" method="post">
+            <input type="hidden" name="action" value="mockup-report" />
+            <button
+              disabled={savedMockups().length === 0}
+              title={savedMockups().length === 0 ? 'No saved mockups in the Library yet' : `Export all ${savedMockups().length} saved screen(s) to one PDF, saved in the Library`}
+              className="inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-700 bg-sky-950/30 px-3 py-2 text-sm font-medium text-sky-200 hover:bg-sky-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              UI Design Report
+            </button>
+          </form>
           <form action="/api/actions" method="post" className="flex min-w-0 flex-col gap-2 sm:flex-row">
             <input type="hidden" name="action" value="set-development-source" />
             <input type="hidden" name="lane" value="ui" />

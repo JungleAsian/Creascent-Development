@@ -2210,6 +2210,11 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Removed' : 'Failed', '/journal')
   }
 
+  if (action === 'mockup-report') {
+    const result = runTool(['mockup', 'report'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'UI Design Report saved to the mockup Library (UI-Design-Report.pdf).' : 'Could not generate the report — check that Chrome/Edge is installed and the Library has mockups.', '/docmee-audit')
+  }
+
   if (action === 'ai-add') {
     const name = String(form.get('name') ?? '').trim()
     if (!name) return redirect(request, 'error', 'AI name is required')
