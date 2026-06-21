@@ -24,12 +24,27 @@ function ClinicIcon() {
 /** Non-admin tenant chip: the read-only clinic the user belongs to. */
 function TenantChip() {
   const { t } = useI18n()
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ['clinic-current'],
     queryFn: () => api.get<{ clinic: Clinic }>('/clinics/current'),
     staleTime: 5 * 60_000,
   })
   const name = data?.clinic.name
+  // Don't silently fall back to "unknown" if the lookup fails — surface a
+  // retryable error so the operator knows the tenant name didn't load.
+  if (isError) {
+    return (
+      <button
+        type="button"
+        onClick={() => void refetch()}
+        title={t('common.error')}
+        className="inline-flex max-w-[14rem] items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 py-1 text-sm font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+      >
+        <ClinicIcon />
+        <span className="truncate">{t('common.retry')}</span>
+      </button>
+    )
+  }
   return (
     <span
       className="inline-flex max-w-[14rem] items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
@@ -45,7 +60,7 @@ function TenantChip() {
 function AdminClinicSwitcher() {
   const { t } = useI18n()
   const { clinicId, isHome, switchClinic, homeClinicId } = useActiveClinic()
-  const { data, isLoading } = useClinics()
+  const { data, isLoading, isError, refetch } = useClinics()
   const clinics = data?.clinics ?? []
   const current = clinics.find((c) => c.id === clinicId)
 
@@ -81,6 +96,17 @@ function AdminClinicSwitcher() {
           ))}
         </select>
       </label>
+
+      {isError && (
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          title={t('common.error')}
+          className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+        >
+          ⚠ {t('common.retry')}
+        </button>
+      )}
 
       {!isHome && (
         <>
