@@ -52,6 +52,8 @@ type Task = {
   pr?: string
   verifyConfidence?: number
   verifyReason?: string
+  result?: string
+  resultProvider?: string
 }
 
 function tasks() {
@@ -154,13 +156,14 @@ export default function BacklogPage({ searchParams }: PageProps) {
           {typeof row.confidence === 'number' && <span className={row.confidence >= 8 ? 'text-emerald-300' : 'text-amber-300'}>conf {row.confidence}/10</span>}
           {typeof row.verifyConfidence === 'number' && <span className={row.verifyConfidence >= 8 ? 'text-emerald-300' : 'text-amber-300'}>verify {row.verifyConfidence}/10</span>}
           {row.assignee && <span>@{row.assignee}</span>}
+          {row.result && <span className="rounded bg-violet-900/70 px-1.5 text-violet-100" title="AI proposed a resolution — open Resolve to view">AI result</span>}
           {row.commit && <span className="font-mono text-slate-600" title="Resolved in commit">{row.commit}</span>}
           {row.pr && <a href={row.pr} target="_blank" rel="noreferrer" className="text-cyan-300 underline">PR ↗</a>}
         </p>
       </div>
       <span className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium sm:inline ${statusTone(row.status)}`}>{row.status}</span>
       <div className="flex shrink-0 items-center gap-1.5">
-        <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} />
+        <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} />
         <BacklogVerifyControls id={row.id} title={row.title} status={row.status} verifyConfidence={row.verifyConfidence} verifyReason={row.verifyReason} />
         <BacklogRowControls id={row.id} status={row.status} />
       </div>

@@ -2134,16 +2134,20 @@ export async function POST(request: Request) {
   if (action === 'backlog-resolve') {
     const id = String(form.get('id') ?? '')
     const plan = String(form.get('plan') ?? '')
+    const provider = String(form.get('provider') ?? 'claude') || 'claude'
     const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
     if (state.status === 'running' && isProcessAlive(state.pid)) {
       return redirect(request, 'error', 'A backlog resolution is already running. Wait for it to finish.')
     }
     // Persist the (possibly edited) plan + assignee first so the run uses them.
-    const updateArgs = ['backlog', 'update', '--id', id, '--assignee', 'claude']
+    const updateArgs = ['backlog', 'update', '--id', id, '--assignee', provider]
     if (plan.trim()) updateArgs.push('--plan', plan)
     runTool(updateArgs)
-    runToolDetached(['backlog', 'resolve', '--id', id])
-    return redirect(request, 'message', `Resolving backlog #${id} with Claude — it will move to review when done.`)
+    runToolDetached(['backlog', 'resolve', '--id', id, '--provider', provider])
+    const note = provider === 'claude'
+      ? `Resolving backlog #${id} with Claude — it will move to review when done.`
+      : `Running backlog #${id} with ${provider} — its proposed resolution will appear for review when done.`
+    return redirect(request, 'message', note)
   }
 
   if (action === 'backlog-auto-resolve') {

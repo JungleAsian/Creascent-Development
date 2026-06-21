@@ -6,6 +6,7 @@ import { readJson, writeJson } from '../lib/json-store.js'
 import { log } from '../lib/logger.js'
 import { logsDir, toolsRoot } from '../lib/paths.js'
 import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
+import { engineForProvider, llmChat } from '../lib/llm.js'
 
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'infrastructure'
 type Status = 'todo' | 'in-progress' | 'plan-review' | 'blocked' | 'review' | 'done'
@@ -34,6 +35,8 @@ type Task = {
   pr?: string
   verifyConfidence?: number
   verifyReason?: string
+  result?: string
+  resultProvider?: string
 }
 const STATUSES: Status[] = ['todo', 'in-progress', 'plan-review', 'blocked', 'review', 'done']
 const CONFIDENCE_THRESHOLD = 8
@@ -404,40 +407,88 @@ function runClaudeHeadless(prompt: string, message: string): Promise<{ code: num
 }
 
 // Implement an item with Claude Code, capture the commit, move it to review.
-async function resolveTask(id: number): Promise<number> {
+async function resolveTask(id: number, provider = 'claude'): Promise<number> {
   const tasks = getTasks()
   const task = tasks.find((item) => item.id === id)
   if (!task) { log('backlog', `Task ${id} not found`, 'error'); return 1 }
   task.status = 'in-progress'
   saveTasks(tasks)
-  const message = `Resolving backlog #${id}: ${task.title}`
+  const planLine = (task.plan && task.plan.trim()) || 'Investigate the relevant code, design a focused fix, and implement it.'
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message: `Resolving backlog #${id} with ${provider}: ${task.title}` })
+
+  // Claude Code is the only agentic runner: it edits the repo + commits.
+  if (provider === 'claude' || provider === 'claude-code') {
+    const message = `Resolving backlog #${id}: ${task.title}`
+    const prompt = [
+      `Resolve Docmee backlog item #${task.id}: ${task.title}.`,
+      `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+      '',
+      'Plan / instruction:',
+      planLine,
+      '',
+      'Requirements:',
+      '- Work locally; keep changes scoped to this item.',
+      '- Run the relevant local checks.',
+      `- Commit with a clear message referencing "backlog #${task.id}".`,
+      '- Report what you changed.'
+    ].join('\n')
+    const { code } = await runClaudeHeadless(prompt, message)
+    touchBacklogRun({ status: code === 0 ? 'complete' : 'failed', message: code === 0 ? `Backlog #${id} resolved — ready for review.` : `Backlog #${id} resolution failed (exit ${code}).` })
+    const after = getTasks()
+    const updated = after.find((item) => item.id === id)
+    if (updated) {
+      updated.status = code === 0 ? 'review' : 'blocked'
+      if (code === 0) {
+        const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8' })
+        if (head.status === 0) updated.commit = (head.stdout || '').trim()
+      }
+      saveTasks(after)
+    }
+    return code
+  }
+
+  // Other providers run via their chat API: they can't edit the repo, so they
+  // auto-produce a concrete resolution (patch + steps) captured on the item for
+  // the user to apply + verify.
+  const engine = engineForProvider(provider)
+  if (!engine) {
+    const after = getTasks()
+    const updated = after.find((item) => item.id === id)
+    if (updated) { updated.status = 'review'; saveTasks(after) }
+    touchBacklogRun({ status: 'failed', message: `No API runner/key for ${provider} — open it manually and resolve.` })
+    log('backlog', `No API runner for "${provider}" (missing key, or IDE-only like cursor). Use the manual handoff.`, 'warn')
+    return 1
+  }
   const prompt = [
-    `Resolve Docmee backlog item #${task.id}: ${task.title}.`,
+    `You are resolving a backlog item for the Docmee codebase (a TypeScript monorepo).`,
+    `Item #${task.id}: ${task.title}.`,
     `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
     '',
     'Plan / instruction:',
-    (task.plan && task.plan.trim()) || 'Investigate the relevant code, design a focused fix, and implement it.',
+    planLine,
     '',
-    'Requirements:',
-    '- Work locally; keep changes scoped to this item.',
-    '- Run the relevant local checks.',
-    `- Commit with a clear message referencing "backlog #${task.id}".`,
-    '- Report what you changed.'
+    'You cannot edit files directly. Produce a concrete, ready-to-apply resolution:',
+    '1. Root cause / what to change and why.',
+    '2. The exact code changes (a diff or full file snippets with paths).',
+    '3. Steps to apply, plus any commands/tests to run.',
+    'Be specific and concise.'
   ].join('\n')
-  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message })
-  const { code } = await runClaudeHeadless(prompt, message)
-  touchBacklogRun({ status: code === 0 ? 'complete' : 'failed', message: code === 0 ? `Backlog #${id} resolved — ready for review.` : `Backlog #${id} resolution failed (exit ${code}).` })
+  const output = await llmChat(prompt, engine)
   const after = getTasks()
   const updated = after.find((item) => item.id === id)
   if (updated) {
-    updated.status = code === 0 ? 'review' : 'blocked'
-    if (code === 0) {
-      const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8' })
-      if (head.status === 0) updated.commit = (head.stdout || '').trim()
+    if (output) {
+      updated.result = output
+      updated.resultProvider = `${provider}:${engine.model}`
+      updated.status = 'review'
+    } else {
+      updated.status = 'blocked'
     }
     saveTasks(after)
   }
-  return code
+  touchBacklogRun({ status: output ? 'complete' : 'failed', message: output ? `${provider} produced a resolution for #${id} — review it.` : `${provider} run failed for #${id}.` })
+  log('backlog', output ? `${provider} resolution captured for #${id} (review it in the panel).` : `${provider} produced no output for #${id}.`, output ? 'info' : 'warn')
+  return output ? 0 : 1
 }
 
 // Parse the planning run's JSON ({confidence, plan}); fall back to a low score
@@ -664,11 +715,13 @@ backlogCmd
 
 backlogCmd
   .command('resolve')
-  .description('Hand a backlog item to Claude Code to implement, then move it to review')
+  .description('Run a backlog item with the assigned AI (Claude Code edits+commits; other providers produce a resolution to review), then move it to review')
   .requiredOption('--id <id>')
-  .action(async (opts: { id: string }) => {
+  .option('--provider <provider>', 'claude | codex | grok | gemini | deepseek | glm (defaults to the item assignee)')
+  .action(async (opts: { id: string; provider?: string }) => {
     touchBacklogRun({ autoResolve: false })
-    const code = await resolveTask(Number(opts.id))
+    const assignee = getTasks().find((item) => item.id === Number(opts.id))?.assignee
+    const code = await resolveTask(Number(opts.id), opts.provider || assignee || 'claude')
     if (code !== 0) process.exitCode = code
   })
 

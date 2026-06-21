@@ -2,18 +2,19 @@
 
 import { useRef, useState } from 'react'
 
-// Per-item resolution: pick an AI to assign (Claude auto-runs via the headless
-// CLI; the others are guided manual handoffs — copy the plan + open the tool),
-// edit the plan/instruction, hand off, then save the assignment + commit/PR.
+// Per-item resolution: pick an AI to assign, then the button engages it.
+// Claude auto-runs agentically via the headless CLI (edits + commits). API
+// providers (api: true) auto-run via their chat API and produce a proposed
+// resolution to review. Cursor has no API, so it stays a manual handoff.
 type Agent = 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
 
-const PROVIDERS: Record<Agent, { label: string; url?: string }> = {
+const PROVIDERS: Record<Agent, { label: string; url?: string; api?: boolean }> = {
   claude: { label: 'Claude' },
-  codex: { label: 'Codex', url: 'https://chatgpt.com/codex' },
-  grok: { label: 'Grok', url: 'https://grok.com' },
+  codex: { label: 'Codex', url: 'https://chatgpt.com/codex', api: true },
+  grok: { label: 'Grok', url: 'https://grok.com', api: true },
   cursor: { label: 'Cursor', url: 'https://cursor.com' },
-  gemini: { label: 'Gemini', url: 'https://gemini.google.com/app' },
-  deepseek: { label: 'DeepSeek', url: 'https://chat.deepseek.com' }
+  gemini: { label: 'Gemini', url: 'https://gemini.google.com/app', api: true },
+  deepseek: { label: 'DeepSeek', url: 'https://chat.deepseek.com', api: true }
 }
 const AGENTS = Object.keys(PROVIDERS) as Agent[]
 
@@ -27,7 +28,9 @@ export function BacklogResolvePanel({
   confidence,
   assignee,
   commit,
-  pr
+  pr,
+  result,
+  resultProvider
 }: {
   id: number
   title: string
@@ -39,6 +42,8 @@ export function BacklogResolvePanel({
   assignee?: string
   commit?: string
   pr?: string
+  result?: string
+  resultProvider?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const [agent, setAgent] = useState<Agent>(assignee && assignee in PROVIDERS ? (assignee as Agent) : 'claude')
@@ -111,11 +116,30 @@ export function BacklogResolvePanel({
                 <button className="w-full rounded-md border border-emerald-700 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-950/40">{typeof confidence === 'number' && confidence < 8 ? 'Approve this plan & resolve →' : 'Resolve with this plan (skip auto-plan) →'}</button>
               </form>
             </div>
+          ) : provider.api ? (
+            <div className="space-y-2">
+              <form action="/api/actions" method="post">
+                <input type="hidden" name="action" value="backlog-resolve" />
+                <input type="hidden" name="id" value={id} />
+                <input type="hidden" name="provider" value={agent} />
+                <input type="hidden" name="plan" value={text} />
+                <button className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Run {provider.label} →</button>
+              </form>
+              <p className="text-xs text-amber-200/80">{provider.label} runs via its API: it auto-produces a proposed resolution (patch + steps) below for you to review &amp; apply — it does not edit the repo (only Claude Code commits). Needs <span className="font-mono">{agent.toUpperCase()}_API_KEY</span> in <span className="font-mono">.env.tools</span>.</p>
+              <button type="button" onClick={copyAndOpen} className="text-xs text-cyan-300 underline">or copy the plan &amp; open {provider.label} manually ↗</button>
+            </div>
           ) : (
             <div className="space-y-1">
               <button type="button" onClick={copyAndOpen} className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Copy plan + open {provider.label} →</button>
-              <p className="text-xs text-amber-200/80">{provider.label} runs manually (no CLI runner here): the plan is copied for you. When done, set the item to <span className="font-medium">review</span> and save the assignment / PR below.</p>
+              <p className="text-xs text-amber-200/80">{provider.label} runs manually (no API runner here): the plan is copied for you. When done, set the item to <span className="font-medium">review</span> and save the assignment / PR below.</p>
             </div>
+          )}
+
+          {result && (
+            <details className="rounded-md border border-violet-900 bg-violet-950/20 p-2" open>
+              <summary className="cursor-pointer text-xs font-medium text-violet-100">AI proposed resolution{resultProvider ? ` · ${resultProvider}` : ''}</summary>
+              <div className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded border border-slate-700 bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{result}</div>
+            </details>
           )}
 
           <div className="border-t border-slate-800 pt-3">
