@@ -4,11 +4,23 @@ import Link from 'next/link'
 import { StatusDot } from '../status-dot'
 import { DeployEverythingPanel } from '../deploy-everything-panel'
 import { BacklogFlowStrip } from '../backlog-flow-strip'
+import { AutoRefresh } from '../auto-refresh'
+import { runLiveness } from '../lib/run-live'
 import { maybeAutoSyncBacklog } from '../lib/backlog-autosync'
 
 const logsRoot = path.resolve(process.cwd(), '..', 'logs')
 
 type RunState = { pid?: number; status?: string; phase?: string; message?: string; heartbeatAt?: string; workflow?: string }
+type VerifyStage = { key: string; label: string; status: string; message?: string }
+type VerifyRun = { pid?: number; status?: string; currentStage?: string; percent?: number; overall?: 'pass' | 'fail' | null; startedAt?: string; finishedAt?: string; heartbeatAt?: string; stages?: VerifyStage[] }
+
+function verifyStageTone(status: string) {
+  if (status === 'pass') return 'bg-emerald-900 text-emerald-100'
+  if (status === 'fail') return 'bg-red-900 text-red-100'
+  if (status === 'warning') return 'bg-amber-900 text-amber-100'
+  if (status === 'running') return 'bg-cyan-900 text-cyan-100'
+  return 'bg-slate-800 text-slate-300'
+}
 
 function readJson<T>(file: string, fallback: T): T {
   const target = path.join(logsRoot, file)
@@ -82,6 +94,10 @@ export default function WorkflowPage() {
   const backlog = readJson<Array<{ status?: string }>>('backlog.json', [])
   const backlogOpen = backlog.filter((t) => t.status !== 'done').length
 
+  const verify = readJson<VerifyRun>('verify-run.json', { status: 'idle' })
+  const verifyState = runLiveness(verify, isAlive(verify.pid))
+  const verifyRunning = verifyState.live
+
   const lanes = [
     { key: 'build', name: 'Build', run: build, href: '/build-control', detail: `${phaseDone}/${phaseTotal} phases`, percent: pct(phaseDone, phaseTotal) },
     { key: 'backend', name: 'Backend', run: backendRun, href: '/rev1-coverage', detail: `${backendDone}/${features.length || 41} features`, percent: pct(backendDone, features.length || 41) },
@@ -92,6 +108,7 @@ export default function WorkflowPage() {
 
   return (
     <section className="w-full">
+      <AutoRefresh seconds={6} />
       <div>
         <h1 className="text-2xl font-semibold">Workflow</h1>
         <p className="mt-2 text-sm text-slate-400">The Docmee development → deployment pipeline. Each lane builds locally, gets verified, deploys to the VPS, then is monitored.</p>
@@ -128,6 +145,47 @@ export default function WorkflowPage() {
 
       <h2 className="mt-6 text-sm font-semibold uppercase tracking-wide text-slate-400">2 · Verify</h2>
       <p className="mt-1 text-xs text-slate-500">Gates and checks that must pass before deploying.</p>
+
+      <div className="mt-3 rounded-md border border-cyan-900 bg-cyan-950/15 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-cyan-100">Full Verification</h3>
+            <p className="mt-1 text-xs text-slate-400">One click runs Readiness → Six Gates → Pre-deployment in sequence.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {verify.status && verify.status !== 'idle' && (
+              <span className="text-xs text-slate-400">
+                {verifyRunning
+                  ? `Running · ${verify.percent ?? 0}%`
+                  : verify.overall === 'pass' ? '✓ All passed' : verify.overall === 'fail' ? '✗ Issues found' : verify.status}
+              </span>
+            )}
+            <form action="/api/verify/run" method="post">
+              <button disabled={verifyRunning} title={verifyRunning ? 'Verification is already running' : 'Run Readiness, Six Gates, and Pre-deployment in sequence'} className="min-h-10 rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">
+                {verifyRunning ? 'Verifying…' : 'Run Full Verification'}
+              </button>
+            </form>
+          </div>
+        </div>
+        {(verify.stages?.length ?? 0) > 0 && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {verify.stages!.map((stage) => {
+              const href = stage.key === 'ready' ? '/ready' : stage.key === 'gates' ? '/gates' : stage.key === 'predeploy' ? '/predeployment' : '/workflow'
+              return (
+                <Link key={stage.key} href={href} className="rounded border border-slate-800 bg-slate-950/40 p-2.5 hover:border-slate-600" title={`Open ${stage.label} details`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-200">{stage.label}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[11px] ${verifyStageTone(stage.status)}`}>{stage.status}</span>
+                  </div>
+                  {stage.message && <p className="mt-1 truncate text-[11px] text-slate-500" title={stage.message}>{stage.message}</p>}
+                </Link>
+              )
+            })}
+          </div>
+        )}
+        {verifyState.stale && <p className="mt-2 text-xs text-amber-300">⚠ Verification process looks stale (no recent heartbeat). You can start a new run.</p>}
+      </div>
+
       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Link href="/ready" className="rounded-md border border-slate-800 bg-slate-900 p-4 hover:border-slate-600">
           <div className="flex items-center justify-between"><span className="font-semibold text-slate-100">Ready</span><StatusDot tone={readyCritical > 0 ? 'red' : 'green'} label={readyCritical > 0 ? `${readyCritical} blockers` : 'Ready'} /></div>
