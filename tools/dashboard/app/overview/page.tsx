@@ -12,6 +12,7 @@ type Severity = 'info' | 'success' | 'warn' | 'error'
 type ActivityEvent = { id: string; ts: string; actor: string; event: string; severity: Severity; message: string; taskId?: number }
 type JournalEntry = { id: string; type: string; title: string; pinned?: boolean; ts: string }
 type Agent = { id: string; label: string; enabled: boolean; service: string }
+type UsageRecord = { ts: string; phase: string; model?: string; costUSD?: number; inputTokens?: number; outputTokens?: number }
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const f = (name: string) => path.join(toolsRoot, 'logs', name)
@@ -34,6 +35,7 @@ export default function OverviewPage() {
   const activity = readJson<ActivityEvent[]>(f('activity.json'), [])
   const journal = readJson<JournalEntry[]>(f('journal.json'), [])
   const agents = readJson<Agent[]>(f('agents.json'), [])
+  const usage = readJson<UsageRecord[]>(f('backlog-usage.json'), [])
 
   const runLive = run.status === 'running' && isProcessAlive(run.pid) && isHeartbeatFresh(run.heartbeatAt)
   const count = (s: string) => tasks.filter((t) => t.status === s).length
@@ -44,6 +46,13 @@ export default function OverviewPage() {
   const recent = activity.slice().reverse().slice(0, 6)
   const pinned = journal.filter((e) => e.pinned).slice(0, 4)
   const enabledAgents = agents.filter((a) => a.enabled).length
+
+  const today = new Date().toISOString().slice(0, 10)
+  const todayUsage = usage.filter((u) => u.ts.slice(0, 10) === today)
+  const usageCost = todayUsage.reduce((sum, u) => sum + (u.costUSD ?? 0), 0)
+  const usageTokens = todayUsage.reduce((sum, u) => sum + (u.inputTokens ?? 0) + (u.outputTokens ?? 0), 0)
+  const phaseRuns = (phase: string) => todayUsage.filter((u) => u.phase === phase).length
+  const fmtTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`)
 
   const stat = (label: string, value: number | string, href: string, tone = 'text-slate-100') => (
     <Link href={href} className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3 hover:border-slate-700">
@@ -108,6 +117,16 @@ export default function OverviewPage() {
           <Link href="/ready" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Readiness</Link>
           <Link href="/journal" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">+ Journal note</Link>
         </div>
+      </div>
+
+      {/* AI usage today (model-tiering metering) */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">AI usage today</span>
+        <span className="text-slate-200">{todayUsage.length} runs</span>
+        <span className="text-slate-300">{fmtTokens(usageTokens)} tokens</span>
+        <span className="text-slate-300">~${usageCost.toFixed(2)} <span className="text-slate-500">est.</span></span>
+        <span className="text-xs text-slate-500">plan {phaseRuns('plan')} · verify {phaseRuns('verify')} · implement {phaseRuns('implement')}</span>
+        <span className="ml-auto text-xs text-slate-500">plan/verify run on a cheap model</span>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

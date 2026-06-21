@@ -8,6 +8,7 @@ import { logsDir, toolsRoot } from '../lib/paths.js'
 import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 import { engineForProvider, llmChat } from '../lib/llm.js'
 import { logActivity } from '../lib/activity.js'
+import { logUsage } from '../lib/usage.js'
 
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'infrastructure'
 type Status = 'todo' | 'in-progress' | 'plan-review' | 'blocked' | 'review' | 'done'
@@ -395,6 +396,15 @@ function touchBacklogRun(partial: Record<string, unknown>) {
 
 const RESOLVE_TIMEOUT_MS = 12 * 60 * 1000
 
+// Per-phase model tiering (token-saving). Read-only analytical phases (plan,
+// verify) run on a cheap model; the agentic implement phase keeps the default
+// (strong) Claude Code model. Override any via .env.tools / env vars.
+const PLAN_MODEL = process.env.BACKLOG_PLAN_MODEL || 'haiku'
+const VERIFY_MODEL = process.env.BACKLOG_VERIFY_MODEL || 'haiku'
+const IMPLEMENT_MODEL = process.env.BACKLOG_IMPLEMENT_MODEL || '' // '' → Claude Code default
+
+type RunUsage = { model?: string; costUSD?: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }
+
 function killTree(pid?: number) {
   if (!pid) return
   try {
@@ -405,14 +415,18 @@ function killTree(pid?: number) {
   }
 }
 
-// Single-shot headless Claude Code run; returns exit code + captured output.
-// Hard timeout: a hung run is killed (exit 124) so it can never leave the
-// backlog stuck in `running` forever (which would block every later resolve).
-function runClaudeHeadless(prompt: string, message: string, timeoutMs = RESOLVE_TIMEOUT_MS): Promise<{ code: number; output: string }> {
+// Single-shot headless Claude Code run. Uses --output-format json so we capture
+// token/cost usage; the model text is in `.result`. Optional `model` selects a
+// cheaper tier. Hard timeout kills a hung run (exit 124) so it can't wedge the
+// backlog in `running` forever.
+function runClaudeHeadless(prompt: string, message: string, model?: string, timeoutMs = RESOLVE_TIMEOUT_MS): Promise<{ code: number; output: string; usage: RunUsage }> {
   return new Promise((resolve) => {
-    let output = ''
+    let stdout = ''
+    let stderr = ''
     let settled = false
-    const child = spawn(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
+    const args = ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot(), '--output-format', 'json']
+    if (model) args.push('--model', model)
+    const child = spawn(claudeCodeCommand(), args, {
       cwd: repoRoot(), env: claudeCodeEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
     })
     const heartbeat = setInterval(() => touchBacklogRun({ pid: child.pid, status: 'running', message }), 10000)
@@ -421,15 +435,33 @@ function runClaudeHeadless(prompt: string, message: string, timeoutMs = RESOLVE_
       settled = true
       clearInterval(heartbeat)
       clearTimeout(timer)
-      resolve({ code, output })
+      // Parse the JSON envelope for the result text + usage; fall back to raw.
+      let output = (stdout || stderr).trim()
+      let usage: RunUsage = { model }
+      let resolved = code
+      try {
+        const parsed = JSON.parse(stdout.trim()) as { result?: unknown; is_error?: boolean; total_cost_usd?: number; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number } }
+        if (typeof parsed.result === 'string') output = parsed.result.trim()
+        usage = {
+          model,
+          costUSD: parsed.total_cost_usd,
+          inputTokens: parsed.usage?.input_tokens,
+          outputTokens: parsed.usage?.output_tokens,
+          cacheReadTokens: parsed.usage?.cache_read_input_tokens
+        }
+        if (parsed.is_error && resolved === 0) resolved = 1
+      } catch {
+        // non-JSON output (e.g. early crash) — keep raw text, no usage
+      }
+      resolve({ code: resolved, output, usage })
     }
     const timer = setTimeout(() => {
       log('backlog', `Claude run exceeded ${Math.round(timeoutMs / 60000)} min — aborting.`, 'warn')
       killTree(child.pid)
       finish(124)
     }, timeoutMs)
-    child.stdout.on('data', (chunk) => { output += String(chunk); log('backlog', String(chunk).trim()) })
-    child.stderr.on('data', (chunk) => { output += String(chunk); log('backlog', String(chunk).trim(), 'warn') })
+    child.stdout.on('data', (chunk) => { stdout += String(chunk) })
+    child.stderr.on('data', (chunk) => { stderr += String(chunk); log('backlog', String(chunk).trim(), 'warn') })
     child.on('error', () => finish(1))
     child.on('close', (exit) => finish(exit ?? 1))
     child.stdin.end(prompt)
@@ -519,7 +551,8 @@ async function resolveTask(id: number, provider = 'claude'): Promise<number> {
         '- Report what you changed.'
       ].join('\n')
   touchBacklogRun({ status: 'running', message: proposal ? `Claude is implementing #${id} from ${provider}'s plan…` : implementMessage })
-  const { code } = await runClaudeHeadless(prompt, implementMessage)
+  const { code, usage } = await runClaudeHeadless(prompt, implementMessage, IMPLEMENT_MODEL || undefined)
+  logUsage({ phase: 'implement', taskId: id, ...usage })
   const after = getTasks()
   const updated = after.find((item) => item.id === id)
   if (updated) {
@@ -591,7 +624,8 @@ async function planTask(id: number, threshold: number, auto: boolean, provider =
     'Respond with ONLY a JSON object (no prose, no code fences):',
     '{"confidence": <integer 1-10>, "plan": "<numbered steps>"}'
   ].join('\n')
-  const { output } = await runClaudeHeadless(prompt, message)
+  const { output, usage } = await runClaudeHeadless(prompt, message, PLAN_MODEL)
+  logUsage({ phase: 'plan', taskId: id, ...usage })
   const { confidence, plan } = parsePlan(output)
   const after = getTasks()
   const updated = after.find((item) => item.id === id)
@@ -659,7 +693,8 @@ async function verifyTask(id: number, threshold: number): Promise<void> {
     'Respond with ONLY a JSON object (no prose, no code fences):',
     '{"confidence": <integer 1-10>, "reason": "<one short paragraph>"}'
   ].filter(Boolean).join('\n')
-  const { output } = await runClaudeHeadless(prompt, message)
+  const { output, usage } = await runClaudeHeadless(prompt, message, VERIFY_MODEL)
+  logUsage({ phase: 'verify', taskId: id, ...usage })
   const { confidence, reason } = parseVerify(output)
   const after = getTasks()
   const updated = after.find((item) => item.id === id)
