@@ -29,6 +29,7 @@ const DASHBOARD = {
       status: 'open',
       channel: 'whatsapp',
       reason: 'upset',
+      mode: 'bot',
       lastMessageAt: '2026-06-18T10:00:00.000Z',
     },
   ],

@@ -8,6 +8,11 @@ import type { Sql } from '../client.js'
 function fakeSql(): Sql {
   const fn = ((strings: TemplateStringsArray) => {
     const q = strings.join(' ')
+    // Screen 14: bot/human/urgent split and the period-over-period baseline. Checked
+    // before the broad 'JOIN appointments' branch so the previous-window LEFT JOIN
+    // doesn't get mistaken for the bookings count query.
+    if (q.includes('AS is_urgent')) return Promise.resolve([{ urgent: '6', human: '23', bot: '71' }])
+    if (q.includes('LEFT JOIN appointments')) return Promise.resolve([{ total: '8', bookings: '3' }])
     if (q.includes('JOIN appointments')) return Promise.resolve([{ count: '4' }])
     if (q.includes('AS transferred')) return Promise.resolve([{ total: '10', transferred: '3', leads: '7' }])
     if (q.includes('GROUP BY channel')) {
@@ -63,6 +68,11 @@ describe('metrics.repository — dashboard (Req 17 basic metrics)', () => {
       { dayOfWeek: 3, hour: 14, count: 2 },
     ])
     expect(dashboard.topIntents).toEqual([{ intent: 'booking', count: 4 }])
+
+    // Screen 14 additions.
+    expect(dashboard.bookingsToday).toBe(4)
+    expect(dashboard.resolutionSplit).toEqual({ bot: 71, human: 23, urgent: 6 })
+    expect(dashboard.previous).toEqual({ totalConversations: 8, bookings: 3 })
   })
 
   it('threads the window (period filter) through to the trailing-window queries as a bind value', async () => {
@@ -118,5 +128,8 @@ describe('metrics.repository — dashboard (Req 17 basic metrics)', () => {
     expect(dashboard.noResponseRate).toBe(0)
     expect(dashboard.conversationsByChannel).toEqual([])
     expect(dashboard.peakHours).toEqual([])
+    expect(dashboard.bookingsToday).toBe(0)
+    expect(dashboard.resolutionSplit).toEqual({ bot: 0, human: 0, urgent: 0 })
+    expect(dashboard.previous).toEqual({ totalConversations: 0, bookings: 0 })
   })
 })

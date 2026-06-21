@@ -31,6 +31,23 @@ export interface UpdateClinicInput {
   instagramEnabled?: boolean
 }
 
+/**
+ * Per-clinic operational counts for the Screen 6 clinic directory cards. One row
+ * per clinic that has any users or conversations (clinics with neither are simply
+ * absent — the caller defaults their counts to zero).
+ */
+export interface ClinicDirectoryStat {
+  clinicId: string
+  /** Panel users belonging to the clinic. */
+  users: number
+  /** Live conversations (anything not resolved/archived) — the "open chats" stat. */
+  openChats: number
+  /** Live conversations in human control (assigned or escalated) — the bot is paused for these. */
+  handoff: number
+  /** Live conversations carrying a patient-safety flag (emergency/urgent/upset) — must never be missed. */
+  urgent: number
+}
+
 export interface ClinicsRepository {
   findById(id: string): Promise<Clinic | null>
   findBySlug(slug: string): Promise<Clinic | null>
@@ -41,6 +58,12 @@ export interface ClinicsRepository {
   list(): Promise<Clinic[]>
   /** Count of clinics in the 'active' status — powers the IA Studio overview (Gap #8). */
   countActive(): Promise<number>
+  /**
+   * Per-clinic operational counts for the IA Studio clinic directory (Screen 6),
+   * computed across every clinic in a few grouped queries (no N+1). A clinic with
+   * neither users nor conversations is absent from the result.
+   */
+  directoryStats(): Promise<ClinicDirectoryStat[]>
   create(data: CreateClinicInput): Promise<Clinic>
   update(id: string, data: UpdateClinicInput): Promise<Clinic>
 }
@@ -84,6 +107,55 @@ export function createClinicsRepository(sql: Sql): ClinicsRepository {
         SELECT COUNT(*) FROM clinics WHERE status = 'active'
       `
       return parseInt(rows[0]?.count ?? '0', 10)
+    },
+
+    async directoryStats() {
+      type Row = { clinicId: string; count: string }
+      const [users, openChats, handoff, urgent] = await Promise.all([
+        sql<Row[]>`
+          SELECT clinic_id AS "clinicId", COUNT(*) AS count
+          FROM clinic_users
+          GROUP BY clinic_id
+        `,
+        sql<Row[]>`
+          SELECT clinic_id AS "clinicId", COUNT(*) AS count
+          FROM conversations
+          WHERE status NOT IN ('resolved', 'archived')
+          GROUP BY clinic_id
+        `,
+        sql<Row[]>`
+          SELECT clinic_id AS "clinicId", COUNT(*) AS count
+          FROM conversations
+          WHERE status IN ('assigned', 'handoff')
+          GROUP BY clinic_id
+        `,
+        // Patient-safety flags (Req 20) — emergency/medical_safety/urgent/upset — on a
+        // still-live thread. COUNT(DISTINCT) so a thread with two safety tags counts once.
+        sql<Row[]>`
+          SELECT c.clinic_id AS "clinicId", COUNT(DISTINCT c.id) AS count
+          FROM conversations c
+          JOIN conversation_tag_links l ON l.conversation_id = c.id
+          JOIN conversation_tags t ON t.id = l.tag_id
+          WHERE t.name IN ('emergency', 'medical_safety', 'urgent', 'patient_upset')
+            AND c.status NOT IN ('resolved', 'archived')
+          GROUP BY c.clinic_id
+        `,
+      ])
+
+      const map = new Map<string, ClinicDirectoryStat>()
+      const ensure = (clinicId: string): ClinicDirectoryStat => {
+        let stat = map.get(clinicId)
+        if (!stat) {
+          stat = { clinicId, users: 0, openChats: 0, handoff: 0, urgent: 0 }
+          map.set(clinicId, stat)
+        }
+        return stat
+      }
+      for (const r of users) ensure(r.clinicId).users = parseInt(r.count, 10)
+      for (const r of openChats) ensure(r.clinicId).openChats = parseInt(r.count, 10)
+      for (const r of handoff) ensure(r.clinicId).handoff = parseInt(r.count, 10)
+      for (const r of urgent) ensure(r.clinicId).urgent = parseInt(r.count, 10)
+      return [...map.values()]
     },
 
     async create(data) {

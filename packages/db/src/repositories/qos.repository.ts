@@ -25,6 +25,8 @@ export interface QosAttentionItem {
   channel: string
   /** Why it surfaced: an upset patient, a patient who went silent, or left open too long. */
   reason: 'upset' | 'abandoned' | 'unclosed'
+  /** Who is currently handling the thread: a human secretary owns it, or the bot is auto-answering. */
+  mode: 'bot' | 'human'
   lastMessageAt: string | null
 }
 
@@ -165,6 +167,7 @@ export function createQosRepository(sql: Sql): QosRepository {
             patientName: string | null
             status: string
             channel: string
+            assignedTo: string | null
             lastMessageAt: string | null
             upset: boolean
             lastRole: string | null
@@ -176,6 +179,7 @@ export function createQosRepository(sql: Sql): QosRepository {
             p.full_name                AS patient_name,
             c.status                   AS status,
             c.channel                  AS channel,
+            c.assigned_to              AS assigned_to,
             c.last_message_at          AS last_message_at,
             EXISTS (
               SELECT 1 FROM conversation_tag_links tl
@@ -215,6 +219,10 @@ export function createQosRepository(sql: Sql): QosRepository {
           status: row.status,
           channel: row.channel,
           reason,
+          // A thread with an owner is being handled by a human secretary; an
+          // unowned thread is still in pure bot auto-answer mode (mirrors the
+          // inbox lens convention: owned ⇒ human, unowned ⇒ bot).
+          mode: row.assignedTo ? 'human' : 'bot',
           lastMessageAt: row.lastMessageAt,
         })
       }

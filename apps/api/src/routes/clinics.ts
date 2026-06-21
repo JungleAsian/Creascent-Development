@@ -72,6 +72,15 @@ const clinicsRoute: FastifyPluginAsync = async (app) => {
     return { clinics: clinics.map(redactClinic) }
   })
 
+  // ── Per-clinic operational counts for the Screen 6 directory cards (IA Studio) ──
+  // Returns users / open-chats / handoff / urgent per clinic in a few grouped
+  // queries (no N+1). Clinics with no users or conversations are simply absent —
+  // the panel defaults their counts to zero.
+  app.get('/overview', { preHandler: requireRole('ia_studio_admin') }, async () => {
+    const stats = await withDb(async (sql) => createClinicsRepository(sql).directoryStats())
+    return { stats }
+  })
+
   // ── The caller's own clinic (Screen 6 — any authenticated role) ──
   // Drives the panel's tenant banner so a secretary / doctor always sees which
   // clinic they are working in. Scoped to the JWT's clinic, never the switched

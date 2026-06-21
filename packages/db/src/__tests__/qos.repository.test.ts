@@ -20,22 +20,24 @@ function fakeSql(now: number): Sql {
     if (q.includes('qos:pending')) return Promise.resolve([{ count: '6' }])
     if (q.includes('qos:attention'))
       return Promise.resolve([
-        // upset wins regardless of recency
+        // upset wins regardless of recency; unowned ⇒ bot mode
         {
           conversationId: 'a',
           patientName: 'Ana',
           status: 'open',
           channel: 'whatsapp',
+          assignedTo: null,
           lastMessageAt: recent,
           upset: true,
           lastRole: 'user',
         },
-        // aged + clinic spoke last → abandoned
+        // aged + clinic spoke last → abandoned; owned ⇒ human mode
         {
           conversationId: 'b',
           patientName: 'Beto',
           status: 'handoff',
           channel: 'messenger',
+          assignedTo: 'agent-1',
           lastMessageAt: old,
           upset: false,
           lastRole: 'assistant',
@@ -46,6 +48,7 @@ function fakeSql(now: number): Sql {
           patientName: null,
           status: 'open',
           channel: 'instagram',
+          assignedTo: null,
           lastMessageAt: old,
           upset: false,
           lastRole: 'user',
@@ -56,6 +59,7 @@ function fakeSql(now: number): Sql {
           patientName: 'Dani',
           status: 'pending',
           channel: 'whatsapp',
+          assignedTo: null,
           lastMessageAt: recent,
           upset: false,
           lastRole: 'assistant',
@@ -89,6 +93,12 @@ describe('qos.repository — dashboard (Req 32 QoS monitoring)', () => {
       ['a', 'upset'],
       ['b', 'abandoned'],
       ['c', 'unclosed'],
+    ])
+    // Mode derives from ownership: owned ⇒ human, unowned ⇒ bot.
+    expect(qos.attention.map((a) => [a.conversationId, a.mode])).toEqual([
+      ['a', 'bot'],
+      ['b', 'human'],
+      ['c', 'bot'],
     ])
     // Null patient name normalizes to empty string.
     expect(qos.attention[2]!.patientName).toBe('')

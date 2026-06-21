@@ -265,6 +265,10 @@ export interface ClinicMetrics {
   transferRate: number
   noResponseRate: number
   peakHours: Array<{ dayOfWeek: number; hour: number; count: number }>
+  // Screen 14 (metrics dashboard) additions.
+  bookingsToday: number
+  resolutionSplit: { bot: number; human: number; urgent: number }
+  previous: { totalConversations: number; bookings: number }
 }
 
 // ── Quality of Service monitoring (Req 32) ─────────────────────────────────────
@@ -274,6 +278,8 @@ export interface QosAttentionItem {
   status: string
   channel: string
   reason: 'upset' | 'abandoned' | 'unclosed'
+  /** Who is handling the thread now — a human secretary owns it, or the bot is auto-answering. */
+  mode: 'bot' | 'human'
   lastMessageAt: string | null
 }
 
@@ -372,6 +378,10 @@ export interface ErrorReview {
   stackTrace: string | null
   context: Record<string, unknown>
   status: ErrorReviewStatus
+  // Set when an operator resolves the review; surfaced as the assignee + the
+  // "Resolved · 7d" stat on the Error Review queue (Screen 9).
+  reviewedBy: string | null
+  resolvedAt: string | null
   createdAt: string
 }
 
