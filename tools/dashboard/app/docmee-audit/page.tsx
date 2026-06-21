@@ -561,7 +561,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
         )}
       </details>
 
-      <details className="group mt-5 rounded-md border border-slate-800 bg-slate-900 p-4">
+      <details open className="group mt-5 rounded-md border border-slate-800 bg-slate-900 p-4">
         <summary className="cursor-pointer list-none text-sm font-semibold text-slate-100 marker:content-none">
           <span className="text-slate-500 group-open:hidden">▸ </span><span className="hidden text-slate-500 group-open:inline">▾ </span>17-Screen UI Development Queue
           <span className="ml-2 text-xs font-normal text-slate-500">{uiDevelopmentRecords.length} screens</span>
