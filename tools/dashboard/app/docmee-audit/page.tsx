@@ -466,6 +466,17 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                 Report PDF
               </button>
             </form>
+            {fs.existsSync(path.join(savedMockupsDir, 'UI-Design-Report.pdf')) && (
+              <a
+                href="/api/mockup-library/UI-Design-Report.pdf"
+                download="UI-Design-Report.pdf"
+                title="Download the generated UI Design Report PDF"
+                aria-label="Download UI Design Report PDF"
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-950/20 px-2.5 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-950/50"
+              >
+                <span aria-hidden="true">⬇</span> Download
+              </a>
+            )}
             <span className="mx-1 h-5 w-px bg-slate-700" aria-hidden="true" />
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="ui-build-approved-all" />
