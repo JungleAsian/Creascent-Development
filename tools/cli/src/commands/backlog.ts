@@ -6,15 +6,15 @@ import { readJson, writeJson } from '../lib/json-store.js'
 import { log } from '../lib/logger.js'
 import { logsDir, toolsRoot } from '../lib/paths.js'
 import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
-import { engineForProvider, llmChat } from '../lib/llm.js'
+import { engineForProvider, llmChat, autoProvider } from '../lib/llm.js'
 import { logActivity } from '../lib/activity.js'
 import { logUsage } from '../lib/usage.js'
 
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'infrastructure'
 type Status = 'todo' | 'in-progress' | 'plan-review' | 'blocked' | 'review' | 'done'
 type Lane = 'backend' | 'frontend' | 'ui' | 'infra'
-type Assignee = 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
-const ASSIGNEES: Assignee[] = ['claude', 'codex', 'grok', 'cursor', 'gemini', 'deepseek']
+type Assignee = 'auto' | 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
+const ASSIGNEES: Assignee[] = ['auto', 'claude', 'codex', 'grok', 'cursor', 'gemini', 'deepseek']
 // `auto`/`key`/`source` mark items collected by `backlog sync` (TODO/FIXME scan)
 // so re-runs dedup by key and auto-remove items whose comment was deleted.
 // `assignee`/`plan`/`commit`/`pr` drive the resolution workflow + Claude handoff.
@@ -474,10 +474,17 @@ function runClaudeHeadless(prompt: string, message: string, model?: string, time
 //     assignee / no AI key is available) and commits.
 //  3. The fix is auto-VERIFIED; confidence >= threshold auto-approves (done),
 //     below leaves it in review with the reason.
-async function resolveTask(id: number, provider = 'claude'): Promise<number> {
+async function resolveTask(id: number, provider = 'auto'): Promise<number> {
   const tasks = getTasks()
   const task = tasks.find((item) => item.id === id)
   if (!task) { log('backlog', `Task ${id} not found`, 'error'); return 1 }
+  // Auto-routing: pick the preferred funded AI now, transparently.
+  if (provider === 'auto') {
+    const picked = autoProvider()
+    log('backlog', `Auto-routing #${id} → ${picked}.`)
+    logActivity({ actor: 'system', event: 'auto.route', severity: 'info', source: 'backlog', taskId: id, message: `Auto selected ${picked} for #${id}.` })
+    provider = picked
+  }
   task.status = 'in-progress'
   saveTasks(tasks)
   const planLine = (task.plan && task.plan.trim()) || 'Investigate the relevant code, design a focused fix, and implement it.'
@@ -832,7 +839,7 @@ backlogCmd
   .action(async (opts: { id: string; provider?: string }) => {
     touchBacklogRun({ autoResolve: false })
     const assignee = getTasks().find((item) => item.id === Number(opts.id))?.assignee
-    const code = await resolveTask(Number(opts.id), opts.provider || assignee || 'claude')
+    const code = await resolveTask(Number(opts.id), opts.provider || assignee || 'auto')
     if (code !== 0) process.exitCode = code
   })
 
@@ -846,7 +853,7 @@ backlogCmd
   .action(async (opts: { id: string; threshold?: string; auto?: boolean; provider?: string }) => {
     touchBacklogRun({ autoResolve: false })
     const assignee = getTasks().find((item) => item.id === Number(opts.id))?.assignee
-    await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto), opts.provider || assignee || 'claude')
+    await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto), opts.provider || assignee || 'auto')
   })
 
 backlogCmd

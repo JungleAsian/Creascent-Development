@@ -6,9 +6,10 @@ import { useRef, useState } from 'react'
 // Claude auto-runs agentically via the headless CLI (edits + commits). API
 // providers (api: true) auto-run via their chat API and produce a proposed
 // resolution to review. Cursor has no API, so it stays a manual handoff.
-type Agent = 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
+type Agent = 'auto' | 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
 
 const PROVIDERS: Record<Agent, { label: string; url?: string; api?: boolean }> = {
+  auto: { label: 'Auto' },
   claude: { label: 'Claude' },
   codex: { label: 'Codex', url: 'https://chatgpt.com/codex', api: true },
   grok: { label: 'Grok', url: 'https://grok.com', api: true },
@@ -30,7 +31,8 @@ export function BacklogResolvePanel({
   commit,
   pr,
   result,
-  resultProvider
+  resultProvider,
+  autoResolvesTo
 }: {
   id: number
   title: string
@@ -44,9 +46,10 @@ export function BacklogResolvePanel({
   pr?: string
   result?: string
   resultProvider?: string
+  autoResolvesTo?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
-  const [agent, setAgent] = useState<Agent>(assignee && assignee in PROVIDERS ? (assignee as Agent) : 'claude')
+  const [agent, setAgent] = useState<Agent>(assignee && assignee in PROVIDERS ? (assignee as Agent) : 'auto')
   const defaultPlan = `Investigate the ${lane || 'relevant'} code for "${title}", design a focused fix, implement it, run local checks, and commit referencing backlog #${id}.`
   const [text, setText] = useState(plan || defaultPlan)
   const close = () => ref.current?.close()
@@ -109,7 +112,9 @@ export function BacklogResolvePanel({
               <button className="w-full rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400">Auto-plan &amp; resolve →</button>
             </form>
             <p className="text-xs text-slate-500">
-              {agent === 'claude' ? (
+              {agent === 'auto' ? (
+                <>Auto picks your cheapest available AI{autoResolvesTo ? <> — currently <span className="text-violet-100">{autoResolvesTo}</span></> : ''} to draft the fix, then <span className="text-cyan-200">Claude implements &amp; commits</span>, then it <span className="text-emerald-200">auto-verifies</span> (≥8 auto-approves). No API key → Claude resolves directly. Pick a specific AI on the left to override.</>
+              ) : agent === 'claude' ? (
                 <>Claude drafts a plan + rates confidence: <span className="text-emerald-200">≥8 auto-approves &amp; resolves</span>; below that it pauses for your approval. Then it <span className="text-emerald-200">auto-verifies</span> — ≥8 marks it done automatically.</>
               ) : (
                 <>Hands-off: <span className="text-violet-100">{provider.label}</span> drafts the fix, <span className="text-cyan-200">Claude implements &amp; commits</span>, then it <span className="text-emerald-200">auto-verifies</span> (≥8 auto-approves). {provider.api ? <>Needs <span className="font-mono">{agent.toUpperCase()}_API_KEY</span> in <span className="font-mono">.env.tools</span> — without it, Claude resolves directly.</> : <>No API for {provider.label}, so Claude resolves directly.</>}</>

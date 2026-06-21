@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { getUsdToCad } from '../lib/currency'
 import { readTunnel } from '../lib/sentinel-platform'
 import { TranslationStatus } from '../translation-status'
+import { resolveAutoAi } from '../lib/auto-ai'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -192,6 +193,7 @@ function parseEnv(content: string) {
 type SettingsPageProps = { searchParams?: { message?: string; error?: string } }
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+  const autoAi = resolveAutoAi(toolsRoot)
   const envExists = fs.existsSync(envFile)
   const exampleExists = fs.existsSync(envExampleFile)
   const env = envExists ? parseEnv(fs.readFileSync(envFile, 'utf8')) : {}
@@ -231,6 +233,32 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         <Link href="/sentinel" className="mt-3 inline-block text-xs text-cyan-300 hover:underline">Open Sentinel →</Link>
       </div>
       <div className="mb-6"><TranslationStatus /></div>
+
+      <div className="mb-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">AI routing</h2>
+          <span className="rounded bg-cyan-950/40 px-2 py-1 text-xs font-medium text-cyan-100">Auto → {autoAi.choiceLabel}</span>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          When a backlog item is assigned <span className="text-slate-300">Auto</span> (the default), the cheapest funded AI drafts the fix and Claude implements it — offloading work from the Claude Max usage budget. Plan &amp; verify always run on a cheap model. Falls back to Claude when no API key is set. Override per item in the Resolve panel.
+        </p>
+        <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+          <div>
+            <div className="text-xs text-slate-500">Preference order</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {autoAi.preference.map((p, i) => (
+                <span key={p.id} className={`rounded border px-1.5 py-0.5 text-xs ${autoAi.choice === p.id ? 'border-cyan-600 bg-cyan-950/40 text-cyan-100' : autoAi.detected.some((d) => d.id === p.id) ? 'border-emerald-800 text-emerald-300' : 'border-slate-700 text-slate-500'}`}>{i + 1}. {p.label}</span>
+              ))}
+              <span className={`rounded border px-1.5 py-0.5 text-xs ${autoAi.choice === 'claude' ? 'border-cyan-600 bg-cyan-950/40 text-cyan-100' : 'border-slate-700 text-slate-500'}`}>↳ Claude (fallback)</span>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-slate-500">Keys detected</div>
+            <div className="mt-1 text-sm text-slate-300">{autoAi.detected.length > 0 ? autoAi.detected.map((d) => d.label).join(', ') : 'none — Auto uses Claude directly'}</div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup</h1>

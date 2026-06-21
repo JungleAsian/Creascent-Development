@@ -63,6 +63,19 @@ export function engineForProvider(provider: string): LlmEngine | null {
   }
 }
 
+// Auto-selection policy: prefer a funded cheap API drafter (offloads work from
+// the Claude Max usage budget) in this order, falling back to Claude direct when
+// no API key is configured. Transparent + rule-based by design.
+export const AUTO_PREFERENCE = ['deepseek', 'gemini', 'grok', 'glm', 'codex']
+
+export function detectedProviders(): string[] {
+  return AUTO_PREFERENCE.filter((provider) => engineForProvider(provider) !== null)
+}
+
+export function autoProvider(): string {
+  return detectedProviders()[0] ?? 'claude'
+}
+
 export async function llmChat(prompt: string, engine: LlmEngine, maxTokens = 4096): Promise<string | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 120000)

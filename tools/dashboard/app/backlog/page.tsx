@@ -3,6 +3,7 @@ import path from 'node:path'
 import { BacklogRowControls } from './backlog-row-controls'
 import { BacklogResolvePanel } from './backlog-resolve-panel'
 import { BacklogReviewPanel } from './backlog-review-panel'
+import { resolveAutoAi } from '../lib/auto-ai'
 import { BacklogItemGauge } from './backlog-item-gauge'
 import { BacklogFlowStrip } from '../backlog-flow-strip'
 import { BuildProgressGauge } from '../build-progress-gauge'
@@ -137,6 +138,8 @@ export default function BacklogPage({ searchParams }: PageProps) {
   const visibleOpen = visible.filter((row) => row.status !== 'done')
   const visibleDone = visible.filter((row) => row.status === 'done')
 
+  const autoAi = resolveAutoAi(toolsRoot)
+
   const renderRow = (row: Task) => (
     <li key={row.id} className={`flex items-center gap-3 px-4 py-3 ${activeId === row.id ? 'bg-cyan-950/20' : 'bg-slate-900/40'}`}>
       <span className={activeId === row.id ? 'animate-pulse' : undefined}>
@@ -163,7 +166,7 @@ export default function BacklogPage({ searchParams }: PageProps) {
       </div>
       <span className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium sm:inline ${statusTone(row.status)}`}>{row.status}</span>
       <div className="flex shrink-0 items-center gap-1.5">
-        <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} />
+        <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} autoResolvesTo={autoAi.choiceLabel} />
         <BacklogReviewPanel id={row.id} title={row.title} status={row.status} assignee={row.assignee} plan={row.plan} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} confidence={row.confidence} verifyConfidence={row.verifyConfidence} verifyReason={row.verifyReason} />
         <BacklogRowControls id={row.id} status={row.status} />
       </div>
