@@ -724,6 +724,26 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                           <span className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-[11px] font-medium leading-5 text-slate-500" title="Backend wiring not verified yet — run Verify wiring" aria-label="Wiring not verified"><Icon name="auto" className="h-3.5 w-3.5" />?</span>
                         )
                       )}
+                      {(item.status === 'needs-review' || item.status === 'complete') && typeof item.wiringConfidence === 'number' && item.wiringConfidence < 8 && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-amber-700/60 bg-amber-950/10 px-1 py-0.5" title={`Wiring ${item.wiringConfidence}/10 is below 8 — approve as-is, revise (rebuild), or auto-fix the wiring`}>
+                          <form action="/api/actions" method="post" className="inline">
+                            <input type="hidden" name="action" value="ui-wiring-accept" />
+                            <input type="hidden" name="id" value={item.id} />
+                            <button className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1 text-slate-950 hover:bg-emerald-400" title="Approve the wiring as-is despite the low score (clears the flag; does not change build status)" aria-label={`Approve wiring for screen ${item.id} as-is`}><Icon name="check" className="h-3.5 w-3.5" /></button>
+                          </form>
+                          <form action="/api/actions" method="post" className="inline">
+                            <input type="hidden" name="action" value="ui-screen-status" />
+                            <input type="hidden" name="id" value={item.id} />
+                            <input type="hidden" name="status" value="planned" />
+                            <button className="inline-flex items-center justify-center rounded-md border border-amber-600 p-1 text-amber-200 hover:bg-amber-950/40" title="Revise — re-queue this screen to be rebuilt from scratch (run Build screens / Approve & build after)" aria-label={`Revise screen ${item.id} (re-queue to rebuild)`}><Icon name="refresh" className="h-3.5 w-3.5" /></button>
+                          </form>
+                          <form action="/api/actions" method="post" className="inline">
+                            <input type="hidden" name="action" value="ui-wiring-fix" />
+                            <input type="hidden" name="id" value={item.id} />
+                            <button className="inline-flex items-center justify-center rounded-md bg-cyan-500 p-1 text-slate-950 hover:bg-cyan-400" title="Fix — let Claude wire this one screen to the backend (targeted edit, no rebuild)" aria-label={`Auto-fix wiring for screen ${item.id}`}><Icon name="build" className="h-3.5 w-3.5" /></button>
+                          </form>
+                        </span>
+                      )}
                       <span
                         className={`inline-flex items-center justify-center rounded-md px-2 py-1 ${item.status === 'complete' ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-slate-700 bg-slate-900/60 text-slate-600'}`}
                         title={item.status === 'complete' ? 'Approved and sent to the Docmee application' : 'Not sent to Docmee yet'}

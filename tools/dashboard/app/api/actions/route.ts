@@ -139,6 +139,9 @@ type UiQueueItem = {
   priority: 'critical' | 'high' | 'medium' | 'low'
   source: string
   nextStep: string
+  wiringConfidence?: number
+  wiringReason?: string
+  wiringCheckedAt?: string
 }
 
 type CheckResponse = PostDeploymentCheck & { rawBody?: string }
@@ -2315,6 +2318,31 @@ export async function POST(request: Request) {
     if (state.status === 'running' && isProcessAlive(state.pid)) return redirect(request, 'error', 'A design/build run is already in progress. Wait for it to finish or stop it.', '/docmee-audit')
     runToolDetached(['ui-wiring', 'fix-all'])
     return redirect(request, 'message', 'Wiring the flagged screens to the backend — targeted edits to the existing components, no rebuild.', '/docmee-audit')
+  }
+
+  // Per-row remedy for a screen whose wiring scored below 8: auto-fix it (Claude
+  // wires this one screen to the backend, targeted edit, no rebuild).
+  if (action === 'ui-wiring-fix') {
+    const id = Number(form.get('id'))
+    if (!Number.isInteger(id)) return redirect(request, 'error', 'Invalid screen id.', '/docmee-audit')
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) return redirect(request, 'error', 'A design/build run is already in progress. Wait for it to finish or stop it.', '/docmee-audit')
+    runToolDetached(['ui-wiring', 'fix', '--id', String(id)])
+    return redirect(request, 'message', `Wiring screen ${id} to the backend — targeted edit to the existing component, no rebuild.`, '/docmee-audit')
+  }
+
+  // Per-row "approve as-is": accept the low wiring score (override to passing) so
+  // the screen clears the flagged list. A later Verify wiring re-scores it.
+  if (action === 'ui-wiring-accept') {
+    const id = Number(form.get('id'))
+    if (!Number.isInteger(id)) return redirect(request, 'error', 'Invalid screen id.', '/docmee-audit')
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    if (!records.some((row) => row.id === id)) return redirect(request, 'error', `Screen ${id} not found.`, '/docmee-audit')
+    const next = records.map((row) => (row.id === id
+      ? { ...row, wiringConfidence: 8, wiringReason: 'Approved by the operator despite the low auto-score.', wiringCheckedAt: new Date().toISOString() }
+      : row))
+    writeFileSync(uiDevelopmentRecordsFile, JSON.stringify(next.sort((a, b) => a.id - b.id), null, 2))
+    return redirect(request, 'message', `Screen ${id} wiring approved as-is — cleared from the flagged list.`, '/docmee-audit')
   }
 
   if (action === 'mockup-save-all') {
