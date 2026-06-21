@@ -87,7 +87,7 @@ export default function DiscordPage({ searchParams }: PageProps) {
       </div>
 
       <form className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
-        <input name="q" className="min-h-11 rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search Discord messages" defaultValue={searchParams?.q ?? ''} />
+        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search Discord messages" defaultValue={searchParams?.q ?? ''} />
         <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm">Apply</button>
       </form>
 

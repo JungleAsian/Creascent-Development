@@ -1,5 +1,8 @@
-import { issuesBySource, activeIssues, readHeartbeat, heartbeatLiveness, heartbeatAgeSeconds, readChecks } from '../lib/sentinel-platform'
+import { issuesBySource, activeIssues, readHeartbeat, heartbeatLiveness, heartbeatAgeSeconds, readChecks, readAudit } from '../lib/sentinel-platform'
+import { CompactSection } from '../compact-ui'
 import { IssueList, SubsystemHeader } from '../sentinel-shared'
+import { BlockerPanel, EventTimeline, HeartbeatVisual, IncidentRecoveryView, NextActionPanel, SystemStatusBanner } from '../sentinel-visuals'
+import { AutoRefresh } from '../auto-refresh'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,12 +24,20 @@ export default function AegisPage() {
 
   return (
     <section className="w-full space-y-6">
+      <AutoRefresh seconds={15} />
       <SubsystemHeader
         title="Aegis"
         emoji="⚔️"
         scope="Product integrity — bot behaviour, clinic compliance, patient-facing features, AI quality. Aegis protects it. PHI never enters an issue record."
         liveness={liveness}
         detail={liveness === 'not-configured' ? 'Configure DB connection to activate' : age === null ? 'no heartbeat' : `heartbeat ${age}s ago`}
+      />
+
+      <SystemStatusBanner
+        title="Aegis Product Protection"
+        question="Did it recover?"
+        state={liveness}
+        detail="Aegis watches product integrity, safety rules, clinic workflows, integration behavior, and recovery attempts."
       />
 
       {safetyFailing.length > 0 && (
@@ -55,10 +66,31 @@ export default function AegisPage() {
         })}
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <HeartbeatVisual label="Aegis" heartbeat={hb} />
+        <IncidentRecoveryView audit={readAudit()} />
+      </div>
+
       <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
         <h2 className="mb-4 text-sm font-semibold">Active Issues (anonymised by clinic)</h2>
         <IssueList issues={active} emptyLabel="No active Aegis issues." />
       </div>
+
+      <CompactSection title="Integrity Events, Blockers, and Next Actions" subtitle="Detailed Aegis integrity history and recovery guidance.">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <EventTimeline title="Recent Product Integrity Events" audit={readAudit().filter((entry) => /aegis|safety|clinic|ai|license|recover/i.test(`${entry.subsystem ?? ''} ${entry.action ?? ''} ${entry.message ?? ''}`))} />
+          <BlockerPanel issues={active} title="Product Integrity Blockers" />
+        </div>
+        <div className="mt-4">
+          <NextActionPanel
+            actions={[
+              'Review failed safety and clinic operation checks before allowing any production release.',
+              'If a recovery attempt failed, pause deployment until the last known good state is confirmed.',
+              'Keep product-integrity records anonymised and do not store patient data in issue logs.'
+            ]}
+          />
+        </div>
+      </CompactSection>
     </section>
   )
 }

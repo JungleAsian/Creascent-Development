@@ -49,6 +49,36 @@ export interface TrayModel {
   updatedAt?: string
 }
 
+export interface AuditEntry {
+  createdAt?: string
+  ts?: string
+  subsystem?: string
+  action?: string
+  outcome?: string
+  message?: string
+  issueCount?: number
+  durationMs?: number
+  issueId?: string
+}
+
+export interface FeatureRun {
+  pid?: number
+  phase?: string
+  workflow?: string
+  status?: string
+  startedAt?: string
+  heartbeatAt?: string
+  message?: string
+  githubStatus?: string
+  githubMessage?: string
+}
+
+interface FeatureCoverageItem {
+  status?: string
+  backendStatus?: string
+  frontendStatus?: string
+}
+
 function read<T>(name: string, fallback: T): T {
   const target = path.join(logsRoot, name)
   if (!fs.existsSync(target)) return fallback
@@ -102,6 +132,39 @@ export function heartbeatLiveness(hb: Heartbeat): 'running' | 'stale' | 'offline
 
 export function readTray(): TrayModel {
   return read<TrayModel>('sentinel-tray.json', {})
+}
+
+export function readAudit(): AuditEntry[] {
+  return read<AuditEntry[]>('sentinel-audit.json', [])
+}
+
+export function readFeatureRun(): FeatureRun {
+  return read<FeatureRun>('feature-run.json', {})
+}
+
+export function featureRunProcessState(run = readFeatureRun()): 'alive' | 'not-running' | 'unknown' {
+  if (!run.pid) return 'unknown'
+  if (!['starting', 'running', 'paused'].includes(run.status ?? '')) return 'not-running'
+  try {
+    process.kill(run.pid, 0)
+    return 'alive'
+  } catch {
+    return 'not-running'
+  }
+}
+
+export function frontendCoverageSummary() {
+  const features = read<FeatureCoverageItem[]>('rev1-feature-coverage.json', [])
+  const open = features.filter((item) => {
+    const explicit = item.frontendStatus
+    const stage = explicit === 'complete' || explicit === 'pending' || explicit === 'needs-audit' ? explicit : item.status === 'complete' ? 'needs-audit' : 'pending'
+    return stage !== 'complete'
+  }).length
+  return {
+    total: features.length,
+    complete: Math.max(0, features.length - open),
+    open
+  }
 }
 
 export interface CheckRow {

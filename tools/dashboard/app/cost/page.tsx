@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { costDisplayCurrency, formatCost, getUsdToCad } from '../lib/currency'
+import { maybeAutoSyncCost, lastAutoSyncAt } from '../lib/cost-autosync'
+import { AutoRefresh } from '../auto-refresh'
 
 const costFile = path.resolve(process.cwd(), '..', 'logs', 'cost.json')
 const coverageFile = path.resolve(process.cwd(), '..', 'logs', 'rev1-feature-coverage.json')
@@ -105,7 +107,10 @@ function tokenRate(totalCost: number, tokens: number) {
 
 function matchesFeature(entry: DevCostEntry, feature: Feature) {
   const text = `${entry.phase} ${entry.feature} ${entry.notes}`.toLowerCase()
-  return text.includes(feature.feature.toLowerCase()) || text.includes(`req ${feature.id}`) || text.includes(`feature ${feature.id}`)
+  // Word-bounded id match so feature 3 does NOT also absorb Req 30, 35, 39, …
+  // (plain includes('req 3') matched every Req 3X entry and wildly inflated rows).
+  const idBoundary = new RegExp(`\\b(?:req|feature)\\s*${feature.id}\\b`)
+  return text.includes(feature.feature.toLowerCase()) || idBoundary.test(text)
 }
 
 function isFrontendEntry(entry: DevCostEntry) {
@@ -223,6 +228,14 @@ function readCodexUsageSince(since: Date): CodexUsageResult {
 }
 
 export default async function CostPage({ searchParams }: PageProps) {
+  maybeAutoSyncCost()
+  const autoSyncMs = lastAutoSyncAt()
+  const autoSyncAgo = autoSyncMs
+    ? (() => {
+        const mins = Math.round((Date.now() - autoSyncMs) / 60000)
+        return mins <= 0 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`
+      })()
+    : 'pending'
   const runtime = readRuntimeCost()
   const development = readDevelopmentCost()
   const features = readFeatures()
@@ -317,6 +330,7 @@ export default async function CostPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
+      <AutoRefresh seconds={15} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Development Cost</h1>
@@ -340,8 +354,13 @@ export default async function CostPage({ searchParams }: PageProps) {
           <a href="/api/cost/pdf" className="grid min-h-11 place-items-center rounded-md border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-950/40">Export PDF</a>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="cost-dev-sync-claude" />
-            <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950">Sync Claude Cost</button>
+            <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950" title="Manual override — cost also syncs automatically every 5 min">Sync Claude Now</button>
           </form>
+          <form action="/api/actions" method="post">
+            <input type="hidden" name="action" value="cost-dev-sync-codex" />
+            <button className="min-h-11 rounded-md bg-violet-500 px-4 py-2 text-sm font-medium text-slate-950" title="Manual override — cost also syncs automatically every 5 min">Sync Codex Now</button>
+          </form>
+          <p className="w-full text-right text-xs text-emerald-300/80">● Auto-syncing Claude + Codex cost every 5 min (incremental) · last {autoSyncAgo}</p>
         </div>
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}

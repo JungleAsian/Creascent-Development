@@ -1,15 +1,17 @@
-import { copyFileSync, existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { NextResponse } from 'next/server'
+import { getUsdToCad } from '../../../lib/currency'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
 const envExampleFile = path.join(toolsRoot, '.env.tools.example')
 const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
 
-function settingsRedirect(request: Request, key: 'message' | 'error', value: string) {
-  const url = new URL('/settings', 'http://127.0.0.1:4000')
+function settingsRedirect(request: Request, key: 'message' | 'error', value: string, pathname = '/settings') {
+  const safePath = pathname.startsWith('/') && !pathname.startsWith('//') ? pathname : '/settings'
+  const url = new URL(safePath, 'http://127.0.0.1:4000')
   url.searchParams.set(key, value)
   return NextResponse.redirect(url, 303)
 }
@@ -53,6 +55,8 @@ function runScript(script: string) {
   return result.status === 0
 }
 
+void runScript
+
 function backlogCount() {
   if (!existsSync(backlogFile)) return 0
   try {
@@ -74,6 +78,28 @@ function parseEnv(content: string) {
         return [line.slice(0, index), line.slice(index + 1)]
       })
   )
+}
+
+function readEnvContent() {
+  return existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
+}
+
+function upsertEnvValues(values: Record<string, string>) {
+  const content = readEnvContent()
+  const lines = content ? content.split(/\r?\n/) : []
+  const seen = new Set<string>()
+  const next = lines.map((line) => {
+    const match = line.match(/^([A-Z0-9_]+)=/)
+    if (!match) return line
+    const name = match[1]
+    if (!(name in values)) return line
+    seen.add(name)
+    return `${name}=${values[name]}`
+  })
+  for (const [name, value] of Object.entries(values)) {
+    if (!seen.has(name)) next.push(`${name}=${value}`)
+  }
+  writeFileSync(envFile, `${next.join('\n').replace(/\n*$/, '')}\n`)
 }
 
 function setupStatus() {
@@ -158,6 +184,65 @@ export async function POST(request: Request) {
     return isFormPost
       ? settingsRedirect(request, status.ok ? 'message' : 'error', message)
       : NextResponse.json(status.ok ? { message } : { error: message }, { status: status.ok ? 200 : 500 })
+  }
+
+  if (body.action === 'public-url-switch') {
+    if (!existsSync(envFile)) {
+      return isFormPost
+        ? settingsRedirect(request, 'error', '.env.tools has not been created yet')
+        : NextResponse.json({ error: '.env.tools has not been created yet' }, { status: 404 })
+    }
+    const mode = String((body as Record<string, unknown>).mode ?? '').trim()
+    const ngrokUrl = String((body as Record<string, unknown>).ngrokUrl ?? '').trim().replace(/\/$/, '')
+    const domainUrl = String((body as Record<string, unknown>).domainUrl ?? '').trim().replace(/\/$/, '')
+    const selectedUrl = mode === 'ngrok' ? ngrokUrl : mode === 'domain' ? domainUrl : ''
+    if (!['ngrok', 'domain'].includes(mode)) {
+      return isFormPost
+        ? settingsRedirect(request, 'error', 'Choose ngrok or permanent domain')
+        : NextResponse.json({ error: 'Choose ngrok or permanent domain' }, { status: 400 })
+    }
+    if (!/^https?:\/\/[^/\s]+/i.test(selectedUrl)) {
+      return isFormPost
+        ? settingsRedirect(request, 'error', 'Enter a valid public URL that starts with http:// or https://')
+        : NextResponse.json({ error: 'Enter a valid public URL that starts with http:// or https://' }, { status: 400 })
+    }
+    upsertEnvValues({
+      PUBLIC_URL_MODE: mode,
+      NGROK_URL: ngrokUrl,
+      PERMANENT_DOMAIN_URL: domainUrl,
+      APP_URL: selectedUrl
+    })
+    const label = mode === 'ngrok' ? 'ngrok temporary URL' : 'permanent domain'
+    return isFormPost
+      ? settingsRedirect(request, 'message', `APP_URL now uses the ${label}`)
+      : NextResponse.json({ message: `APP_URL now uses the ${label}` })
+  }
+
+  if (body.action === 'cost-currency') {
+    if (!existsSync(envFile)) {
+      return isFormPost
+        ? settingsRedirect(request, 'error', '.env.tools has not been created yet')
+        : NextResponse.json({ error: '.env.tools has not been created yet' }, { status: 404 })
+    }
+    const currency = String((body as Record<string, unknown>).currency ?? '').trim().toLowerCase()
+    if (!['usd', 'cad', 'gtq'].includes(currency)) {
+      return isFormPost
+        ? settingsRedirect(request, 'error', 'Choose USD, CAD, or GTQ')
+        : NextResponse.json({ error: 'Choose USD, CAD, or GTQ' }, { status: 400 })
+    }
+    upsertEnvValues({ COST_DISPLAY_CURRENCY: currency })
+    const label = currency.toUpperCase()
+    const returnTo = String((body as Record<string, unknown>).returnTo ?? '/settings')
+    return isFormPost
+      ? settingsRedirect(request, 'message', `Cost display now uses ${label}`, returnTo)
+      : NextResponse.json({ message: `Cost display now uses ${label}` })
+  }
+
+  if (body.action === 'refresh-exchange-rate') {
+    const exchange = await getUsdToCad(true)
+    return isFormPost
+      ? settingsRedirect(request, 'message', `Exchange rate refreshed: 1 USD = ${exchange.rates.CAD.toFixed(4)} CAD / ${exchange.rates.GTQ.toFixed(4)} GTQ`)
+      : NextResponse.json({ message: `Exchange rate refreshed`, exchange })
   }
 
   return isFormPost

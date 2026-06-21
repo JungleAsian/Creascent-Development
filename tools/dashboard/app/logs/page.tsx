@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { DetailButton } from '../detail-button'
 
 const logsDir = path.resolve(process.cwd(), '..', 'logs')
 type PageProps = { searchParams?: { file?: string; q?: string } }
@@ -65,7 +66,7 @@ export default function LogsPage({ searchParams }: PageProps) {
         <select name="file" className="min-h-11 rounded-md border border-slate-700 bg-slate-900 px-3 py-2" defaultValue={selectedFile}>
           {files.length === 0 ? <option>Select log file</option> : files.map((file) => <option key={file}>{file}</option>)}
         </select>
-        <input name="q" className="min-h-11 rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search logs" defaultValue={query} />
+        <input name="q" className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2" placeholder="Search logs" defaultValue={query} />
         <button className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950">Apply</button>
       </form>
 
@@ -80,7 +81,14 @@ export default function LogsPage({ searchParams }: PageProps) {
                 <td className="whitespace-nowrap p-3 text-xs text-slate-400">{row.timestamp ? new Date(row.timestamp).toLocaleString() : '-'}</td>
                 <td className="p-3 font-mono text-xs">{row.source}</td>
                 <td className={`p-3 text-xs font-semibold ${levelTone(row.level)}`}>{row.level}</td>
-                <td className="p-3 text-slate-200">{row.message}</td>
+                <td className="p-3 text-slate-200">
+                  {row.message.length > 160 ? (
+                    <span className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1">{row.message.slice(0, 160)}…</span>
+                      <DetailButton buttonLabel="View" title={`${row.source} · ${row.level}`} body={row.message} />
+                    </span>
+                  ) : row.message}
+                </td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td className="p-3 text-slate-400" colSpan={4}>No log entries found.</td></tr>}

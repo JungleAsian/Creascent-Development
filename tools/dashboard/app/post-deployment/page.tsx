@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { StatusDot } from '../status-dot'
+import { DetailButton } from '../detail-button'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const postDeploymentFile = path.join(toolsRoot, 'logs', 'post-deployment.json')
@@ -123,10 +124,7 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
                   </div>
                   <p className="mt-2 text-sm">{check.message}</p>
                   {check.detail && (
-                    <details className="mt-3 rounded border border-slate-800 bg-slate-950/50 p-3 text-slate-200" open={isSelected}>
-                      <summary className="cursor-pointer text-xs font-medium text-sky-300">Error details</summary>
-                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">{check.detail}</pre>
-                    </details>
+                    <div className="mt-3"><DetailButton buttonLabel="Error details" title={check.name} body={check.detail} /></div>
                   )}
                 </div>
               )})
@@ -157,10 +155,7 @@ export default function PostDeploymentPage({ searchParams }: PageProps) {
                     <td className="px-3 py-2 align-top text-slate-400">
                       <div>{check.message}</div>
                       {check.detail && (
-                        <details className="mt-2 rounded border border-slate-800 bg-slate-950/50 p-2" open={isSelected}>
-                          <summary className="cursor-pointer text-xs font-medium text-sky-300">Error details</summary>
-                          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">{check.detail}</pre>
-                        </details>
+                        <div className="mt-2"><DetailButton buttonLabel="Error details" title={check.name} body={check.detail} /></div>
                       )}
                     </td>
                   </tr>

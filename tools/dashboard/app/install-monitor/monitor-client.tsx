@@ -50,19 +50,29 @@ function compact(value: number) {
   return String(value || 0)
 }
 
-function ecgPath(samples: Array<{ value: number }>, status: string) {
+function sampleAmplitude(status: string) {
+  if (status === 'normal') return 34
+  if (status === 'sentinel') return 28
+  if (status === 'paused') return 22
+  if (status === 'delayed') return 18
+  if (status === 'lost' || status === 'dead') return 8
+  return 14
+}
+
+function ecgPath(samples: Array<{ value: number; status?: string }>, status: string) {
   const width = 360
   const baseline = 66
-  const beats = 6
-  const beatWidth = width / beats
-  const latest = samples.at(-1)
-  const value = Math.max(0.05, Math.min(1, Number(latest?.value) || 0.05))
-  const amplitude = status === 'normal' ? 34 : status === 'paused' ? 22 : status === 'delayed' ? 18 : status === 'lost' || status === 'dead' ? 8 : 24
-  const scaled = amplitude * value
+  const recent = samples.slice(-24)
+  const trace = recent.length > 0 ? recent : Array.from({ length: 12 }, () => ({ value: status === 'normal' ? 1 : 0.05, status }))
+  const beatWidth = width / Math.max(1, trace.length)
   let d = `M0 ${baseline}`
-  for (let beat = 0; beat < beats; beat += 1) {
+  for (let beat = 0; beat < trace.length; beat += 1) {
+    const sample = trace[beat]
+    const sampleStatus = sample.status ?? status
+    const value = Math.max(0.05, Math.min(1, Number(sample.value) || 0.05))
+    const scaled = sampleAmplitude(sampleStatus) * value
     const x = beat * beatWidth
-    if (status === 'stopped' || status === 'dead') {
+    if (sampleStatus === 'stopped' || sampleStatus === 'dead') {
       d += ` L${Math.round(x + beatWidth)} ${baseline + (beat % 2 === 0 ? 1 : -1)}`
       continue
     }
@@ -152,7 +162,7 @@ export function InstallMonitorClient() {
                 <pattern id="monitorGridMajor" width="50" height="50" patternUnits="userSpaceOnUse"><rect width="50" height="50" fill="url(#monitorGridSmall)" /><path d="M50 0H0V50" fill="none" stroke="rgba(55,211,153,.16)" /></pattern>
               </defs>
               <rect width="360" height="120" fill="url(#monitorGridMajor)" />
-              <path d={path} fill="none" stroke={heartbeat === 'normal' ? '#37d399' : heartbeat === 'paused' || heartbeat === 'delayed' ? '#f4b94f' : '#ff6b6b'} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d={path} fill="none" stroke={heartbeat === 'normal' ? '#37d399' : heartbeat === 'paused' || heartbeat === 'delayed' ? '#f4b94f' : '#ff6b6b'} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className={heartbeat === 'normal' ? 'ecg-trace-live' : ''} />
             </svg>
             <span className="absolute right-3 top-3 rounded-full border border-slate-700 bg-slate-950/80 px-2 py-1 text-xs">{heartbeat === 'normal' ? 'Normal' : heartbeat === 'paused' ? 'Paused' : heartbeat}</span>
           </div>

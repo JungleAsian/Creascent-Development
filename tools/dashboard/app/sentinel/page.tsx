@@ -17,6 +17,7 @@ import {
 } from '../lib/sentinel-platform'
 import { CompactSection } from '../compact-ui'
 import { IssueList } from '../sentinel-shared'
+import { AutoRefresh } from '../auto-refresh'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,6 +78,7 @@ export default function SentinelPage({ searchParams }: { searchParams?: { filter
 
   return (
     <section className="w-full space-y-6">
+      <AutoRefresh seconds={15} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">🛡️ Sentinel</h1>

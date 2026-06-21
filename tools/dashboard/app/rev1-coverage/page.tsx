@@ -1,15 +1,21 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import Link from 'next/link'
 import { BuildProgressGauge } from '../build-progress-gauge'
 import { CompactSection, SimpleStatusCard } from '../compact-ui'
 import { StatusDot } from '../status-dot'
+import { DetailButton } from '../detail-button'
+import { WorkflowStages } from '../workflow-stages'
+import { AutoRefresh } from '../auto-refresh'
+import { LaneFlowStrip } from '../lane-flow-strip'
+import { LaneItemGauge } from '../lane-item-gauge'
+import { runLiveness, isProcessAlive, heartbeatAge } from '../lib/run-live'
+import { readJson } from '../lib/read-json'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const coverageFile = path.join(toolsRoot, 'logs', 'rev1-feature-coverage.json')
 const featureRunFile = path.join(toolsRoot, 'logs', 'feature-run.json')
 const readyFile = path.join(toolsRoot, 'logs', 'ready.json')
-const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness.json')
+const startReadinessFile = path.join(toolsRoot, 'logs', 'start-readiness-features-development.json')
 const postDeploymentFile = path.join(toolsRoot, 'logs', 'post-deployment.json')
 
 type FeatureStatus = 'complete' | 'partial' | 'missing'
@@ -43,15 +49,6 @@ type BuildRun = {
 type Ready = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string }
 type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
 type PostDeploymentRun = { target?: 'local' | 'vps'; createdAt?: string; summary?: { pass?: number; warning?: number; fail?: number } }
-
-function readJson<T>(file: string, fallback: T) {
-  if (!fs.existsSync(file)) return fallback
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
 
 function readFeatures() {
   return readJson<Feature[]>(coverageFile, [])
@@ -104,6 +101,18 @@ function featurePercent(status: FeatureStatus) {
   return 0
 }
 
+function lanePercent(status: FeatureStatus) {
+  if (status === 'complete') return 100
+  if (status === 'partial') return 55
+  return 8
+}
+
+function laneTone(status: FeatureStatus) {
+  if (status === 'complete') return 'emerald' as const
+  if (status === 'partial') return 'amber' as const
+  return 'slate' as const
+}
+
 function featureGaugeState(item: Feature, run: BuildRun, live: boolean): 'progressing' | 'halted' | 'stopped' | 'complete' {
   if (item.status === 'complete') return 'complete'
   if ((run.workflow === 'features-development' || run.workflow === 'frontend-development') && live && run.phase === item.phase) return 'progressing'
@@ -132,27 +141,9 @@ function countBy<T extends string>(rows: Feature[], read: (row: Feature) => T) {
   }, {} as Record<T, number>)
 }
 
-function isProcessAlive(pid?: number) {
-  if (!pid) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
 function currentPhase(openItems: Feature[], run: BuildRun) {
   if ((run.workflow === 'features-development' || run.workflow === 'frontend-development') && ['starting', 'running', 'paused'].includes(run.status ?? '') && run.phase) return run.phase
   return openItems[0]?.phase || 'Phase 1'
-}
-
-function heartbeatAge(heartbeatAt?: string) {
-  if (!heartbeatAt) return null
-  const ageMs = Date.now() - new Date(heartbeatAt).getTime()
-  if (!Number.isFinite(ageMs) || ageMs < 0) return null
-  if (ageMs < 60000) return `${Math.max(1, Math.round(ageMs / 1000))}s ago`
-  return `${Math.round(ageMs / 60000)}m ago`
 }
 
 function heartbeatState(run: BuildRun, live: boolean) {
@@ -230,16 +221,12 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
   const openQueue = features
     .filter((row) => row.status !== 'complete')
     .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority] || a.phase.localeCompare(b.phase) || a.id - b.id)
-  const frontendOpenQueue = features
-    .filter((row) => frontendStage(row) !== 'complete')
-    .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority] || a.phase.localeCompare(b.phase) || a.id - b.id)
   const run = readJson<BuildRun>(featureRunFile, { status: 'idle', workflow: 'features-development' })
   const ready = readJson<Ready>(readyFile, { ready: false, summary: { critical: 1, warning: 0, pass: 0 } })
   const startReadiness = readJson<StartReadiness>(startReadinessFile, { ready: false, steps: [] })
-  const live = isProcessAlive(run.pid) && ['starting', 'running', 'paused'].includes(run.status ?? '')
+  const { live, stale: staleRun } = runLiveness(run, isProcessAlive(run.pid))
   const nextPhase = currentPhase(openQueue, run)
   const startCheckPassed = Boolean(startReadiness.ready && startReadiness.phase === nextPhase)
-  const frontendStartCheckPassed = Boolean(startReadiness.ready && startReadiness.phase === 'FRONTEND')
   const readyCritical = ready.summary?.critical ?? 1
   const allFeaturesComplete = features.length > 0 && openQueue.length === 0
   const localPassed = localCheckPassed()
@@ -254,20 +241,32 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
   const frontendNeedsAudit = features.filter((item) => frontendStage(item) === 'needs-audit').length
   const overallPercent = overallFeaturePercent(features)
   const overallGaugeState = allFeaturesComplete ? 'complete' : live && featureWorkflowActive ? 'progressing' : partial > 0 ? 'halted' : 'stopped'
-  const frontendModeReady = frontendStartCheckPassed && frontendOpenQueue.length > 0
-  const automationFrom = frontendModeReady ? 'FRONTEND' : nextPhase
-  const automationWorkflow = frontendModeReady ? 'frontend-development' : 'features-development'
-  const automationStartPassed = frontendModeReady || startCheckPassed
-  const automationComplete = frontendModeReady ? frontendOpenQueue.length === 0 : allFeaturesComplete
-  const automationButtonLabel = frontendModeReady ? 'Start Frontend Development' : 'Start Feature Automation'
-  const automationDescription = frontendModeReady
-    ? `${frontendOpenQueue.length} frontend item(s) need design/product acceptance.`
-    : allFeaturesComplete
-      ? 'All backend feature items are complete.'
-      : `Starts the watcher from ${nextPhase} and connects it to the heartbeat.`
+  // Backend-only: this page starts the backend feature automation. Frontend
+  // development now has its own page (Frontend Build Control) + run file, so it
+  // is no longer auto-started from here.
+  const automationFrom = nextPhase
+  const automationWorkflow = 'features-development'
+  const automationStartPassed = startCheckPassed
+  const automationComplete = allFeaturesComplete
+  const automationButtonLabel = 'Start Feature Automation'
+  const automationDescription = allFeaturesComplete
+    ? 'All backend feature items are complete.'
+    : `Starts the backend watcher from ${nextPhase} and connects it to the heartbeat.`
 
   return (
     <section>
+      <AutoRefresh seconds={15} />
+      <LaneFlowStrip
+        label="Workflow"
+        stages={[
+          { label: 'Start check', tone: 'cyan' },
+          { label: 'Feature automation · Claude', tone: 'amber' },
+          { label: 'Local app check', tone: 'sky' },
+          { label: 'Deploy to VPS', tone: 'emerald' }
+        ]}
+      />
+      <WorkflowStages active="develop" />
+      {staleRun && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">⚠ The feature watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Features Development</h1>
@@ -286,7 +285,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
             <input type="hidden" name="action" value="phase-build-watch" />
             <input type="hidden" name="from" value={automationFrom} />
             <input type="hidden" name="workflow" value={automationWorkflow} />
-            <button disabled={!automationStartPassed || live || automationComplete} className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">{automationButtonLabel}</button>
+            <button disabled={!automationStartPassed || live || automationComplete || readyCritical > 0} title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !automationStartPassed ? `Run the start check for ${nextPhase} first` : live ? 'Feature automation is already running' : automationComplete ? 'All features are complete' : automationDescription} className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">{automationButtonLabel}</button>
           </form>
         </div>
       </div>
@@ -294,22 +293,11 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
       {searchParams?.message && <p className="mt-3 rounded-md border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 rounded-md border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">{searchParams.error}</p>}
 
-      {frontendModeReady && (
-        <div className="mt-5 rounded-md border border-cyan-700 bg-cyan-950/30 p-4">
+      {frontendNeedsAudit > 0 && (
+        <div className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-base font-semibold text-cyan-100">Frontend Start Check Passed</h2>
-              <p className="mt-2 text-sm leading-6 text-cyan-100/80">
-                Next step: start frontend development. This will work through the frontend acceptance queue and keep the heartbeat updated.
-              </p>
-              <p className="mt-1 text-xs text-cyan-100/70">{frontendOpenQueue.length} frontend item(s) are ready for development or acceptance.</p>
-            </div>
-            <form action="/api/actions" method="post" className="min-w-[220px]">
-              <input type="hidden" name="action" value="phase-build-watch" />
-              <input type="hidden" name="from" value="FRONTEND" />
-              <input type="hidden" name="workflow" value="frontend-development" />
-              <button disabled={live} className="w-full min-h-12 rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Frontend Development</button>
-            </form>
+            <p className="text-sm text-cyan-100/80">{frontendNeedsAudit} frontend item(s) need development/acceptance. Frontend development now runs from its own page.</p>
+            <a href="/frontend-build-control" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Open Frontend Build Control →</a>
           </div>
         </div>
       )}
@@ -321,16 +309,17 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
         <SimpleStatusCard label="Complete" value={complete} tone="emerald" />
       </div>
 
-      <div className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <details className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-cyan-100">Development Stages</h2>
-            <p className="mt-2 text-sm leading-6 text-cyan-100/80">
-              Feature completion is now split into backend/local-code completion and frontend product acceptance. A backend-complete feature is not launch-accepted until the frontend/design stage also passes.
-            </p>
+            <p className="mt-1 text-xs text-cyan-100/70">Backend {backendComplete}/{features.length} · Frontend accepted {frontendComplete}/{features.length} · {frontendNeedsAudit} need audit</p>
           </div>
-          <span className="rounded bg-slate-950/40 px-3 py-1 text-xs text-cyan-100">Backend + Frontend</span>
-        </div>
+          <span className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 details-toggle-label">Expand</span>
+        </summary>
+        <p className="mt-3 text-sm leading-6 text-cyan-100/80">
+          Feature completion is now split into backend/local-code completion and frontend product acceptance. A backend-complete feature is not launch-accepted until the frontend/design stage also passes.
+        </p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <div className="rounded border border-emerald-800 bg-emerald-950/30 p-3">
             <p className="text-xs text-emerald-200/70">Backend completed</p>
@@ -348,7 +337,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
             <p className="mt-1 text-xs text-slate-500">Only count features here after visual/product acceptance passes.</p>
           </div>
         </div>
-      </div>
+      </details>
 
       <div className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -374,7 +363,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
           </Link>
           <div className={startCheckPassed ? 'rounded border border-emerald-800 bg-emerald-950/30 p-3' : 'rounded border border-amber-800 bg-amber-950/30 p-3'}>
             <p className="text-xs text-slate-400">Start Check</p>
-            <p className={automationStartPassed ? 'mt-1 text-sm font-semibold text-emerald-200' : 'mt-1 text-sm font-semibold text-amber-200'}>{frontendModeReady ? 'Passed for Frontend' : startCheckPassed ? `Passed for ${nextPhase}` : `Needed for ${nextPhase}`}</p>
+            <p className={automationStartPassed ? 'mt-1 text-sm font-semibold text-emerald-200' : 'mt-1 text-sm font-semibold text-amber-200'}>{startCheckPassed ? `Passed for ${nextPhase}` : `Needed for ${nextPhase}`}</p>
           </div>
           <div className={live ? 'rounded border border-amber-800 bg-amber-950/30 p-3' : 'rounded border border-slate-800 bg-slate-950/40 p-3'}>
             <p className="text-xs text-slate-400">Automation</p>
@@ -423,12 +412,12 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
             <input type="hidden" name="action" value="phase-build-watch" />
             <input type="hidden" name="from" value={automationFrom} />
             <input type="hidden" name="workflow" value={automationWorkflow} />
-            <button disabled={!automationStartPassed || live || automationComplete} className="w-full min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">{frontendModeReady ? 'Start Frontend Development' : 'Start All Open Features'}</button>
+            <button disabled={!automationStartPassed || live || automationComplete || readyCritical > 0} title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !automationStartPassed ? `Run the start check for ${nextPhase} first` : live ? 'Feature automation is already running' : automationComplete ? 'All features are complete' : automationDescription} className="w-full min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start All Open Features</button>
             <p className="mt-2 text-xs text-slate-500">{automationDescription}</p>
           </form>
           <form action="/api/actions" method="post" className="rounded border border-slate-800 bg-slate-950/40 p-3">
             <input type="hidden" name="action" value="app-launch" />
-            <button disabled={!allFeaturesComplete} className="w-full min-h-11 rounded-md border border-emerald-700 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Launch App Locally</button>
+            <button disabled={!allFeaturesComplete} title={allFeaturesComplete ? 'Launch the product app locally' : 'All features must be complete before launching locally'} className="w-full min-h-11 rounded-md border border-emerald-700 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Launch App Locally</button>
             <p className="mt-2 text-xs text-slate-500">Opens the local app and posts access details to Discord.</p>
           </form>
           <Link
@@ -438,14 +427,14 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
               ? 'rounded border border-emerald-700 bg-emerald-950/20 p-3 text-center text-sm text-emerald-100 hover:bg-emerald-950/40'
               : 'pointer-events-none rounded border border-slate-800 bg-slate-950/40 p-3 text-center text-sm text-slate-500'}
           >
-            <span className="block min-h-11 py-2 font-medium">Deploy to VPS</span>
+            <span className="block min-h-11 py-2 font-medium">Continue to Deploy →</span>
             <span className="block text-xs">{allFeaturesComplete && localPassed ? 'Open deployment guide.' : 'Complete features and local checks first.'}</span>
           </Link>
         </div>
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_380px]">
-        <details className="rounded-md border border-slate-800 bg-slate-900 p-4" open>
+        <details className="rounded-md border border-slate-800 bg-slate-900 p-4">
           <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">Claude Next Work Queue</h2>
@@ -453,7 +442,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{nextClaudeQueue.length} shown</span>
-              <span className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 details-toggle-label">Collapse</span>
+              <span className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 details-toggle-label">Expand</span>
             </div>
           </summary>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -517,9 +506,10 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
       <div className="mt-5">
       <CompactSection title="All Feature Details" subtitle="Full backend/frontend status table for every Docmee feature." badge={<span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{features.length} rows</span>}>
       <div className="overflow-x-auto rounded-lg border border-slate-800">
-        <table className="w-full text-left text-sm">
+        <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="bg-slate-900 text-slate-300">
             <tr>
+              <th className="p-3"></th>
               <th className="p-3">Req</th>
               <th className="p-3">Phase</th>
               <th className="p-3">Area</th>
@@ -535,6 +525,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
           <tbody className="divide-y divide-slate-800">
             {features.map((item) => (
               <tr key={item.id} className="bg-slate-950/60 align-top">
+                <td className="p-3"><LaneItemGauge percent={lanePercent(item.status)} tone={laneTone(item.status)} title={item.status} /></td>
                 <td className="p-3 font-mono text-xs text-slate-400">{item.id}</td>
                 <td className="p-3 whitespace-nowrap">{item.phase}</td>
                 <td className="p-3">{item.area}</td>
@@ -554,7 +545,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
                 <td className="p-3"><StatusDot tone={stageDotTone(frontendStage(item))} label={stageLabel(frontendStage(item))} /></td>
                 <td className="p-3"><span className={`rounded border px-2 py-1 text-xs ${statusTone(item.status)}`}>{item.status}</span></td>
                 <td className="p-3"><StatusDot tone={priorityDotTone(item.priority)} label={`Priority: ${item.priority}`} /></td>
-                <td className="p-3 min-w-[320px] text-xs leading-5 text-slate-300">{item.nextStep}</td>
+                <td className="whitespace-nowrap p-3"><DetailButton buttonLabel="View" title={`Req ${item.id}: ${item.feature}`} body={item.nextStep} /></td>
               </tr>
             ))}
           </tbody>

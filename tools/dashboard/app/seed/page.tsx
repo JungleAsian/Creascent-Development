@@ -11,7 +11,7 @@ const seeds = [
 
 export default function SeedPage({ searchParams }: PageProps) {
   return (
-    <section>
+    <section className="w-full">
       <h1 className="text-2xl font-semibold">Seed Generator</h1>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}

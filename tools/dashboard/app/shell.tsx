@@ -22,6 +22,9 @@ type HeartbeatState = {
   featureLive?: boolean
   featureRun?: { phase?: string; heartbeatAt?: string; heartbeatAgeMs?: number; message?: string }
   featureHeartbeat?: { status?: string }
+  frontendLive?: boolean
+  frontendRun?: { phase?: string; heartbeatAt?: string; heartbeatAgeMs?: number; message?: string }
+  frontendHeartbeat?: { status?: string }
   uiLive?: boolean
   uiRun?: { phase?: string; heartbeatAt?: string; heartbeatAgeMs?: number; message?: string }
   uiHeartbeat?: { status?: string }
@@ -36,6 +39,8 @@ type ProjectMetrics = {
   backendTokens?: number
   frontendCost?: number
   frontendTokens?: number
+  uiCost?: number
+  uiTokens?: number
   allDevelopmentCost?: number
   allDevelopmentTokens?: number
   phase?: { current?: string; done?: number; total?: number; status?: string; message?: string }
@@ -87,6 +92,7 @@ const spanishLabels: Record<string, string> = {
 }
 
 const navIcons: Record<string, ReactNode> = {
+  Workflow: '/lineicons/dashboard-square-1.svg',
   Workspace: '/lineicons/layers-1.svg',
   Development: '/lineicons/build-play.svg',
   Deployment: '/lineicons/deployment-guide.svg',
@@ -133,18 +139,28 @@ const navIcons: Record<string, ReactNode> = {
   Settings: '/lineicons/gear-1.svg'
 }
 
+// Grouped to read top-to-bottom as the development → deployment workflow:
+// Plan → Develop → Verify → Deploy → Monitor, then the supporting groups.
 const sideRailGroups: NavGroup[] = [
   {
-    label: 'Core',
-    items: ['Ready', 'Backlog']
+    label: 'Plan',
+    items: ['Workflow', 'Backlog']
   },
   {
-    label: 'Dev',
-    items: ['Features Development', 'Docmee - UI', 'Enhancements']
+    label: 'Develop',
+    items: ['Build Control', 'Features Development', 'Frontend Build Control', 'Docmee - UI', 'Enhancements']
   },
   {
-    label: 'Ship',
-    items: ['Docmee Deployment', 'Frontend Build Control', 'Build Control', 'Phase Progress', 'Six Gates', 'Pre-deployment', 'Post-Deployment Log', 'Docmee Update', 'Deploy', 'Install Monitor']
+    label: 'Verify',
+    items: ['Ready', 'Phase Progress', 'Six Gates', 'Pre-deployment', 'Post-Deployment Log']
+  },
+  {
+    label: 'Deploy',
+    items: ['Docmee Deployment', 'Deploy', 'Docmee Update']
+  },
+  {
+    label: 'Monitor',
+    items: ['Install Monitor', 'Development Cost', 'Logs', 'Discord Status']
   },
   {
     label: 'AI',
@@ -156,14 +172,16 @@ const sideRailGroups: NavGroup[] = [
   },
   {
     label: 'System',
-    items: ['Logs', 'Discord Status', 'Development Cost', 'Stack Intelligence', 'Webhook Console', 'Seed Generator', 'Settings']
+    items: ['Stack Intelligence', 'Webhook Console', 'Seed Generator', 'Settings']
   }
 ]
 
 const sideRailGroupIcons: Record<string, string> = {
-  Core: '/lineicons/check-circle-1.svg',
-  Dev: '/lineicons/coverage-grid.svg',
-  Ship: '/lineicons/deployment-guide.svg',
+  Plan: '/lineicons/clipboard.svg',
+  Develop: '/lineicons/coverage-grid.svg',
+  Verify: '/lineicons/check-circle-1.svg',
+  Deploy: '/lineicons/deployment-guide.svg',
+  Monitor: '/lineicons/heart.svg',
   AI: '/lineicons/codex-spark.svg',
   Sentinel: '/lineicons/shield-2-check.svg',
   System: '/lineicons/gear-1.svg',
@@ -419,7 +437,8 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
   const currentLabel = nav.find(([, href]) => pathname === href || (href !== '/' && pathname.startsWith(href)))?.[0] ?? 'Overview'
   const readyText = readyCritical > 0 ? `${readyCritical} blockers` : 'Ready'
   const buildHeartbeatText = `Build heartbeat: ${heartbeatLabel(heartbeat?.heartbeat?.status)}${heartbeat?.run?.phase ? `, ${heartbeat.run.phase}` : ''}`
-  const featureHeartbeatText = `Feature heartbeat: ${heartbeatLabel(heartbeat?.featureHeartbeat?.status)}${heartbeat?.featureRun?.phase ? `, ${heartbeat.featureRun.phase}` : ''}`
+  const featureHeartbeatText = `Backend heartbeat: ${heartbeatLabel(heartbeat?.featureHeartbeat?.status)}${heartbeat?.featureRun?.phase ? `, ${heartbeat.featureRun.phase}` : ''}`
+  const frontendHeartbeatText = `Frontend heartbeat: ${heartbeatLabel(heartbeat?.frontendHeartbeat?.status)}${heartbeat?.frontendRun?.phase ? `, ${heartbeat.frontendRun.phase}` : ''}`
   const uiHeartbeatText = `UI heartbeat: ${heartbeatLabel(heartbeat?.uiHeartbeat?.status)}${heartbeat?.uiRun?.phase ? `, ${heartbeat.uiRun.phase}` : ''}`
   const navByLabel = new Map(nav.map((item) => [item[0], item]))
   const groupedNavLabels = new Set(sideRailGroups.flatMap((group) => group.items))
@@ -555,22 +574,37 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
                 <path d="M12 21s-7.2-4.6-9.5-9.1C.6 8.1 2.8 4 6.8 4c2 0 3.7 1 5.2 2.9C13.5 5 15.2 4 17.2 4c4 0 6.2 4.1 4.3 7.9C19.2 16.4 12 21 12 21Z" />
               </svg>
             </span>
-            <span className="hidden sm:inline">{heartbeatLabel(heartbeat?.heartbeat?.status)}</span>
-            {heartbeat?.run?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs md:inline">{heartbeat.run.phase}</span>}
+            <span className="hidden sm:inline">Build</span>
+            <span className="hidden xl:inline">{heartbeatLabel(heartbeat?.heartbeat?.status)}</span>
+            {heartbeat?.run?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs 2xl:inline">{heartbeat.run.phase}</span>}
           </Link>
           <Link
             href="/rev1-coverage"
             onClick={(event) => handleNavClick(event, '/rev1-coverage')}
             className={`heartbeat-pill flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${heartbeatTone(heartbeat?.featureHeartbeat?.status)}`}
-            title={heartbeat?.featureRun?.message ?? 'Feature development heartbeat status'}
+            title={heartbeat?.featureRun?.message ?? 'Backend heartbeat status'}
             aria-label={featureHeartbeatText}
           >
             <span className={`heartbeat-heart ${heartbeat?.featureHeartbeat?.status === 'normal' ? 'heartbeat-heart-live' : ''}`} aria-hidden="true">
               {maskIcon('/lineicons/coverage-grid.svg', 'h-5 w-5')}
             </span>
-            <span className="hidden sm:inline">{language === 'es' ? 'Features' : 'Features'}</span>
-            <span className="hidden md:inline">{heartbeatLabel(heartbeat?.featureHeartbeat?.status)}</span>
-            {heartbeat?.featureRun?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs lg:inline">{heartbeat.featureRun.phase}</span>}
+            <span className="hidden sm:inline">Backend</span>
+            <span className="hidden xl:inline">{heartbeatLabel(heartbeat?.featureHeartbeat?.status)}</span>
+            {heartbeat?.featureRun?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs 2xl:inline">{heartbeat.featureRun.phase}</span>}
+          </Link>
+          <Link
+            href="/frontend-build-control"
+            onClick={(event) => handleNavClick(event, '/frontend-build-control')}
+            className={`heartbeat-pill flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm ${heartbeatTone(heartbeat?.frontendHeartbeat?.status)}`}
+            title={heartbeat?.frontendRun?.message ?? 'Frontend heartbeat status'}
+            aria-label={frontendHeartbeatText}
+          >
+            <span className={`heartbeat-heart ${heartbeat?.frontendHeartbeat?.status === 'normal' ? 'heartbeat-heart-live' : ''}`} aria-hidden="true">
+              {maskIcon('/lineicons/layers-1.svg', 'h-5 w-5')}
+            </span>
+            <span className="hidden sm:inline">Frontend</span>
+            <span className="hidden xl:inline">{heartbeatLabel(heartbeat?.frontendHeartbeat?.status)}</span>
+            {heartbeat?.frontendRun?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs 2xl:inline">{heartbeat.frontendRun.phase}</span>}
           </Link>
           <Link
             href="/docmee-audit"
@@ -583,8 +617,8 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
               {maskIcon('/lineicons/verify-report.svg', 'h-5 w-5')}
             </span>
             <span className="hidden sm:inline">UI</span>
-            <span className="hidden md:inline">{heartbeatLabel(heartbeat?.uiHeartbeat?.status)}</span>
-            {heartbeat?.uiRun?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs lg:inline">{heartbeat.uiRun.phase}</span>}
+            <span className="hidden xl:inline">{heartbeatLabel(heartbeat?.uiHeartbeat?.status)}</span>
+            {heartbeat?.uiRun?.phase && <span className="hidden rounded bg-slate-950/40 px-1.5 py-0.5 text-xs 2xl:inline">{heartbeat.uiRun.phase}</span>}
           </Link>
           <button
             type="button"
@@ -612,7 +646,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
             href="/cost"
             onClick={(event) => handleNavClick(event, '/cost')}
             className="topbar-cost-pill heartbeat-pill flex min-h-11 max-w-full items-center gap-2 rounded-md border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 hover:text-white"
-            title={`Build total includes backend + frontend. Backend ${shortMoney(metrics?.backendCost)} / ${shortNumber(metrics?.backendTokens)} tokens · Frontend ${shortMoney(metrics?.frontendCost)} / ${shortNumber(metrics?.frontendTokens)} tokens · Current phase ${metrics?.phase?.current ?? heartbeat?.run?.phase ?? 'unknown'}`}
+            title={`Build total includes backend + frontend + UI. Backend ${shortMoney(metrics?.backendCost)} / ${shortNumber(metrics?.backendTokens)} tokens · Frontend ${shortMoney(metrics?.frontendCost)} / ${shortNumber(metrics?.frontendTokens)} tokens · UI ${shortMoney(metrics?.uiCost)} / ${shortNumber(metrics?.uiTokens)} tokens · Current phase ${metrics?.phase?.current ?? heartbeat?.run?.phase ?? 'unknown'}`}
           >
             <span className="text-cyan-100">{maskIcon('/lineicons/dollar-circle.svg')}</span>
             <span className="font-semibold text-slate-100">{shortMoney(metrics?.totalCost)}</span>
@@ -701,7 +735,7 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
             </div>
           </div>
         )}
-        <div className="flex gap-1 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
+        <div className="flex gap-1 overflow-x-auto px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
           {groupedSideRail.map((group) => {
             const groupActive = group.items.some(([, href]) => pathname === href || (href !== '/' && pathname.startsWith(href)))
             const isOpen = openMobileGroup?.label === group.label
@@ -713,13 +747,13 @@ export function DashboardShell({ children, nav }: DashboardShellProps) {
                 onClick={() => setMobileGroup(isOpen ? null : group.label)}
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
-                className={`relative grid min-h-14 flex-1 place-items-center rounded-md px-1 py-1 text-center text-[11px] ${isOpen || groupActive ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30' : 'text-slate-300 hover:bg-slate-800'}`}
+                className={`relative grid min-h-14 w-[4.5rem] flex-none place-items-center rounded-md px-1 py-1 text-center text-[11px] ${isOpen || groupActive ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30' : 'text-slate-300 hover:bg-slate-800'}`}
               >
                 {hasBlocker && <span className="absolute right-2 top-1 h-2 w-2 rounded-full bg-red-500" />}
                 <span className={`grid h-8 w-8 place-items-center rounded-md border ${isOpen || groupActive ? 'border-cyan-300/50 bg-cyan-400/15 text-cyan-100' : 'border-slate-700/70 bg-slate-900/70 text-slate-300'}`}>
                   {maskIcon(sideRailGroupIcons[group.label] ?? sideRailGroupIcons.Other, 'h-4 w-4')}
                 </span>
-                <span className="mt-0.5 w-full truncate">{group.label}</span>
+                <span className="mt-0.5 w-full leading-tight">{group.label}</span>
               </button>
             )
           })}

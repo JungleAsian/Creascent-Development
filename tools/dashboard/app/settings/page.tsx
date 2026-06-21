@@ -119,7 +119,7 @@ const groups = [
     rows: [
       ['GATES_STRICT', 'Docmee gate strictness', 'Keep false during early setup.'],
       ['COST_ALERT_THRESHOLD_USD', 'Docmee cost alert threshold', 'Daily local cost alert threshold.'],
-      ['COST_DISPLAY_CURRENCY', 'Docmee cost display currency', 'Choose usd, cad, or both. Default is both.'],
+      ['COST_DISPLAY_CURRENCY', 'Docmee cost display currency', 'Choose usd, cad, or gtq. Default is usd.'],
       ['WEBHOOK_TARGET', 'Docmee local webhook URL', 'Local API webhook route.'],
       ['DEV_LICENSE_SIGNING_KEY', 'Docmee dev signing key', 'Local-only signing secret.']
     ]
@@ -204,6 +204,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const permanentDomainUrl = env.PERMANENT_DOMAIN_URL || (env.VPS_DOMAIN && env.VPS_DOMAIN !== 'yourdomain.com'
     ? /^https?:\/\//i.test(env.VPS_DOMAIN) ? env.VPS_DOMAIN : `https://${env.VPS_DOMAIN}`
     : '')
+  const requestedCostCurrency = (env.COST_DISPLAY_CURRENCY || 'usd').toLowerCase()
+  const costCurrency = requestedCostCurrency === 'cad' || requestedCostCurrency === 'gtq' ? requestedCostCurrency : 'usd'
 
   const tunnelView = readTunnel()
 
@@ -258,22 +260,22 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold">Cost Currency</h2>
-            <p className="mt-1 text-sm text-slate-400">AI providers bill in USD. DevTools can show CAD beside USD using a weekly exchange-rate cache.</p>
+            <p className="mt-1 text-sm text-slate-400">AI providers bill in USD. DevTools can switch the cost pages between USD, CAD, and GTQ using a weekly exchange-rate cache.</p>
           </div>
           <div className="rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-300">
-            1 USD = {exchange.rate.toFixed(4)} CAD
+            1 USD = {exchange.rates.CAD.toFixed(4)} CAD / {exchange.rates.GTQ.toFixed(4)} GTQ
             <span className="ml-2 text-xs text-slate-500">Updated {new Date(exchange.updatedAt).toLocaleDateString()}</span>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          {(['both', 'usd', 'cad'] as const).map((mode) => (
+          {(['usd', 'cad', 'gtq'] as const).map((mode) => (
             <form key={mode} action="/api/settings/env" method="post">
               <input type="hidden" name="action" value="cost-currency" />
               <input type="hidden" name="currency" value={mode} />
-              <button className={((env.COST_DISPLAY_CURRENCY || 'both').toLowerCase() === mode)
+              <button className={costCurrency === mode
                 ? 'rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950'
                 : 'rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800'}>
-                {mode === 'both' ? 'Both USD + CAD' : mode.toUpperCase()}
+                {mode.toUpperCase()}
               </button>
             </form>
           ))}

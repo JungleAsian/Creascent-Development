@@ -1,16 +1,22 @@
 import './globals.css'
 import type { ReactNode } from 'react'
+import type { NavItem } from './shell'
 import { DashboardShell } from './shell'
+import { FormSubmitFeedback } from './form-submit-feedback'
 
-const nav = [
+const nav: NavItem[] = [
+  ['Workflow', '/workflow'],
   ['Ready', '/ready'],
   ['Backlog', '/backlog'],
   ['Features Development', '/rev1-coverage'],
+  ['Docmee - UI', '/docmee-audit'],
   ['Docmee Deployment', '/docmee-deployment'],
   ['Frontend Build Control', '/frontend-build-control'],
   ['Enhancements', '/enhancements'],
-  ['Codex Switch', '/codex-switch'],
-  ['Claude Switch', '/claude-switch'],
+  ['Claude', '/claude-switch'],
+  ['Codex', '/codex-switch'],
+  ['Grok', '/grok'],
+  ['Gemini', '/gemini'],
   ['Build Control', '/build-control'],
   ['Phase Progress', '/phases'],
   ['Six Gates', '/gates'],
@@ -20,6 +26,8 @@ const nav = [
   ['Deploy', '/deploy'],
   ['Install Monitor', '/install-monitor'],
   ['Sentinel', '/sentinel'],
+  ['Healer', '/healer'],
+  ['Beacon', '/beacon'],
   ['Forge', '/forge'],
   ['Guardian', '/guardian'],
   ['Aegis', '/aegis'],
@@ -39,6 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
+        <FormSubmitFeedback />
         <DashboardShell nav={nav}>{children}</DashboardShell>
       </body>
     </html>

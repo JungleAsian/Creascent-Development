@@ -7,7 +7,7 @@
     "dev": "next dev -p 4000 -H 127.0.0.1",
     "dev:mobile": "next dev -p 4000 -H 0.0.0.0",
     "build": "next build",
-    "lint": "next lint"
+    "lint": "tsx ../node_modules/eslint/bin/eslint.js . --config eslint.config.js"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.12",

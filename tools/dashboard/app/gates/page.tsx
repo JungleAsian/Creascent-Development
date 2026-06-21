@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { AutoRefresh } from '../auto-refresh'
 
 const gates = ['Typecheck', 'Lint', 'Unit tests', 'RLS cross-clinic', 'Env', 'DAL']
 const gatesFile = path.resolve(process.cwd(), '..', 'logs', 'six-gates.json')
@@ -21,6 +22,7 @@ export default function GatesPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
+      <AutoRefresh seconds={15} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Six Gates</h1>

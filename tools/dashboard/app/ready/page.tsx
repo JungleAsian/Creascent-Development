@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const readyFile = path.resolve(process.cwd(), '..', 'logs', 'ready.json')
+const startReadinessFile = path.resolve(process.cwd(), '..', 'logs', 'start-readiness.json')
 
 type ReadyCheck = { name: string; status: 'pass' | 'warning' | 'critical'; message: string; fix?: string }
 type ReadyCategory = { id: string; label: string; checks: ReadyCheck[] }
@@ -12,6 +13,7 @@ type ReadyResult = {
   categories?: ReadyCategory[]
 }
 type PageProps = { searchParams?: { message?: string; error?: string } }
+type StartReadiness = { phase?: string; ready?: boolean; createdAt?: string }
 
 function readReady(): ReadyResult {
   if (!fs.existsSync(readyFile)) return { ready: false, summary: { pass: 0, warning: 0, critical: 1 }, categories: [] }
@@ -19,6 +21,15 @@ function readReady(): ReadyResult {
     return JSON.parse(fs.readFileSync(readyFile, 'utf8')) as ReadyResult
   } catch {
     return { ready: false, summary: { pass: 0, warning: 0, critical: 1 }, categories: [] }
+  }
+}
+
+function readStartReadiness(): StartReadiness {
+  if (!fs.existsSync(startReadinessFile)) return {}
+  try {
+    return JSON.parse(fs.readFileSync(startReadinessFile, 'utf8')) as StartReadiness
+  } catch {
+    return {}
   }
 }
 
@@ -30,8 +41,11 @@ function statusClass(status: string) {
 
 export default function ReadyPage({ searchParams }: PageProps) {
   const data = readReady()
+  const startReadiness = readStartReadiness()
   const ready = Boolean(data.ready)
   const summary = data.summary ?? { pass: 0, warning: 0, critical: 1 }
+  const continueHref = startReadiness.phase === 'FRONTEND' ? '/frontend-build-control' : '/build-control'
+  const continueLabel = startReadiness.phase === 'FRONTEND' ? 'Continue to Frontend Build Control' : 'Continue to Backend Build Control'
 
   return (
     <section className="w-full">
@@ -53,11 +67,9 @@ export default function ReadyPage({ searchParams }: PageProps) {
         <p className="mt-2 text-sm text-slate-300">{summary.pass} passed · {summary.warning} warnings · {summary.critical} critical</p>
         {data.createdAt && <p className="mt-1 text-xs text-slate-500">Last checked {new Date(data.createdAt).toLocaleString()}</p>}
         {ready && (
-          <form action="/api/actions" method="post" className="mt-4">
-            <input type="hidden" name="action" value="phase-build-watch" />
-            <input type="hidden" name="from" value="P01" />
-            <button className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white">Start Automated Build</button>
-          </form>
+          <a href={continueHref} className="mt-4 inline-flex min-h-11 items-center rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+            {continueLabel}
+          </a>
         )}
       </div>
 
@@ -93,4 +105,3 @@ export default function ReadyPage({ searchParams }: PageProps) {
     </section>
   )
 }
-
