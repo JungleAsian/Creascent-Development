@@ -35,6 +35,7 @@ import { designAuditCmd } from './commands/design-audit.js'
 import { uiDevelopmentCmd } from './commands/ui-development.js'
 import { designRunCmd } from './commands/design-run.js'
 import { llmCmd } from './commands/llm.js'
+import { devtoolsCmd } from './commands/devtools.js'
 
 program.name('tool').description('Docmee DevTools CLI').version('2.0.0')
 program.addCommand(setupCmd)
@@ -72,4 +73,5 @@ program.addCommand(designAuditCmd)
 program.addCommand(uiDevelopmentCmd)
 program.addCommand(designRunCmd)
 program.addCommand(llmCmd)
+program.addCommand(devtoolsCmd)
 program.parse()
