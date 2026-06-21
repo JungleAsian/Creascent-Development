@@ -16,6 +16,7 @@ import { avatarLabel, relativeTime } from '../format'
 import { assessSafety, safetyRank, type SafetyLevel } from '../safety'
 import { conversationMode } from '../conversationMode'
 import { filterConversations, type ChannelFilter } from '../conversationFilter'
+import { LENSES, lensCounts, matchesLens, type ConversationLens } from '../conversationLens'
 import type { Channel, Conversation, ConversationStatus } from '../types'
 
 // Req 20: row treatment per safety severity — a coloured left rail + a tinted row +
@@ -38,16 +39,6 @@ const SAFETY_ROW: Record<
     labelKey: 'safety.warning.list',
   },
 }
-
-const STATUSES: ConversationStatus[] = [
-  'open',
-  'pending',
-  'assigned',
-  'handoff',
-  'snoozed',
-  'resolved',
-  'archived',
-]
 
 // Req 4 — channel indicator. The avatar carries a small coloured badge in the
 // platform's brand colour (WhatsApp green, Messenger blue, Instagram pink), echoed
@@ -84,7 +75,11 @@ export function ConversationList({
   const userId = useAuthStore((s) => s.user?.id)
   const role = useAuthStore((s) => s.user?.role)
   const members = useTeam()
-  const [status, setStatus] = useState<ConversationStatus | 'all'>('all')
+  // Operational lens (design's Active/Bot/Assigned/Closed tabs) — derived entirely
+  // client-side over the full clinic set so the tab counts are accurate and switching
+  // is instant. Defaults to 'active' (what needs a person now); safety-flagged threads
+  // are exempt from the lens and always surface (see below).
+  const [lens, setLens] = useState<ConversationLens>('active')
   // Req 2 — role-specific default view: a doctor lands on the threads assigned to
   // them (their own escalations), while secretaries/admins see the full queue.
   const [assignee, setAssignee] = useState<AssigneeFilter>(role === 'doctor' ? 'mine' : 'all')
@@ -94,11 +89,13 @@ export function ConversationList({
   const [channel, setChannel] = useState<ChannelFilter>('all')
 
   const query = useQuery({
-    queryKey: ['conversations', status, assignee, userId],
+    queryKey: ['conversations', assignee, userId],
     refetchInterval: 10_000,
     queryFn: () => {
+      // The lens narrows by status client-side, so the only server-side filter we
+      // still apply is the assignee (it can scope a doctor to their own work before
+      // the full set is ever fetched).
       const params = new URLSearchParams()
-      if (status !== 'all') params.set('status', status)
       const assignedTo =
         assignee === 'all' ? null : assignee === 'mine' ? (userId ?? null) : assignee
       if (assignedTo) params.set('assigned_to', assignedTo)
@@ -109,6 +106,8 @@ export function ConversationList({
 
   const allRows = query.data?.conversations ?? []
   const filtersActive = search.trim() !== '' || channel !== 'all'
+  // Tab counts over the full loaded set (stable as the user types a search).
+  const counts = useMemo(() => lensCounts(allRows), [allRows])
 
   // Apply the search/channel filter, then float safety-critical / urgent threads to
   // the top (stable within each severity band, so recency order is preserved
@@ -121,8 +120,14 @@ export function ConversationList({
   }, [allRows, search, channel])
 
   // Split into the safety queue and the rest so each gets its own group header.
+  // Safety-flagged threads ALWAYS surface, regardless of the active lens — a tab must
+  // never be able to hide an emergency/urgent thread (Req 20). The lens only narrows
+  // the ordinary queue below the safety group.
   const safetyRows = conversations.filter((c) => assessSafety(c.tags).level)
-  const normalRows = conversations.filter((c) => !assessSafety(c.tags).level)
+  const normalRows = conversations.filter(
+    (c) => !assessSafety(c.tags).level && matchesLens(c, lens),
+  )
+  const visibleCount = safetyRows.length + normalRows.length
 
   function clearFilters() {
     setSearch('')
@@ -136,7 +141,7 @@ export function ConversationList({
           <h2 className="text-base font-bold">{t('conv.title')}</h2>
           {!query.isLoading && (
             <span className="text-[11px] text-gray-400">
-              {t('conv.countOpen', { n: String(conversations.length) })}
+              {t('conv.countOpen', { n: String(visibleCount) })}
               {safetyRows.length > 0 && (
                 <>
                   {' · '}
@@ -177,15 +182,17 @@ export function ConversationList({
           ))}
         </div>
 
-        {/* Status + assignee row. */}
-        <div className="flex flex-wrap gap-1.5">
-          <FilterChip active={status === 'all'} onClick={() => setStatus('all')}>
-            {t('conv.filter.all')}
-          </FilterChip>
-          {STATUSES.map((s) => (
-            <FilterChip key={s} active={status === s} onClick={() => setStatus(s)}>
-              {t(`conv.status.${s}` as const)}
-            </FilterChip>
+        {/* Operational lens tabs (Active / Bot / Assigned / Closed) with live counts —
+            the secretary's primary triage control, narrowing the queue client-side. */}
+        <div role="tablist" aria-label={t('conv.lens.label')} className="flex flex-wrap gap-1.5">
+          {LENSES.map((l) => (
+            <LensTab
+              key={l}
+              active={lens === l}
+              count={counts[l]}
+              onClick={() => setLens(l)}
+              label={t(`conv.lens.${l}` as const)}
+            />
           ))}
         </div>
         <label className="mt-2 flex items-center gap-1.5 text-xs">
@@ -239,7 +246,7 @@ export function ConversationList({
               </button>
             </div>
           )
-        ) : conversations.length === 0 ? (
+        ) : visibleCount === 0 ? (
           filtersActive ? (
             <div className="flex flex-col items-center gap-2 p-6 text-center">
               <span aria-hidden className="grid h-12 w-12 place-items-center rounded-xl bg-gray-100 text-xl text-gray-400 dark:bg-gray-800">
@@ -253,6 +260,15 @@ export function ConversationList({
               >
                 ✕ {t('conv.clearFilters')}
               </button>
+            </div>
+          ) : allRows.length > 0 ? (
+            // The clinic has threads, just none under the active lens — point the user
+            // back to a populated tab rather than implying the inbox is empty.
+            <div className="flex flex-col items-center gap-2 p-6 text-center">
+              <span aria-hidden className="grid h-12 w-12 place-items-center rounded-xl bg-gray-100 text-xl text-gray-400 dark:bg-gray-800">
+                📂
+              </span>
+              <p className="text-sm font-semibold">{t('conv.lens.empty')}</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 p-6 text-center">
@@ -439,6 +455,45 @@ function ListSkeleton() {
         </div>
       ))}
     </div>
+  )
+}
+
+// Operational lens tab — label + a live count badge. The active tab is filled; the
+// count badge inverts on the active tab so it stays legible.
+function LensTab({
+  active,
+  count,
+  label,
+  onClick,
+}: {
+  active: boolean
+  count: number
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition ${
+        active
+          ? 'bg-teal-600 text-white'
+          : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+      }`}
+    >
+      {label}
+      <span
+        className={`min-w-[1.1rem] rounded-full px-1 text-center text-[10px] font-bold tabular-nums ${
+          active
+            ? 'bg-white/25 text-white'
+            : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+        }`}
+      >
+        {count}
+      </span>
+    </button>
   )
 }
 
