@@ -17,7 +17,6 @@ import { ClaudeDesignButton } from './claude-design-button'
 import { DetailButton } from '../detail-button'
 import { MockupFlow } from './mockup-flow'
 import { MockupLibrary } from './mockup-library'
-import { WorkflowStages } from '../workflow-stages'
 import { StatusDot } from '../status-dot'
 import { AutoRefresh } from '../auto-refresh'
 import { LaneFlowStrip } from '../lane-flow-strip'
@@ -312,9 +311,17 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   const backendProgress = percent(backendComplete, features.length)
   const frontendProgress = percent(frontendComplete, features.length)
   return (
-    <section>
+    <section className="w-full">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Docmee UI Development</h1>
+          <p className="mt-2 text-sm text-slate-400">UI development lane for the 17-screen Docmee Rev 1 design map: run the start check, launch automation, and track progress from the UI queue.</p>
+        </div>
+        <Link href={sourceUrl} target="_blank" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open Notion Source</Link>
+      </div>
+
       <AutoRefresh seconds={15} />
-      <div className="mb-3">
+      <div className="mt-3">
         <LaneFlowStrip
           label="Screen workflow"
           stages={[
@@ -326,77 +333,14 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
           ]}
         />
       </div>
-      <WorkflowStages active="develop" />
-      {searchParams?.message && <p className="mb-3 rounded-md border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{searchParams.message}</p>}
-      {searchParams?.error && <p className="mb-3 rounded-md border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">{searchParams.error}</p>}
-      {uiDevelopmentStale && <p className="mb-3 rounded-md border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">⚠ The UI development watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
+      {searchParams?.message && <p className="mt-3 rounded-md border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{searchParams.message}</p>}
+      {searchParams?.error && <p className="mt-3 rounded-md border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">{searchParams.error}</p>}
+      {uiDevelopmentStale && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">⚠ The UI development watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
 
-      <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+      <div className="mt-4 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-cyan-200/80">Development lane</p>
-            <h1 className="mt-1 text-2xl font-semibold">Docmee UI Development</h1>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
-              UI development lane for the 17-screen Docmee Rev 1 design map. This page now works like the backend and frontend lanes: run the start check, launch automation, and track progress from the UI queue.
-            </p>
-          </div>
-          <div className="responsive-actions">
-            <Link href={sourceUrl} target="_blank" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-center text-sm text-slate-200 hover:bg-slate-800">
-              Open Notion Source
-            </Link>
-            <form action="/api/actions" method="post" className="flex min-w-0 flex-col gap-2 sm:flex-row">
-              <input type="hidden" name="action" value="set-development-source" />
-              <input type="hidden" name="lane" value="ui" />
-              <input type="hidden" name="redirectTo" value="/docmee-audit" />
-              <input name="sourceUrl" defaultValue={sourceUrl} className="min-h-11 min-w-0 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 sm:w-72" aria-label="UI Notion source URL" />
-              <button className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Set Notion Source</button>
-            </form>
-            <Link href="/rev1-coverage" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-center text-sm text-slate-200 hover:bg-slate-800">
-              Feature Records
-            </Link>
-            <Link href="/docmee-deployment-frontend" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-center text-sm text-cyan-100 hover:bg-cyan-950/40">
-              Frontend Records
-            </Link>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          <div className="rounded-md border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">Designed features</p>
-            <p className="mt-2 text-3xl font-semibold">{features.length}</p>
-          </div>
-          <div className="rounded-md border border-emerald-900 bg-emerald-950/20 p-4">
-            <p className="text-xs text-emerald-200/70">Backend complete</p>
-            <p className="mt-2 text-3xl font-semibold text-emerald-200">{backendComplete}/{features.length}</p>
-            <p className="mt-1 text-xs text-emerald-100/70">{backendProgress}% recorded</p>
-          </div>
-          <div className="rounded-md border border-cyan-900 bg-cyan-950/20 p-4">
-            <p className="text-xs text-cyan-200/70">Frontend accepted</p>
-            <p className="mt-2 text-3xl font-semibold text-cyan-100">{frontendComplete}/{features.length}</p>
-            <p className="mt-1 text-xs text-cyan-100/70">{frontendOpen} still need acceptance if nonzero</p>
-          </div>
-          <div className="rounded-md border border-amber-900 bg-amber-950/20 p-4">
-            <p className="text-xs text-amber-200/70">UI screens</p>
-            <p className="mt-2 text-3xl font-semibold text-amber-200">{uiDevelopmentRecords.length}</p>
-            <p className="mt-1 text-xs text-amber-100/70">{uiDevelopmentBuildable.length} to build · {uiDevelopmentNeedsReview.length} in review</p>
-          </div>
-        </div>
-
-        {(backendOpen > 0 || frontendOpen > 0) && (
-          <div className="mt-4 rounded-md border border-amber-800 bg-amber-950/20 p-4">
-            <h2 className="text-sm font-semibold text-amber-100">Open UI development work detected</h2>
-            <p className="mt-2 text-sm leading-6 text-amber-100/80">
-              Backend open: {backendOpen}. Frontend open: {frontendOpen}. UI screens to build: {uiDevelopmentBuildable.length} ({uiDevelopmentNeedsReview.length} built and awaiting review). Use the UI queue above for build work and the feature matrix below for traceability.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-cyan-200/80">Automated UI development</p>
-            <h2 className="mt-1 text-lg font-semibold text-cyan-100">UI Development Control</h2>
+            <h2 className="text-lg font-semibold text-cyan-100">UI Development Control</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-100/80">
               Run the same safe-start pattern as backend and frontend automation. The runner creates the UI development prompt from the 17-screen map, works through the full open queue, and keeps the DevTool heartbeat updated.
             </p>
@@ -416,20 +360,20 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             <input type="hidden" name="phase" value={uiDevelopmentPhase} />
             <input type="hidden" name="workflow" value="ui-development" />
             <input type="hidden" name="redirectTo" value="/docmee-audit" />
-            <button className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Run Start Check</button>
+            <button className="rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Run Start Check</button>
           </form>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="phase-build-watch" />
             <input type="hidden" name="from" value={uiDevelopmentPhase} />
             <input type="hidden" name="workflow" value="ui-development" />
-            <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}>Start UI Development</button>
+            <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}>Start UI Development</button>
           </form>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="phase-build-stop" />
-            <button disabled={!uiDevelopmentLive} className="min-h-11 rounded-md border border-red-800 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Stop</button>
+            <button disabled={!uiDevelopmentLive} className="rounded-md border border-red-800 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Stop</button>
           </form>
           <details className="relative">
-            <summary className="grid min-h-11 cursor-pointer list-none place-items-center rounded-md bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-500">Build All Screens →</summary>
+            <summary className="grid cursor-pointer list-none place-items-center rounded-md bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-500">Build All Screens →</summary>
             <form action="/api/actions" method="post" className="absolute left-0 z-20 mt-1 w-72 rounded-md border border-cyan-800 bg-slate-900 p-3 shadow-lg">
               <input type="hidden" name="action" value="ui-build-all" />
               <p className="text-xs leading-5 text-slate-300">Sequentially build all <span className="font-semibold text-cyan-200">{uiDevelopmentRecords.filter((row) => row.status !== 'complete').length}</span> not-yet-approved screen(s) with Claude Code, one after another. Each lands in <span className="font-semibold text-cyan-200">review</span> for you to approve later. Runs unattended and uses Claude credits.</p>
@@ -439,26 +383,35 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
           <ClaudeDesignButton prompt={uiDevelopmentPrompt(uiDevelopmentRecords)} label="Manual Claude Design" />
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="app-launch" />
-            <button className="min-h-11 rounded-md border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-950/40">Launch App Locally</button>
+            <button className="rounded-md border border-emerald-700 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-950/40">Launch App Locally</button>
           </form>
           <a
             href={`${reviewUrl}/inbox`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-11 items-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
           >
             Review screens in app →
           </a>
           <MockupLibrary files={savedMockups()} />
+          <form action="/api/actions" method="post" className="flex min-w-0 flex-col gap-2 sm:flex-row">
+            <input type="hidden" name="action" value="set-development-source" />
+            <input type="hidden" name="lane" value="ui" />
+            <input type="hidden" name="redirectTo" value="/docmee-audit" />
+            <input name="sourceUrl" defaultValue={sourceUrl} className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 sm:w-72" aria-label="UI Notion source URL" />
+            <button className="rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Set Notion Source</button>
+          </form>
+          <Link href="/rev1-coverage" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Feature Records</Link>
+          <Link href="/docmee-deployment-frontend" className="rounded-md border border-cyan-700 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950/40">Frontend Records</Link>
           <details className="relative">
-            <summary className="grid min-h-11 cursor-pointer list-none place-items-center rounded-md border border-red-800 px-4 py-2 text-sm text-red-200 hover:bg-red-950/40">Reset design process…</summary>
+            <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-red-800 px-3 py-2 text-sm text-red-200 hover:bg-red-950/40">Reset design process…</summary>
             <form action="/api/actions" method="post" className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-red-800 bg-slate-900 p-3 shadow-lg">
               <input type="hidden" name="action" value="ui-reset-screens" />
               <p className="text-xs leading-5 text-slate-300">Reset all {uiDevelopmentRecords.length} screens back to <span className="font-semibold text-amber-200">planned</span>? This restarts the whole design process from Start UI Development.</p>
               <button className="mt-2 w-full rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500">Yes, reset all to planned</button>
             </form>
           </details>
-          <Link href="/deploy" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm text-sky-300 hover:bg-slate-800">Continue to Deploy →</Link>
+          <Link href="/deploy" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Continue to Deploy →</Link>
         </div>
         {uiDevelopmentBuildable.length === 0 && uiDevelopmentNeedsReview.length > 0 && (
           <div className="mt-3 rounded-md border border-cyan-800 bg-cyan-950/30 p-3 text-sm text-cyan-100">
@@ -511,10 +464,49 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
         )}
       </div>
 
-      <div className="mt-5 rounded-md border border-slate-800 bg-slate-900 p-4">
-        <div>
-          <h2 className="text-sm font-semibold">17-Screen UI Development Queue</h2>
-          <p className="mt-2 text-sm text-slate-400">Loaded from the UI/UX design map. Each row is a buildable UI screen covering one or more Docmee Rev 1 features.</p>
+      <details className="group mt-5 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-100 marker:content-none">
+          <span className="text-slate-500 group-open:hidden">▸ </span><span className="hidden text-slate-500 group-open:inline">▾ </span>Backend &amp; frontend overview
+          <span className="ml-2 text-xs font-normal text-slate-500">{features.length} features · {uiDevelopmentRecords.length} UI screens</span>
+        </summary>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border border-slate-800 bg-slate-950/60 p-4">
+            <p className="text-xs text-slate-500">Designed features</p>
+            <p className="mt-2 text-3xl font-semibold">{features.length}</p>
+          </div>
+          <div className="rounded-md border border-emerald-900 bg-emerald-950/20 p-4">
+            <p className="text-xs text-emerald-200/70">Backend complete</p>
+            <p className="mt-2 text-3xl font-semibold text-emerald-200">{backendComplete}/{features.length}</p>
+            <p className="mt-1 text-xs text-emerald-100/70">{backendProgress}% recorded</p>
+          </div>
+          <div className="rounded-md border border-cyan-900 bg-cyan-950/20 p-4">
+            <p className="text-xs text-cyan-200/70">Frontend accepted</p>
+            <p className="mt-2 text-3xl font-semibold text-cyan-100">{frontendComplete}/{features.length}</p>
+            <p className="mt-1 text-xs text-cyan-100/70">{frontendOpen} still need acceptance if nonzero</p>
+          </div>
+          <div className="rounded-md border border-amber-900 bg-amber-950/20 p-4">
+            <p className="text-xs text-amber-200/70">UI screens</p>
+            <p className="mt-2 text-3xl font-semibold text-amber-200">{uiDevelopmentRecords.length}</p>
+            <p className="mt-1 text-xs text-amber-100/70">{uiDevelopmentBuildable.length} to build · {uiDevelopmentNeedsReview.length} in review</p>
+          </div>
+        </div>
+        {(backendOpen > 0 || frontendOpen > 0) && (
+          <div className="mt-4 rounded-md border border-amber-800 bg-amber-950/20 p-4">
+            <h2 className="text-sm font-semibold text-amber-100">Open UI development work detected</h2>
+            <p className="mt-2 text-sm leading-6 text-amber-100/80">
+              Backend open: {backendOpen}. Frontend open: {frontendOpen}. UI screens to build: {uiDevelopmentBuildable.length} ({uiDevelopmentNeedsReview.length} built and awaiting review). Use the UI queue for build work and the feature matrix for traceability.
+            </p>
+          </div>
+        )}
+      </details>
+
+      <details className="group mt-5 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-100 marker:content-none">
+          <span className="text-slate-500 group-open:hidden">▸ </span><span className="hidden text-slate-500 group-open:inline">▾ </span>17-Screen UI Development Queue
+          <span className="ml-2 text-xs font-normal text-slate-500">{uiDevelopmentRecords.length} screens</span>
+        </summary>
+        <div className="mt-4">
+          <p className="text-sm text-slate-400">Loaded from the UI/UX design map. Each row is a buildable UI screen covering one or more Docmee Rev 1 features.</p>
           <details className="group mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-2 text-[11px]">
             <summary className="cursor-pointer list-none font-semibold uppercase tracking-wide text-slate-400 marker:content-none">
               <span className="group-open:hidden">▸ </span><span className="hidden group-open:inline">▾ </span>Development stages
@@ -617,10 +609,9 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             </tbody>
           </table>
         </div>
-      </div>
+      </details>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="space-y-5">
+      <div className="mt-5 space-y-5">
           <details className="group rounded-md border border-slate-800 bg-slate-900 p-4">
             <summary className="cursor-pointer list-none text-sm font-semibold text-slate-100 marker:content-none">
               <span className="text-slate-500 group-open:hidden">▸ </span><span className="hidden text-slate-500 group-open:inline">▾ </span>UI Development Criteria
@@ -659,14 +650,12 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             </div>
           </details>
 
-          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">Feature Traceability Matrix</h2>
-                <p className="mt-2 text-sm text-slate-400">Every feature remains traceable while UI work is driven by the 17-screen queue.</p>
-              </div>
-              <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{features.length} rows</span>
-            </div>
+          <details className="group rounded-md border border-slate-800 bg-slate-900 p-4">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-slate-100 marker:content-none">
+              <span className="text-slate-500 group-open:hidden">▸ </span><span className="hidden text-slate-500 group-open:inline">▾ </span>Feature Traceability Matrix
+              <span className="ml-2 text-xs font-normal text-slate-500">{features.length} rows</span>
+            </summary>
+            <p className="mt-2 text-sm text-slate-400">Every feature remains traceable while UI work is driven by the 17-screen queue.</p>
             <div className="mt-4 overflow-x-auto rounded-md border border-slate-800">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="bg-slate-950 text-slate-300">
@@ -706,43 +695,47 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                   })}
                 </tbody>
               </table>
-          </div>
-        </div>
-        {source && <p className={source.status === 'error' ? 'mt-3 text-xs text-red-300' : 'mt-3 text-xs text-slate-500'}>{source.message ?? 'Notion source linked.'}{source.syncedAt ? ` Synced ${new Date(source.syncedAt).toLocaleString()}.` : ''}</p>}
-      </div>
-
-        <aside className="space-y-5">
-          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <h2 className="text-sm font-semibold">Source Records</h2>
-            <div className="mt-3 space-y-2">
-              {sourceLinks.map(([label, href]) => (
-                <a key={href} href={href} target="_blank" rel="noreferrer" className="block rounded border border-slate-800 px-3 py-2 text-sm text-cyan-100 hover:bg-slate-800">
-                  {label}
-                </a>
-              ))}
             </div>
-          </div>
+            {source && <p className={source.status === 'error' ? 'mt-3 text-xs text-red-300' : 'mt-3 text-xs text-slate-500'}>{source.message ?? 'Notion source linked.'}{source.syncedAt ? ` Synced ${new Date(source.syncedAt).toLocaleString()}.` : ''}</p>}
+          </details>
 
-          <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-            <h2 className="text-sm font-semibold">UI Summary</h2>
-            <div className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Backend open</span><span>{backendOpen}</span></div>
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Backend progress</span><span className="text-emerald-200">{backendProgress}%</span></div>
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Frontend open</span><span>{frontendOpen}</span></div>
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Frontend progress</span><span className="text-cyan-200">{frontendProgress}%</span></div>
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>UI to build</span><span>{uiDevelopmentBuildable.length}</span></div>
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>UI in review</span><span className="text-cyan-200">{uiDevelopmentNeedsReview.length}</span></div>
-              <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>UI progress</span><span className="text-amber-200">{uiDevelopmentProgress}%</span></div>
+          <details className="group rounded-md border border-slate-800 bg-slate-900 p-4">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-slate-100 marker:content-none">
+              <span className="text-slate-500 group-open:hidden">▸ </span><span className="hidden text-slate-500 group-open:inline">▾ </span>Source records, UI summary &amp; decision rule
+            </summary>
+            <div className="mt-4 grid gap-5 lg:grid-cols-2">
+              <div className="rounded-md border border-slate-800 bg-slate-950/50 p-4">
+                <h2 className="text-sm font-semibold">Source Records</h2>
+                <div className="mt-3 space-y-2">
+                  {sourceLinks.map(([label, href]) => (
+                    <a key={href} href={href} target="_blank" rel="noreferrer" className="block rounded border border-slate-800 px-3 py-2 text-sm text-cyan-100 hover:bg-slate-800">
+                      {label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-md border border-slate-800 bg-slate-950/50 p-4">
+                <h2 className="text-sm font-semibold">UI Summary</h2>
+                <div className="mt-3 space-y-2 text-sm">
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Backend open</span><span>{backendOpen}</span></div>
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Backend progress</span><span className="text-emerald-200">{backendProgress}%</span></div>
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Frontend open</span><span>{frontendOpen}</span></div>
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>Frontend progress</span><span className="text-cyan-200">{frontendProgress}%</span></div>
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>UI to build</span><span>{uiDevelopmentBuildable.length}</span></div>
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>UI in review</span><span className="text-cyan-200">{uiDevelopmentNeedsReview.length}</span></div>
+                  <div className="flex justify-between rounded border border-slate-800 px-3 py-2"><span>UI progress</span><span className="text-amber-200">{uiDevelopmentProgress}%</span></div>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-amber-900/70 bg-amber-950/20 p-4 lg:col-span-2">
+                <h2 className="text-sm font-semibold text-amber-100">Decision Rule</h2>
+                <p className="mt-2 text-sm leading-6 text-amber-100/80">
+                  Keep backend status unchanged unless the issue is truly API, data, worker, or integration behavior. Missing screens, weak UX, mobile gaps, untranslated labels, or unclear states belong in UI Development and should go through the 17-screen design map first.
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="rounded-md border border-amber-900/70 bg-amber-950/20 p-4">
-            <h2 className="text-sm font-semibold text-amber-100">Decision Rule</h2>
-            <p className="mt-2 text-sm leading-6 text-amber-100/80">
-              Keep backend status unchanged unless the issue is truly API, data, worker, or integration behavior. Missing screens, weak UX, mobile gaps, untranslated labels, or unclear states belong in UI Development and should go through the 17-screen design map first.
-            </p>
-          </div>
-        </aside>
+          </details>
       </div>
     </section>
   )

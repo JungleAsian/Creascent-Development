@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { BuildProgressGauge } from '../build-progress-gauge'
 import { frontendStage, priorityDot, readDeploymentFeatures, stageDot, stageLabel, type DeploymentFeature } from '../docmee-deployment/data'
 import { StatusDot } from '../status-dot'
-import { WorkflowStages } from '../workflow-stages'
 import { AutoRefresh } from '../auto-refresh'
 import { readJson } from '../lib/read-json'
 import { runLiveness, isProcessAlive } from '../lib/run-live'
@@ -50,36 +49,33 @@ export default function FrontendBuildControlPage({ searchParams }: PageProps) {
 
   return (
     <section className="w-full">
-      <AutoRefresh seconds={15} />
-      <LaneFlowStrip
-        label="Workflow"
-        stages={[
-          { label: 'Start check', tone: 'cyan' },
-          { label: 'Frontend dev · Claude', tone: 'amber' },
-          { label: 'Local UI verify', tone: 'sky' },
-          { label: 'Deploy', tone: 'emerald' }
-        ]}
-      />
-      <WorkflowStages active="develop" />
-      <div className="flex flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
           <p className="text-xs uppercase tracking-wide text-cyan-200/80">Frontend lane</p>
-          <h1 className="mt-1 text-2xl font-semibold">Frontend Build Control</h1>
-          <details className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
-            <summary className="cursor-pointer text-slate-400">About this lane</summary>
-            <p className="mt-2">
-              Dedicated control view for Docmee frontend work. Use this to track visual/product acceptance, UI build progress, mobile behavior, language labels, and final frontend readiness before VPS deployment.
-            </p>
-          </details>
+          <h1 className="text-2xl font-semibold">Frontend Build Control</h1>
+          <p className="mt-2 text-sm text-slate-400">Track frontend acceptance, UI build progress, and final readiness before deployment.</p>
         </div>
         <div className="responsive-actions">
-          <Link href="/rev1-coverage" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
+          <Link href="/rev1-coverage" className="min-h-11 rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">
             Features Development
           </Link>
-          <Link href="/docmee-deployment-frontend" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">
+          <Link href="/docmee-deployment-frontend" className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">
             Frontend Deployment
           </Link>
         </div>
+      </div>
+
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <LaneFlowStrip
+          label="Workflow"
+          stages={[
+            { label: 'Start check', tone: 'cyan' },
+            { label: 'Frontend dev · Claude', tone: 'amber' },
+            { label: 'Local UI verify', tone: 'sky' },
+            { label: 'Deploy', tone: 'emerald' }
+          ]}
+        />
       </div>
 
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
@@ -139,6 +135,31 @@ export default function FrontendBuildControlPage({ searchParams }: PageProps) {
           </div>
         </div>
 
+        <div className="mt-4 rounded border border-slate-800 bg-slate-950/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <BuildProgressGauge percent={percent} state={percent === 100 ? 'complete' : 'halted'} label={percent === 100 ? 'Complete' : 'Needs audit'} message={`${accepted.length}/${features.length} accepted · ${needsAudit.length} need audit`} size="md" />
+            <div className="text-right text-xs text-slate-500">
+              <div>{pending.length} pending</div>
+              <div>{featureRun.heartbeatAt ? `Heartbeat ${new Date(featureRun.heartbeatAt).toLocaleTimeString()}` : 'No heartbeat yet'}</div>
+            </div>
+          </div>
+          <div className="mt-3 h-3 rounded bg-slate-800">
+            <div className="h-3 rounded bg-cyan-500" style={{ width: `${percent}%` }} />
+          </div>
+          <div className="responsive-actions mt-3">
+            <Link href="/rev1-coverage" className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+              Open Feature Queue
+            </Link>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="app-launch" />
+              <button className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Launch App Locally</button>
+            </form>
+            <Link href="/deploy" className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">
+              Continue to Deploy →
+            </Link>
+          </div>
+        </div>
+
         {(startReadiness.steps ?? []).length > 0 && startCheckCurrent && (
           <div className="mt-4 grid gap-2">
             {startReadiness.steps?.map((step) => (
@@ -154,59 +175,28 @@ export default function FrontendBuildControlPage({ searchParams }: PageProps) {
         )}
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-        <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="text-sm text-slate-400">Frontend build progress</div>
-              <h2 className="mt-1 text-xl font-semibold">{accepted.length}/{features.length} accepted</h2>
-              <p className="mt-2 text-sm text-slate-400">{needsAudit.length} frontend records need audit · {pending.length} pending</p>
-            </div>
-            <BuildProgressGauge percent={percent} state={percent === 100 ? 'complete' : 'halted'} label={percent === 100 ? 'Complete' : 'Needs audit'} message="Frontend acceptance progress" size="lg" />
-          </div>
-          <div className="mt-4 h-3 rounded bg-slate-800">
-            <div className="h-3 rounded bg-cyan-500" style={{ width: `${percent}%` }} />
-          </div>
-          <div className="responsive-actions mt-5">
-            <form action="/api/actions" method="post">
-              <input type="hidden" name="action" value="phase-build-watch" />
-              <input type="hidden" name="from" value="FRONTEND" />
-              <input type="hidden" name="workflow" value="frontend-development" />
-              <button disabled={!startCheckPassed || live || needsAudit.length === 0} className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Start Frontend Development</button>
-            </form>
-            <Link href="/rev1-coverage" className="min-h-11 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
-              Open Feature Queue
-            </Link>
-            <form action="/api/actions" method="post">
-              <input type="hidden" name="action" value="app-launch" />
-              <button className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Launch App Locally</button>
-            </form>
-            <Link href="/deploy" className="min-h-11 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">
-              Continue to Deploy →
-            </Link>
-          </div>
+      <details className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-200 hover:text-white">Frontend workflow &amp; lane notes <span className="ml-1 text-xs font-normal text-slate-500">(show details)</span></summary>
+        <div className="mt-4 space-y-3 text-sm text-slate-300">
+          <p>1. Run Start Check.</p>
+          <p>2. Open Feature Queue and review records marked Needs audit.</p>
+          <p>3. Launch the local app and verify each screen or workflow.</p>
+          <p>4. Confirm mobile layout, labels, and visual completion.</p>
+          <p>5. Deploy only after frontend acceptance is recorded.</p>
         </div>
-
-        <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
-          <h2 className="text-sm font-semibold">Frontend workflow</h2>
-          <div className="mt-4 space-y-3 text-sm text-slate-300">
-            <p>1. Run Start Check.</p>
-            <p>2. Open Feature Queue and review records marked Needs audit.</p>
-            <p>3. Launch the local app and verify each screen or workflow.</p>
-            <p>4. Confirm mobile layout, labels, and visual completion.</p>
-            <p>5. Deploy only after frontend acceptance is recorded.</p>
-          </div>
-          <div className="mt-5 rounded border border-amber-900/70 bg-amber-950/20 p-3 text-sm text-amber-100/80">
-            Frontend Build Control is separate from backend Build Control. Backend can be complete while frontend still needs product acceptance.
-          </div>
+        <p className="mt-4 max-w-4xl text-sm leading-6 text-slate-400">
+          Dedicated control view for Docmee frontend work. Use this to track visual/product acceptance, UI build progress, mobile behavior, language labels, and final frontend readiness before VPS deployment.
+        </p>
+        <div className="mt-4 rounded border border-amber-900/70 bg-amber-950/20 p-3 text-sm text-amber-100/80">
+          Frontend Build Control is separate from backend Build Control. Backend can be complete while frontend still needs product acceptance.
         </div>
-      </div>
+      </details>
 
-      <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <details className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">Frontend records by area</h2>
           <BuildProgressGauge percent={percent} state={percent === 100 ? 'complete' : 'halted'} label={`${percent}% accepted`} message={`${needsAudit.length} need audit`} />
-        </div>
+        </summary>
         <div className="mt-4 space-y-4">
           {Object.entries(areaGroups).map(([area, areaRows]) => {
             const areaAccepted = areaRows.filter((item) => frontendStage(item) === 'complete').length
@@ -242,7 +232,7 @@ export default function FrontendBuildControlPage({ searchParams }: PageProps) {
             )
           })}
         </div>
-      </div>
+      </details>
     </section>
   )
 }

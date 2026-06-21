@@ -4,7 +4,6 @@ import { BuildProgressGauge } from '../build-progress-gauge'
 import { CompactSection, SimpleStatusCard } from '../compact-ui'
 import { StatusDot } from '../status-dot'
 import { DetailButton } from '../detail-button'
-import { WorkflowStages } from '../workflow-stages'
 import { AutoRefresh } from '../auto-refresh'
 import { LaneFlowStrip } from '../lane-flow-strip'
 import { LaneItemGauge } from '../lane-item-gauge'
@@ -254,19 +253,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
     : `Starts the backend watcher from ${nextPhase} and connects it to the heartbeat.`
 
   return (
-    <section>
-      <AutoRefresh seconds={15} />
-      <LaneFlowStrip
-        label="Workflow"
-        stages={[
-          { label: 'Start check', tone: 'cyan' },
-          { label: 'Feature automation · Claude', tone: 'amber' },
-          { label: 'Local app check', tone: 'sky' },
-          { label: 'Deploy to VPS', tone: 'emerald' }
-        ]}
-      />
-      <WorkflowStages active="develop" />
-      {staleRun && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">⚠ The feature watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
+    <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Features Development</h1>
@@ -279,17 +266,31 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
             <input type="hidden" name="action" value="start-readiness" />
             <input type="hidden" name="phase" value={nextPhase} />
             <input type="hidden" name="workflow" value="features-development" />
-            <button className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Run Start Check</button>
+            <button className="min-h-11 rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Run Start Check</button>
           </form>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="phase-build-watch" />
             <input type="hidden" name="from" value={automationFrom} />
             <input type="hidden" name="workflow" value={automationWorkflow} />
-            <button disabled={!automationStartPassed || live || automationComplete || readyCritical > 0} title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !automationStartPassed ? `Run the start check for ${nextPhase} first` : live ? 'Feature automation is already running' : automationComplete ? 'All features are complete' : automationDescription} className="min-h-11 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">{automationButtonLabel}</button>
+            <button disabled={!automationStartPassed || live || automationComplete || readyCritical > 0} title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !automationStartPassed ? `Run the start check for ${nextPhase} first` : live ? 'Feature automation is already running' : automationComplete ? 'All features are complete' : automationDescription} className="min-h-11 rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">{automationButtonLabel}</button>
           </form>
         </div>
       </div>
 
+      <AutoRefresh seconds={15} />
+      <div className="mt-3">
+        <LaneFlowStrip
+          label="Workflow"
+          stages={[
+            { label: 'Start check', tone: 'cyan' },
+            { label: 'Feature automation · Claude', tone: 'amber' },
+            { label: 'Local app check', tone: 'sky' },
+            { label: 'Deploy to VPS', tone: 'emerald' }
+          ]}
+        />
+      </div>
+
+      {staleRun && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">⚠ The feature watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
       {searchParams?.message && <p className="mt-3 rounded-md border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 rounded-md border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">{searchParams.error}</p>}
 
@@ -297,47 +298,10 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
         <div className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-cyan-100/80">{frontendNeedsAudit} frontend item(s) need development/acceptance. Frontend development now runs from its own page.</p>
-            <a href="/frontend-build-control" className="min-h-11 rounded-md border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Open Frontend Build Control →</a>
+            <a href="/frontend-build-control" className="min-h-11 rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Open Frontend Build Control →</a>
           </div>
         </div>
       )}
-
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
-        <SimpleStatusCard label="Features" value={features.length} />
-        <SimpleStatusCard label="Missing" value={missing} tone="red" />
-        <SimpleStatusCard label="Partial" value={partial} tone="amber" />
-        <SimpleStatusCard label="Complete" value={complete} tone="emerald" />
-      </div>
-
-      <details className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
-        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-cyan-100">Development Stages</h2>
-            <p className="mt-1 text-xs text-cyan-100/70">Backend {backendComplete}/{features.length} · Frontend accepted {frontendComplete}/{features.length} · {frontendNeedsAudit} need audit</p>
-          </div>
-          <span className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 details-toggle-label">Expand</span>
-        </summary>
-        <p className="mt-3 text-sm leading-6 text-cyan-100/80">
-          Feature completion is now split into backend/local-code completion and frontend product acceptance. A backend-complete feature is not launch-accepted until the frontend/design stage also passes.
-        </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded border border-emerald-800 bg-emerald-950/30 p-3">
-            <p className="text-xs text-emerald-200/70">Backend completed</p>
-            <p className="mt-2 text-2xl font-semibold text-emerald-200">{backendComplete}/{features.length}</p>
-            <p className="mt-1 text-xs text-emerald-100/70">API, data, worker, routing, tests, or local implementation evidence exists.</p>
-          </div>
-          <div className="rounded border border-cyan-800 bg-cyan-950/30 p-3">
-            <p className="text-xs text-cyan-200/70">Frontend needs audit</p>
-            <p className="mt-2 text-2xl font-semibold text-cyan-100">{frontendNeedsAudit}</p>
-            <p className="mt-1 text-xs text-cyan-100/70">UI/UX, design match, mobile layout, and product acceptance still need review.</p>
-          </div>
-          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
-            <p className="text-xs text-slate-400">Frontend accepted</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-100">{frontendComplete}/{features.length}</p>
-            <p className="mt-1 text-xs text-slate-500">Only count features here after visual/product acceptance passes.</p>
-          </div>
-        </div>
-      </details>
 
       <div className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -433,18 +397,53 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_380px]">
-        <details className="rounded-md border border-slate-800 bg-slate-900 p-4">
-          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+      <details className="mt-5 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-cyan-100">Development Stages</h2>
+            <p className="mt-1 text-xs text-cyan-100/70">Backend {backendComplete}/{features.length} · Frontend accepted {frontendComplete}/{features.length} · {frontendNeedsAudit} need audit</p>
+          </div>
+          <span className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 details-toggle-label">Expand</span>
+        </summary>
+        <p className="mt-3 text-sm leading-6 text-cyan-100/80">
+          Feature completion is now split into backend/local-code completion and frontend product acceptance. A backend-complete feature is not launch-accepted until the frontend/design stage also passes.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <SimpleStatusCard label="Features" value={features.length} />
+          <SimpleStatusCard label="Missing" value={missing} tone="red" />
+          <SimpleStatusCard label="Partial" value={partial} tone="amber" />
+          <SimpleStatusCard label="Complete" value={complete} tone="emerald" />
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded border border-emerald-800 bg-emerald-950/30 p-3">
+            <p className="text-xs text-emerald-200/70">Backend completed</p>
+            <p className="mt-2 text-2xl font-semibold text-emerald-200">{backendComplete}/{features.length}</p>
+            <p className="mt-1 text-xs text-emerald-100/70">API, data, worker, routing, tests, or local implementation evidence exists.</p>
+          </div>
+          <div className="rounded border border-cyan-800 bg-cyan-950/30 p-3">
+            <p className="text-xs text-cyan-200/70">Frontend needs audit</p>
+            <p className="mt-2 text-2xl font-semibold text-cyan-100">{frontendNeedsAudit}</p>
+            <p className="mt-1 text-xs text-cyan-100/70">UI/UX, design match, mobile layout, and product acceptance still need review.</p>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
+            <p className="text-xs text-slate-400">Frontend accepted</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-100">{frontendComplete}/{features.length}</p>
+            <p className="mt-1 text-xs text-slate-500">Only count features here after visual/product acceptance passes.</p>
+          </div>
+        </div>
+      </details>
+
+      <div className="mt-5">
+      <CompactSection title="Claude Next Work Queue" subtitle="Open feature queue sorted by criticality, plus open-by-phase, completion rule, and source." badge={<span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{nextClaudeQueue.length} shown</span>}>
+      <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">Claude Next Work Queue</h2>
               <p className="mt-1 text-xs text-slate-400">Sorted by criticality. Build these before claiming feature development complete.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{nextClaudeQueue.length} shown</span>
-              <span className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 details-toggle-label">Expand</span>
-            </div>
-          </summary>
+            <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{nextClaudeQueue.length} shown</span>
+          </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {nextClaudeQueue.map((item) => (
               <article key={item.id} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
@@ -474,7 +473,7 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
               </article>
             ))}
           </div>
-        </details>
+        </div>
 
         <div className="space-y-5">
           <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
@@ -501,6 +500,8 @@ export default function FeaturesDevelopmentPage({ searchParams }: PageProps) {
             </p>
           </div>
         </div>
+      </div>
+      </CompactSection>
       </div>
 
       <div className="mt-5">
