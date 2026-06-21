@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { readJson } from '../lib/read-json'
 import { AutoRefresh } from '../auto-refresh'
+import { Donut, MiniBars } from '../donut'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +62,28 @@ export default function ActivityPage({ searchParams }: { searchParams?: { actor?
     warn: all.filter((e) => e.severity === 'warn').length,
     error: all.filter((e) => e.severity === 'error').length
   }
+  const sevSlices = [
+    { label: 'success', value: counts.success, color: '#10b981' },
+    { label: 'info', value: all.filter((e) => e.severity === 'info').length, color: '#94a3b8' },
+    { label: 'warn', value: counts.warn, color: '#f59e0b' },
+    { label: 'error', value: counts.error, color: '#ef4444' }
+  ]
+  // Volume sparkline: bucket every event across its full time span.
+  const BUCKETS = 24
+  const times = all.map((e) => Date.parse(e.ts)).filter((n) => Number.isFinite(n)).sort((a, b) => a - b)
+  const volume = new Array(BUCKETS).fill(0)
+  let spanLabel = ''
+  if (times.length > 0) {
+    const min = times[0]
+    const max = Math.max(times[times.length - 1], min + 1)
+    const span = max - min
+    for (const t of times) {
+      const idx = Math.min(BUCKETS - 1, Math.max(0, Math.floor(((t - min) / span) * BUCKETS)))
+      volume[idx] += 1
+    }
+    const mins = Math.round(span / 60000)
+    spanLabel = mins < 60 ? `${mins}m span` : mins < 1440 ? `${Math.round(mins / 60)}h span` : `${Math.round(mins / 1440)}d span`
+  }
 
   const chip = (href: string, label: string, active: boolean) => (
     <a href={href} className={`rounded-md border px-2.5 py-1 ${active ? 'border-cyan-600 bg-cyan-950/40 text-cyan-100' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}>{label}</a>
@@ -80,6 +103,13 @@ export default function ActivityPage({ searchParams }: { searchParams?: { actor?
       </div>
 
       <AutoRefresh seconds={10} />
+
+      {all.length > 0 && (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Donut title="Events by severity" slices={sevSlices} />
+          <MiniBars title="Event volume" values={volume} subtitle={spanLabel} />
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-1.5 text-xs">
         {chip('/activity', 'All', !fActor && !fSeverity)}
