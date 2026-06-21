@@ -130,6 +130,42 @@ export default function BacklogPage({ searchParams }: PageProps) {
     (weight[a.priority] ?? 5) - (weight[b.priority] ?? 5) ||
     a.phase.localeCompare(b.phase) || a.id - b.id
   )
+  // Resolved (done) items live in their own collapsed "Resolved list" so the
+  // main list stays focused on what still needs work.
+  const visibleOpen = visible.filter((row) => row.status !== 'done')
+  const visibleDone = visible.filter((row) => row.status === 'done')
+
+  const renderRow = (row: Task) => (
+    <li key={row.id} className={`flex items-center gap-3 px-4 py-3 ${activeId === row.id ? 'bg-cyan-950/20' : 'bg-slate-900/40'}`}>
+      <span className={activeId === row.id ? 'animate-pulse' : undefined}>
+        <BacklogItemGauge status={row.status} priority={row.priority} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={`truncate text-sm ${row.status === 'done' ? 'text-slate-400 line-through' : 'font-medium text-slate-100'}`}>{row.title}</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+          {activeId === row.id && (
+            <span className="inline-flex items-center gap-1 font-medium text-cyan-300" title={run.message ?? 'Working…'}>
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" aria-hidden="true" />working
+            </span>
+          )}
+          <span className="font-mono">{row.phase}</span>
+          {row.lane && <span>· {row.lane}</span>}
+          {row.flag === 'possibly-shipped' && <span className="rounded bg-amber-900/70 px-1.5 text-amber-100" title="Matches a completed feature/screen">possibly shipped?</span>}
+          {typeof row.confidence === 'number' && <span className={row.confidence >= 8 ? 'text-emerald-300' : 'text-amber-300'}>conf {row.confidence}/10</span>}
+          {typeof row.verifyConfidence === 'number' && <span className={row.verifyConfidence >= 8 ? 'text-emerald-300' : 'text-amber-300'}>verify {row.verifyConfidence}/10</span>}
+          {row.assignee && <span>@{row.assignee}</span>}
+          {row.commit && <span className="font-mono text-slate-600" title="Resolved in commit">{row.commit}</span>}
+          {row.pr && <a href={row.pr} target="_blank" rel="noreferrer" className="text-cyan-300 underline">PR ↗</a>}
+        </p>
+      </div>
+      <span className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium sm:inline ${statusTone(row.status)}`}>{row.status}</span>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} />
+        <BacklogVerifyControls id={row.id} title={row.title} status={row.status} verifyConfidence={row.verifyConfidence} verifyReason={row.verifyReason} />
+        <BacklogRowControls id={row.id} status={row.status} />
+      </div>
+    </li>
+  )
 
   return (
     <section className="mx-auto max-w-4xl">
@@ -225,38 +261,22 @@ export default function BacklogPage({ searchParams }: PageProps) {
       </div>
 
       <ul className="mt-3 divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800">
-        {visible.map((row) => (
-          <li key={row.id} className={`flex items-center gap-3 px-4 py-3 ${activeId === row.id ? 'bg-cyan-950/20' : 'bg-slate-900/40'}`}>
-            <span className={activeId === row.id ? 'animate-pulse' : undefined}>
-              <BacklogItemGauge status={row.status} priority={row.priority} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className={`truncate text-sm ${row.status === 'done' ? 'text-slate-400 line-through' : 'font-medium text-slate-100'}`}>{row.title}</p>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
-                {activeId === row.id && (
-                  <span className="inline-flex items-center gap-1 font-medium text-cyan-300" title={run.message ?? 'Working…'}>
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" aria-hidden="true" />working
-                  </span>
-                )}
-                <span className="font-mono">{row.phase}</span>
-                {row.lane && <span>· {row.lane}</span>}
-                {row.flag === 'possibly-shipped' && <span className="rounded bg-amber-900/70 px-1.5 text-amber-100" title="Matches a completed feature/screen">possibly shipped?</span>}
-                {typeof row.confidence === 'number' && <span className={row.confidence >= 8 ? 'text-emerald-300' : 'text-amber-300'}>conf {row.confidence}/10</span>}
-                {row.assignee && <span>@{row.assignee}</span>}
-                {row.commit && <span className="font-mono text-slate-600" title="Resolved in commit">{row.commit}</span>}
-                {row.pr && <a href={row.pr} target="_blank" rel="noreferrer" className="text-cyan-300 underline">PR ↗</a>}
-              </p>
-            </div>
-            <span className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium sm:inline ${statusTone(row.status)}`}>{row.status}</span>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} />
-              <BacklogVerifyControls id={row.id} title={row.title} status={row.status} verifyConfidence={row.verifyConfidence} verifyReason={row.verifyReason} />
-              <BacklogRowControls id={row.id} status={row.status} />
-            </div>
-          </li>
-        ))}
-        {visible.length === 0 && <li className="px-4 py-8 text-center text-sm text-slate-400">No tasks match this filter.</li>}
+        {visibleOpen.map(renderRow)}
+        {visibleOpen.length === 0 && (
+          <li className="px-4 py-8 text-center text-sm text-slate-400">{visibleDone.length > 0 ? 'No open tasks — see the Resolved list below.' : 'No tasks match this filter.'}</li>
+        )}
       </ul>
+
+      {visibleDone.length > 0 && (
+        <details className="mt-4 overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+          <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-medium text-slate-200">
+            Resolved list <span className="ml-1 text-xs font-normal text-slate-500">({visibleDone.length})</span>
+          </summary>
+          <ul className="divide-y divide-slate-800 border-t border-slate-800">
+            {visibleDone.map(renderRow)}
+          </ul>
+        </details>
+      )}
     </section>
   )
 }
