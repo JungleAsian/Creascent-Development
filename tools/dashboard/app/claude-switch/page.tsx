@@ -109,7 +109,7 @@ export default function ClaudeSwitchPage({ searchParams }: PageProps) {
         <div className="flex flex-wrap gap-2">
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="claude-switch-finalize" />
-            <button className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">I Changed Claude Account</button>
+            <button className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">Connect to Claude</button>
           </form>
           <Link href="/build-control" className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Build Control</Link>
         </div>
