@@ -12,7 +12,7 @@ export function MockupLibrary({ files, report }: { files: string[]; report?: str
       <button
         type="button"
         onClick={() => ref.current?.showModal()}
-        className="inline-flex min-h-11 items-center gap-1 rounded-md border border-amber-700 bg-amber-950/20 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-amber-950/50"
+        className="inline-flex items-center gap-1 rounded-md border border-amber-700 bg-amber-950/20 px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-950/50"
         aria-haspopup="dialog"
       >
         Library ({files.length})
