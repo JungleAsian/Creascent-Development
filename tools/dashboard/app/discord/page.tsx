@@ -46,7 +46,7 @@ function readMessages(query?: string) {
   const q = query?.trim().toLowerCase()
   const rows = JSON.parse(fs.readFileSync(messagesFile, 'utf8')) as DiscordMessageLog[]
   return rows
-    .filter((row) => !q || `${row.timestamp} ${row.source} ${row.english} ${row.spanish} ${row.status}`.toLowerCase().includes(q))
+    .filter((row) => !q || `${row.timestamp} ${row.source} ${row.english} ${row.status}`.toLowerCase().includes(q))
     .slice(-500)
     .reverse()
 }
@@ -110,7 +110,7 @@ export default function DiscordPage({ searchParams }: PageProps) {
       <div className="mt-5 max-h-[calc(100vh-300px)] overflow-auto rounded-lg border border-slate-800">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-900 text-slate-300">
-            <tr><th className="p-3">Timestamp</th><th className="p-3">Source</th><th className="p-3">Status</th><th className="p-3">English message</th><th className="p-3">Spanish message</th></tr>
+            <tr><th className="p-3">Timestamp</th><th className="p-3">Source</th><th className="p-3">Status</th><th className="p-3">Message</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
             {rows.map((row, index) => (
@@ -119,10 +119,9 @@ export default function DiscordPage({ searchParams }: PageProps) {
                 <td className="p-3 font-mono text-xs">{row.source}</td>
                 <td className={`p-3 text-xs font-semibold ${statusTone(row.status)}`}>{row.status}</td>
                 <td className="max-w-xl whitespace-pre-wrap p-3 text-slate-200">{row.english}</td>
-                <td className="max-w-xl whitespace-pre-wrap p-3 text-emerald-300">{row.spanish}</td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td className="p-3 text-slate-400" colSpan={5}>No Discord messages recorded yet.</td></tr>}
+            {rows.length === 0 && <tr><td className="p-3 text-slate-400" colSpan={4}>No Discord messages recorded yet.</td></tr>}
           </tbody>
         </table>
       </div>
