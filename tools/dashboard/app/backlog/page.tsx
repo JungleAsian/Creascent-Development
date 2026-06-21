@@ -7,12 +7,14 @@ import { BacklogItemGauge } from './backlog-item-gauge'
 import { BacklogFlowStrip } from '../backlog-flow-strip'
 import { BuildProgressGauge } from '../build-progress-gauge'
 import { maybeAutoSyncBacklog, lastBacklogSyncAt } from '../lib/backlog-autosync'
+import { AutoRefresh } from '../auto-refresh'
+import { isHeartbeatFresh } from '../lib/run-live'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
 const backlogRunFile = path.join(toolsRoot, 'logs', 'backlog-run.json')
 
-type BacklogRun = { status?: string; message?: string; autoResolve?: boolean; total?: number; processed?: number; resolved?: number; queued?: number; failed?: number; pid?: number }
+type BacklogRun = { status?: string; message?: string; autoResolve?: boolean; total?: number; processed?: number; resolved?: number; queued?: number; failed?: number; pid?: number; currentId?: number; heartbeatAt?: string }
 
 function backlogRun(): BacklogRun {
   if (!fs.existsSync(backlogRunFile)) return {}
@@ -103,10 +105,18 @@ export default function BacklogPage({ searchParams }: PageProps) {
   const inFlight = rows.some((row) => row.status === 'in-progress' || row.status === 'plan-review')
   const gaugeState = total === 0 ? 'stopped' : doneRows.length === total ? 'complete' : inFlight ? 'progressing' : 'halted'
   const run = backlogRun()
-  const autoActive = Boolean(run.autoResolve) && (run.status === 'running' && pidAlive(run.pid))
+  const runLive = run.status === 'running' && pidAlive(run.pid) && isHeartbeatFresh(run.heartbeatAt)
+  const activeId = runLive ? run.currentId : undefined
+  const autoActive = Boolean(run.autoResolve) && runLive
   const autoTotal = run.total ?? 0
-  const autoPercent = autoTotal ? Math.round(((run.processed ?? 0) / autoTotal) * 100) : 0
-  const showAutoBanner = Boolean(run.autoResolve) && autoTotal > 0
+  const autoResolved = run.resolved ?? 0
+  const autoDonePercent = autoTotal ? Math.round((autoResolved / autoTotal) * 100) : 0
+  const autoAllResolved = autoTotal > 0 && autoResolved >= autoTotal
+  // The run-state's autoResolve flag persists (touchBacklogRun merges), so gate
+  // the summary on freshness — show it only while running or recently finished,
+  // never as a stale "complete" banner after the backlog has moved on.
+  const autoRecent = Boolean(run.heartbeatAt) && Date.now() - new Date(run.heartbeatAt ?? 0).getTime() < 10 * 60 * 1000
+  const showAutoBanner = Boolean(run.autoResolve) && autoTotal > 0 && (autoActive || autoRecent)
   const todoCount = rows.filter((row) => row.status === 'todo').length
   // Show the list open-first, then by priority — calmest reading order.
   const visible = [...filtered].sort((a, b) =>
@@ -117,6 +127,7 @@ export default function BacklogPage({ searchParams }: PageProps) {
 
   return (
     <section className="mx-auto max-w-4xl">
+      <AutoRefresh seconds={5} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Backlog</h1>
@@ -146,13 +157,19 @@ export default function BacklogPage({ searchParams }: PageProps) {
       {showAutoBanner && (
         <div className="mt-3 rounded-lg border border-cyan-900 bg-cyan-950/20 p-3">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium text-cyan-100">{autoActive ? 'Auto-resolve running' : 'Auto-resolve finished'}</span>
-            <span className="text-xs text-slate-400">{run.processed ?? 0}/{autoTotal} · {run.resolved ?? 0} resolved · {run.queued ?? 0} need approval · {run.failed ?? 0} failed</span>
+            <span className="font-medium text-cyan-100">{autoActive ? 'Auto-resolve running' : autoAllResolved ? 'Auto-resolve finished — all resolved' : 'Auto-resolve finished — needs follow-up'}</span>
+            <span className="text-xs text-slate-400">{run.processed ?? 0}/{autoTotal} processed · {autoResolved} resolved · {run.queued ?? 0} need approval · {run.failed ?? 0} failed</span>
           </div>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800">
-            <div className={`h-full rounded ${autoActive ? 'bg-cyan-500' : 'bg-emerald-500'}`} style={{ width: `${autoPercent}%` }} />
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800" title={`${autoResolved}/${autoTotal} resolved`}>
+            <div className={`h-full rounded ${autoActive ? 'bg-cyan-500' : autoAllResolved ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${autoDonePercent}%` }} />
           </div>
-          {run.message && <p className="mt-2 truncate text-xs text-slate-500" title={run.message}>{run.message}</p>}
+          <p className="mt-2 text-xs text-slate-500">
+            {autoActive
+              ? run.message
+              : autoAllResolved
+                ? (run.message ?? 'All items resolved.')
+                : `${autoResolved}/${autoTotal} resolved · ${run.queued ?? 0} still need approval · ${run.failed ?? 0} failed — review the plan-review / review items below.`}
+          </p>
         </div>
       )}
 
@@ -193,11 +210,18 @@ export default function BacklogPage({ searchParams }: PageProps) {
 
       <ul className="mt-3 divide-y divide-slate-800 overflow-hidden rounded-lg border border-slate-800">
         {visible.map((row) => (
-          <li key={row.id} className="flex items-center gap-3 bg-slate-900/40 px-4 py-3">
-            <BacklogItemGauge status={row.status} priority={row.priority} />
+          <li key={row.id} className={`flex items-center gap-3 px-4 py-3 ${activeId === row.id ? 'bg-cyan-950/20' : 'bg-slate-900/40'}`}>
+            <span className={activeId === row.id ? 'animate-pulse' : undefined}>
+              <BacklogItemGauge status={row.status} priority={row.priority} />
+            </span>
             <div className="min-w-0 flex-1">
               <p className={`truncate text-sm ${row.status === 'done' ? 'text-slate-400 line-through' : 'font-medium text-slate-100'}`}>{row.title}</p>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                {activeId === row.id && (
+                  <span className="inline-flex items-center gap-1 font-medium text-cyan-300" title={run.message ?? 'Working…'}>
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" aria-hidden="true" />working
+                  </span>
+                )}
                 <span className="font-mono">{row.phase}</span>
                 {row.lane && <span>· {row.lane}</span>}
                 {row.flag === 'possibly-shipped' && <span className="rounded bg-amber-900/70 px-1.5 text-amber-100" title="Matches a completed feature/screen">possibly shipped?</span>}

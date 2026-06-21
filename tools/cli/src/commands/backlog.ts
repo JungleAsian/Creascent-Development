@@ -423,7 +423,7 @@ async function resolveTask(id: number): Promise<number> {
     `- Commit with a clear message referencing "backlog #${task.id}".`,
     '- Report what you changed.'
   ].join('\n')
-  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', message })
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message })
   const { code } = await runClaudeHeadless(prompt, message)
   touchBacklogRun({ status: code === 0 ? 'complete' : 'failed', message: code === 0 ? `Backlog #${id} resolved — ready for review.` : `Backlog #${id} resolution failed (exit ${code}).` })
   const after = getTasks()
@@ -471,7 +471,7 @@ async function planTask(id: number, threshold: number, auto: boolean): Promise<v
   task.status = 'in-progress'
   saveTasks(tasks)
   const message = `Planning backlog #${id}: ${task.title}`
-  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', message })
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message })
   const prompt = [
     `Produce a resolution PLAN for Docmee backlog item #${task.id}: ${task.title}.`,
     `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
@@ -536,7 +536,7 @@ async function verifyTask(id: number, threshold: number): Promise<void> {
   const task = tasks.find((item) => item.id === id)
   if (!task) { log('backlog', `Task ${id} not found`, 'error'); process.exitCode = 1; return }
   const message = `Verifying backlog #${id}: ${task.title}`
-  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', message })
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message })
   const prompt = [
     `VERIFY whether Docmee backlog item #${task.id} is actually fixed: ${task.title}.`,
     `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
@@ -623,6 +623,7 @@ backlogCmd
   .description('Hand a backlog item to Claude Code to implement, then move it to review')
   .requiredOption('--id <id>')
   .action(async (opts: { id: string }) => {
+    touchBacklogRun({ autoResolve: false })
     const code = await resolveTask(Number(opts.id))
     if (code !== 0) process.exitCode = code
   })
@@ -634,6 +635,7 @@ backlogCmd
   .option('--threshold <n>', `Confidence needed to auto-approve (default ${CONFIDENCE_THRESHOLD})`)
   .option('--auto', 'Resolve immediately when the plan is auto-approved')
   .action(async (opts: { id: string; threshold?: string; auto?: boolean }) => {
+    touchBacklogRun({ autoResolve: false })
     await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto))
   })
 
@@ -643,6 +645,7 @@ backlogCmd
   .requiredOption('--id <id>')
   .option('--threshold <n>', `Confidence needed to auto-resolve (default ${CONFIDENCE_THRESHOLD})`)
   .action(async (opts: { id: string; threshold?: string }) => {
+    touchBacklogRun({ autoResolve: false })
     await verifyTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD)
   })
 
