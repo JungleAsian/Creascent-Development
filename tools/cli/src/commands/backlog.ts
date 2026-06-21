@@ -7,6 +7,7 @@ import { log } from '../lib/logger.js'
 import { logsDir, toolsRoot } from '../lib/paths.js'
 import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 import { engineForProvider, llmChat } from '../lib/llm.js'
+import { logActivity } from '../lib/activity.js'
 
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'infrastructure'
 type Status = 'todo' | 'in-progress' | 'plan-review' | 'blocked' | 'review' | 'done'
@@ -314,6 +315,7 @@ backlogCmd
     task.status = 'done'
     saveTasks(tasks)
     log('backlog', `Marked task ${id} done`)
+    logActivity({ actor: 'user', event: 'approve.done', severity: 'success', source: 'backlog', taskId: id, message: `Approved & marked #${id} done: ${task.title}` })
   })
 
 backlogCmd
@@ -448,6 +450,7 @@ async function resolveTask(id: number, provider = 'claude'): Promise<number> {
   saveTasks(tasks)
   const planLine = (task.plan && task.plan.trim()) || 'Investigate the relevant code, design a focused fix, and implement it.'
   touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message: `Resolving backlog #${id} with ${provider}: ${task.title}` })
+  logActivity({ actor: provider, event: 'resolve.start', severity: 'info', source: 'backlog', taskId: id, message: `Resolving #${id}: ${task.title}` })
 
   // Step 1 — non-Claude AI drafts a concrete resolution (Claude implements it).
   let proposal: string | null = null
@@ -475,6 +478,7 @@ async function resolveTask(id: number, provider = 'claude'): Promise<number> {
         const u = t.find((item) => item.id === id)
         if (u) { u.result = proposal; u.resultProvider = `${provider}:${engine.model}`; saveTasks(t) }
         log('backlog', `${provider} drafted a resolution for #${id} — handing to Claude to implement.`)
+        logActivity({ actor: provider, event: 'draft.done', severity: 'success', source: 'backlog', taskId: id, message: `${provider} drafted a fix for #${id} — handing to Claude.` })
       } else {
         log('backlog', `${provider} produced no draft for #${id} — Claude will resolve directly.`, 'warn')
       }
@@ -527,7 +531,12 @@ async function resolveTask(id: number, provider = 'claude'): Promise<number> {
     saveTasks(after)
   }
   touchBacklogRun({ status: code === 0 ? 'running' : 'failed', message: code === 0 ? `Backlog #${id} implemented — verifying…` : `Backlog #${id} resolution failed (exit ${code}).` })
-  if (code !== 0) return code
+  if (code === 0) {
+    logActivity({ actor: 'claude', event: 'resolve.done', severity: 'success', source: 'backlog', taskId: id, message: `Implemented #${id}${updated?.commit ? ` (commit ${updated.commit})` : ''} — verifying.` })
+  } else {
+    logActivity({ actor: 'claude', event: 'resolve.fail', severity: 'error', source: 'backlog', taskId: id, message: `Resolution failed for #${id} (exit ${code}).` })
+    return code
+  }
 
   // Step 3 — auto-verify (verifyTask auto-approves when confidence >= threshold).
   try {
@@ -662,11 +671,13 @@ async function verifyTask(id: number, threshold: number): Promise<void> {
     saveTasks(after)
     touchBacklogRun({ status: 'complete', message: `Verified resolved (confidence ${confidence}/10 ≥ ${threshold}) — marked done.` })
     log('backlog', `Backlog #${id} verified ${confidence}/10 ≥ ${threshold} — marked done.`)
+    logActivity({ actor: 'claude', event: 'verify.pass', severity: 'success', source: 'backlog', taskId: id, message: `Verified #${id} (${confidence}/10 ≥ ${threshold}) — done.` })
   } else {
     updated.status = 'review'
     saveTasks(after)
     touchBacklogRun({ status: 'complete', message: `Verification needs review (confidence ${confidence}/10 < ${threshold}).` })
     log('backlog', `Backlog #${id} verification ${confidence}/10 < ${threshold} — flagged for review.`)
+    logActivity({ actor: 'claude', event: 'verify.flag', severity: 'warn', source: 'backlog', taskId: id, message: `#${id} flagged for review (confidence ${confidence}/10 < ${threshold}).` })
   }
 }
 
@@ -775,6 +786,7 @@ backlogCmd
     }
     fs.writeFileSync(backlogRunFile, `${JSON.stringify({ status: 'idle', pid: 0, message: 'Run stopped by user.', heartbeatAt: new Date().toISOString() }, null, 2)}\n`)
     log('backlog', 'Backlog run stopped and state cleared')
+    logActivity({ actor: 'system', event: 'run.stopped', severity: 'warn', source: 'backlog', message: 'Backlog run stopped and state cleared by user.' })
   })
 
 backlogCmd

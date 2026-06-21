@@ -34,6 +34,7 @@ const nav: NavItem[] = [
   ['Aegis', '/aegis'],
   ['Cortex', '/cortex'],
   ['Diagnostics', '/diagnostics'],
+  ['Activity', '/activity'],
   ['Logs', '/logs'],
   ['Discord Status', '/discord'],
   ['Development Cost', '/cost'],
