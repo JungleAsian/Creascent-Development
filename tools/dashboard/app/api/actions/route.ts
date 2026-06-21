@@ -2365,12 +2365,14 @@ export async function POST(request: Request) {
   if (action.startsWith('agents-')) {
     const role = String(form.get('role') ?? '')
     const service = String(form.get('service') ?? '')
+    const model = String(form.get('model') ?? '')
     const phase = String(form.get('phase') ?? 'P01')
     const commandByAction: Record<string, string[]> = {
       'agents-enable': ['agents', 'enable', '--role', role],
       'agents-disable': ['agents', 'disable', '--role', role],
       'agents-run': ['agents', 'run', '--role', role, '--phase', phase],
       'agents-test': ['agents', 'test', '--service', service],
+      'agents-set-service': ['agents', 'set', '--role', role, ...(service ? ['--service', service] : []), ...(model ? ['--model', model] : [])],
       'agents-reset': ['agents', 'reset']
     }
     const args = commandByAction[action]

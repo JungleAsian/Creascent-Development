@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import Link from 'next/link'
 import { readCustomAis, AI_ROLES } from '../lib/custom-ais'
+import { AgentEditor } from './agent-editor'
 
 const logsDir = path.resolve(process.cwd(), '..', 'logs')
 const agentsFile = path.join(logsDir, 'agents.json')
@@ -23,15 +24,19 @@ type Agent = {
 type PageProps = { searchParams?: { message?: string; error?: string } }
 
 const services = [
-  ['claude-code', 'Claude Code', 'CLI', ''],
-  ['claude-api', 'Claude API live runtime', 'API later', 'ANTHROPIC_API_KEY'],
-  ['codex-pro', 'Codex Pro', 'Manual', 'OPENAI_API_KEY'],
-  ['gpt-4o', 'GPT-4o', 'API', 'OPENAI_API_KEY'],
-  ['google-gemini', 'Gemini', 'API', 'GOOGLE_GEMINI_API_KEY'],
-  ['mistral', 'Mistral', 'API', 'MISTRAL_API_KEY'],
-  ['deepseek', 'DeepSeek', 'API', 'DEEPSEEK_API_KEY'],
-  ['custom', 'Custom', 'API', 'CUSTOM_AI_API_KEY']
+  { id: 'claude-code', label: 'Claude Code', mode: 'CLI', key: '', models: ['claude-sonnet-4-6', 'claude-opus-4-6'] },
+  { id: 'claude-api', label: 'Claude API live runtime', mode: 'API later', key: 'ANTHROPIC_API_KEY', models: ['claude-sonnet-4-6', 'claude-haiku-4-5'] },
+  { id: 'codex-pro', label: 'Codex Pro', mode: 'Manual', key: 'OPENAI_API_KEY', models: ['o3', 'o4-mini'] },
+  { id: 'gpt-4o', label: 'GPT-4o', mode: 'API', key: 'OPENAI_API_KEY', models: ['gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'] },
+  { id: 'google-gemini', label: 'Gemini', mode: 'API', key: 'GOOGLE_GEMINI_API_KEY', models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'] },
+  { id: 'grok', label: 'Grok', mode: 'API', key: 'GROK_API_KEY', models: ['grok-3', 'grok-2-latest'] },
+  { id: 'cursor', label: 'Cursor', mode: 'IDE', key: '', models: ['auto'] },
+  { id: 'glm', label: 'GLM', mode: 'API', key: 'GLM_API_KEY', models: ['glm-4-flash', 'glm-4'] },
+  { id: 'mistral', label: 'Mistral', mode: 'API', key: 'MISTRAL_API_KEY', models: ['mistral-large', 'codestral'] },
+  { id: 'deepseek', label: 'DeepSeek', mode: 'API', key: 'DEEPSEEK_API_KEY', models: ['deepseek-chat', 'deepseek-coder'] },
+  { id: 'custom', label: 'Custom', mode: 'API', key: 'CUSTOM_AI_API_KEY', models: ['custom'] }
 ]
+const editorServices = services.map((service) => ({ id: service.id, label: service.label, models: service.models }))
 
 function readAgents() {
   if (!fs.existsSync(agentsFile)) return []
@@ -122,26 +127,26 @@ export default function AgentsPage({ searchParams }: PageProps) {
       )}
 
       <h2 className="mt-6 text-sm font-semibold">Core Agents</h2>
-      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {core.map((agent) => <AgentCard key={agent.id} agent={agent} />)}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {core.map((agent) => <AgentCard key={agent.id} agent={agent} services={editorServices} />)}
       </div>
 
       <h2 className="mt-6 text-sm font-semibold">Additional Agents</h2>
-      <div className="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {additional.map((agent) => <AgentCard key={agent.id} agent={agent} />)}
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {additional.map((agent) => <AgentCard key={agent.id} agent={agent} services={editorServices} />)}
       </div>
 
       <div className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">
         <h2 className="text-sm font-semibold">Service Credentials</h2>
         <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {services.map(([id, label, mode, key]) => (
-            <div key={id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2">
-              <div><span className="text-sm">{label}</span><span className="ml-2 text-xs text-slate-500">{mode}</span></div>
+          {services.map((service) => (
+            <div key={service.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 px-3 py-2">
+              <div><span className="text-sm">{service.label}</span><span className="ml-2 text-xs text-slate-500">{service.mode}</span></div>
               <div className="flex items-center gap-2">
-                <span className={key ? env[key] ? 'text-sm text-emerald-300' : 'text-sm text-amber-300' : 'text-sm text-sky-300'}>{key ? env[key] ? 'ready' : 'missing key' : 'local/manual'}</span>
+                <span className={service.key ? env[service.key] ? 'text-sm text-emerald-300' : 'text-sm text-amber-300' : 'text-sm text-sky-300'}>{service.key ? env[service.key] ? 'ready' : 'missing key' : 'local/manual'}</span>
                 <form action="/api/actions" method="post">
                   <input type="hidden" name="action" value="agents-test" />
-                  <input type="hidden" name="service" value={id} />
+                  <input type="hidden" name="service" value={service.id} />
                   <button className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Test</button>
                 </form>
               </div>
@@ -162,7 +167,7 @@ export default function AgentsPage({ searchParams }: PageProps) {
   )
 }
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent, services }: { agent: Agent; services: { id: string; label: string; models: string[] }[] }) {
   return (
     <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -184,6 +189,7 @@ function AgentCard({ agent }: { agent: Agent }) {
         <form action="/api/actions" method="post"><input type="hidden" name="action" value={agent.enabled ? 'agents-disable' : 'agents-enable'} /><input type="hidden" name="role" value={agent.role} /><button disabled={agent.core && agent.enabled} className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-600">{agent.enabled ? 'Disable' : 'Enable'}</button></form>
         <form action="/api/actions" method="post"><input type="hidden" name="action" value="agents-run" /><input type="hidden" name="role" value={agent.role} /><input type="hidden" name="phase" value="P01" /><button className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Run</button></form>
       </div>
+      <AgentEditor role={agent.role} service={agent.service} model={agent.model} services={services} />
     </div>
   )
 }
