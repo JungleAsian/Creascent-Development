@@ -562,6 +562,14 @@ const es: Dict = {
   'studio.quickReplies.count': '{n} de {m} plantillas',
   'studio.quickReplies.note':
     'Se insertan en el cuadro de redacción para responder dentro de la ventana de 24 h. Para escribir fuera de esa ventana usa una plantilla de WhatsApp aprobada.',
+  'studio.quickReplies.subhead':
+    'Respuestas cortas reutilizables para responder más rápido dentro de la ventana de 24 h.',
+  'studio.quickReplies.new': 'Nueva respuesta',
+  'studio.quickReplies.noteTitle': 'Solo dentro de la ventana',
+  'studio.quickReplies.uncategorized': 'Sin categoría',
+  'studio.quickReplies.inWindowTag': 'Solo en ventana',
+  'studio.quickReplies.copied': 'Copiado',
+  'studio.quickReplies.copy': 'Copiar',
 
   'metrics.title': 'Métricas',
   'metrics.selectClinic': 'Clínica',
@@ -685,6 +693,7 @@ const es: Dict = {
   'appt.status.no_show': 'No asistió',
 
   'studio.templates.title': 'Plantillas de WhatsApp',
+  'studio.templates.newClose': 'Cerrar',
   'studio.templates.selectClinic': 'Selecciona una clínica',
   'studio.templates.name': 'Nombre',
   'studio.templates.category': 'Categoría',
@@ -1743,6 +1752,14 @@ const en: Dict = {
   'studio.quickReplies.count': '{n} of {m} templates',
   'studio.quickReplies.note':
     'Inserted into the composer for replies within the 24h window. To message outside that window, use an approved WhatsApp template.',
+  'studio.quickReplies.subhead':
+    'Reusable short replies so secretaries can answer faster within the 24h window.',
+  'studio.quickReplies.new': 'New reply',
+  'studio.quickReplies.noteTitle': 'In-window only',
+  'studio.quickReplies.uncategorized': 'Uncategorized',
+  'studio.quickReplies.inWindowTag': 'In-window only',
+  'studio.quickReplies.copied': 'Copied',
+  'studio.quickReplies.copy': 'Copy',
 
   'metrics.title': 'Metrics',
   'metrics.selectClinic': 'Clinic',
@@ -1866,6 +1883,7 @@ const en: Dict = {
   'appt.status.no_show': 'No-show',
 
   'studio.templates.title': 'WhatsApp templates',
+  'studio.templates.newClose': 'Close',
   'studio.templates.selectClinic': 'Select a clinic',
   'studio.templates.name': 'Name',
   'studio.templates.category': 'Category',
