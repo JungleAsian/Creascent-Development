@@ -18,8 +18,15 @@ import {
   useComplianceChecklist,
   type ComplianceState,
 } from '@/shared/hooks/useComplianceChecklist'
-import { LanguageToggle } from '@/shared/components/LanguageToggle'
-import type { TranslationKey } from '@/shared/i18n'
+import { LANGUAGES, type TranslationKey } from '@/shared/i18n'
+import type { PanelLanguage } from '@/shared/types'
+
+// Endonyms shown on the panel-language toggle. Language names are not translated —
+// "Español"/"English" read the same in either panel language, matching the mockup.
+const LANG_DISPLAY: Record<PanelLanguage, { flag: string; name: string }> = {
+  es: { flag: '🇪🇸', name: 'Español' },
+  en: { flag: '🇬🇧', name: 'English' },
+}
 
 type ItemStatus = 'pending' | 'in_review' | 'done'
 type ResolvedStatus = ItemStatus | 'blocked'
@@ -124,7 +131,7 @@ export default function CompliancePage() {
               ✓ {t('compliance.lang.applied')}
             </p>
           </div>
-          <LanguageToggle />
+          <PanelLanguageToggle />
         </div>
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
           <span aria-hidden>ℹ️</span>
@@ -334,6 +341,45 @@ function Section({
 
 function ReqLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-[11px] font-semibold text-gray-400">{children}</span>
+}
+
+// ── Panel-language toggle (Req 21) ─────────────────────────────────────────────
+// A segmented control matching the mockup — flag + endonym per language, the active
+// option lifted onto a white "card". Scoped to this page (the shared compact ES/EN
+// LanguageToggle stays in the sidebar/login) but wired to the same useI18n.changeLanguage,
+// so the choice still persists per-user via POST /user/preferences.
+function PanelLanguageToggle() {
+  const { language, changeLanguage, t } = useI18n()
+  return (
+    <div
+      role="group"
+      aria-label={t('compliance.lang.label')}
+      className="inline-flex shrink-0 gap-1 rounded-[10px] border border-gray-200 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-800"
+    >
+      {LANGUAGES.map((lang) => {
+        const on = language === lang
+        const display = LANG_DISPLAY[lang]
+        return (
+          <button
+            key={lang}
+            type="button"
+            onClick={() => changeLanguage(lang)}
+            aria-pressed={on}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+              on
+                ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-gray-50'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            <span aria-hidden className="text-base leading-none">
+              {display.flag}
+            </span>
+            {display.name}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 // ── Posture card: an "Automatic" pill, an icon, the guarantee, and a footer that is
