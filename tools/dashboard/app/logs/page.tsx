@@ -3,6 +3,7 @@ import path from 'node:path'
 import { AutoRefresh } from '../auto-refresh'
 import { DetailButton } from '../detail-button'
 import { WorkflowStages } from '../workflow-stages'
+import { StatusSymbol } from '../status-symbol'
 
 const logsDir = path.resolve(process.cwd(), '..', 'logs')
 type PageProps = { searchParams?: { file?: string; q?: string } }
@@ -42,11 +43,6 @@ function readRows(file?: string, query?: string) {
     .reverse()
 }
 
-function levelTone(level: string) {
-  if (level === 'ERROR') return 'text-red-300'
-  if (level === 'WARN') return 'text-amber-300'
-  return 'text-emerald-300'
-}
 
 export default function LogsPage({ searchParams }: PageProps) {
   const files = logFiles()
@@ -87,7 +83,7 @@ export default function LogsPage({ searchParams }: PageProps) {
               <tr key={`${row.timestamp}-${index}`} className="bg-slate-950/60">
                 <td className="whitespace-nowrap p-3 text-xs text-slate-400">{row.timestamp ? new Date(row.timestamp).toLocaleString() : '-'}</td>
                 <td className="p-3 font-mono text-xs">{row.source}</td>
-                <td className={`p-3 text-xs font-semibold ${levelTone(row.level)}`}>{row.level}</td>
+                <td className="p-3 text-xs font-semibold"><StatusSymbol status={row.level} label={row.level} /></td>
                 <td className="p-3 text-slate-200">
                   {row.message.length > 160 ? (
                     <span className="flex items-start gap-2">

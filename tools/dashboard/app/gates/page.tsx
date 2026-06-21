@@ -4,6 +4,7 @@ import { AutoRefresh } from '../auto-refresh'
 import { VerifyFlowStrip } from '../verify-flow-strip'
 import { LaneItemGauge } from '../lane-item-gauge'
 import { BuildProgressGauge } from '../build-progress-gauge'
+import { StatusSymbol } from '../status-symbol'
 
 const gates = ['Typecheck', 'Lint', 'Unit tests', 'RLS cross-clinic', 'Env', 'DAL']
 const gatesFile = path.resolve(process.cwd(), '..', 'logs', 'six-gates.json')
@@ -81,9 +82,7 @@ export default function GatesPage({ searchParams }: PageProps) {
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-slate-400">Gate {index + 1}</p>
                   <div className="flex items-center gap-2">
-                    <span className={result ? result.ok ? 'text-xs text-emerald-300' : 'text-xs text-red-300' : 'text-xs text-slate-500'}>
-                      {status}
-                    </span>
+                    <span className="text-xs"><StatusSymbol status={status} label={status} /></span>
                     <LaneItemGauge percent={gaugePercent} tone={gaugeTone} title={`${gate} — ${status}`} />
                   </div>
                 </div>

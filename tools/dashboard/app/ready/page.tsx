@@ -4,6 +4,7 @@ import { AutoRefresh } from '../auto-refresh'
 import { BuildProgressGauge } from '../build-progress-gauge'
 import { LaneItemGauge } from '../lane-item-gauge'
 import { VerifyFlowStrip } from '../verify-flow-strip'
+import { StatusSymbol } from '../status-symbol'
 
 const readyFile = path.resolve(process.cwd(), '..', 'logs', 'ready.json')
 const startReadinessFile = path.resolve(process.cwd(), '..', 'logs', 'start-readiness.json')
@@ -35,12 +36,6 @@ function readStartReadiness(): StartReadiness {
   } catch {
     return {}
   }
-}
-
-function statusClass(status: string) {
-  if (status === 'pass') return 'text-emerald-300'
-  if (status === 'warning') return 'text-amber-300'
-  return 'text-red-300'
 }
 
 export default function ReadyPage({ searchParams }: PageProps) {
@@ -132,7 +127,7 @@ export default function ReadyPage({ searchParams }: PageProps) {
                   <div key={check.name} className="rounded border border-slate-800 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm text-slate-200">{check.name}</span>
-                      <span className={`text-sm ${statusClass(check.status)}`}>{check.status}</span>
+                      <span className="text-sm"><StatusSymbol status={check.status} label={check.status} /></span>
                     </div>
                     <p className="mt-1 text-xs text-slate-400">{check.message}</p>
                     {check.fix && <p className="mt-1 text-xs text-sky-300">{check.fix}</p>}

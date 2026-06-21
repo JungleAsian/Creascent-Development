@@ -3,6 +3,7 @@ import path from 'node:path'
 import Link from 'next/link'
 import { AutoRefresh } from '../auto-refresh'
 import { LaneFlowStrip } from '../lane-flow-strip'
+import { StatusSymbol } from '../status-symbol'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -50,10 +51,6 @@ function readMessages(query?: string) {
     .filter((row) => !q || `${row.timestamp} ${row.source} ${row.english} ${row.status}`.toLowerCase().includes(q))
     .slice(-500)
     .reverse()
-}
-
-function statusTone(status: DiscordMessageLog['status']) {
-  return status === 'sent' ? 'text-emerald-300' : 'text-red-300'
 }
 
 export default function DiscordPage({ searchParams }: PageProps) {
@@ -105,7 +102,7 @@ export default function DiscordPage({ searchParams }: PageProps) {
             {routes.map((route) => (
               <div key={route.key} className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
                 <p className="text-xs text-slate-500">{route.label}</p>
-                <p className={route.ready ? 'mt-2 text-sm font-semibold text-emerald-300' : 'mt-2 text-sm font-semibold text-amber-300'}>{route.ready ? 'ready' : 'fallback only'}</p>
+                <p className="mt-2 text-sm font-semibold"><StatusSymbol status={route.ready ? 'ready' : 'fallback'} label={route.ready ? 'ready' : 'fallback only'} /></p>
               </div>
             ))}
           </div>
@@ -148,7 +145,7 @@ export default function DiscordPage({ searchParams }: PageProps) {
               <tr key={`${row.timestamp}-${index}`} className="bg-slate-950/60">
                 <td className="break-words p-3 text-xs text-slate-400">{new Date(row.timestamp).toLocaleString()}</td>
                 <td className="break-words p-3 font-mono text-xs">{row.source}</td>
-                <td className={`p-3 text-xs font-semibold ${statusTone(row.status)}`}>{row.status}</td>
+                <td className="p-3 text-xs font-semibold"><StatusSymbol status={row.status} label={row.status} /></td>
                 <td className="whitespace-pre-wrap break-words p-3 text-slate-200">{row.english}</td>
               </tr>
             ))}
