@@ -39,7 +39,7 @@ type PageProps = { searchParams?: { message?: string; error?: string } }
 type Ready = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string }
 type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
 type FeatureRun = { pid?: number; phase?: string; workflow?: string; status?: string; heartbeatAt?: string; startedAt?: string; message?: string }
-type UIDevelopmentRecord = { id: number; screen: string; phase: string; featuresCovered: string; status: 'complete' | 'planned' | 'running' | 'needs-review'; priority: 'critical' | 'high' | 'medium' | 'low'; source: string; nextStep: string }
+type UIDevelopmentRecord = { id: number; screen: string; phase: string; featuresCovered: string; status: 'complete' | 'planned' | 'running' | 'needs-review'; priority: 'critical' | 'high' | 'medium' | 'low'; source: string; nextStep: string; wiringConfidence?: number; wiringReason?: string; wiringCheckedAt?: string }
 
 const sourceLinks = [
   ['UI/UX design for 17 screens', uiDesignSourceUrl],
@@ -309,6 +309,9 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   // generated (savable), and whether a bulk run (design-run.json) is live.
   const missingMockupCount = uiDevelopmentRecords.filter((row) => !mockupExists(row.id)).length
   const approvedBuildableCount = uiDevelopmentRecords.filter((row) => row.status !== 'complete' && mockupExists(row.id)).length
+  // Wiring stage: built screens that can be wiring-verified, and those a verify flagged as not fully wired.
+  const builtScreenCount = uiDevelopmentRecords.filter((row) => row.status !== 'planned').length
+  const wiringFlaggedCount = uiDevelopmentRecords.filter((row) => typeof row.wiringConfidence === 'number' && row.wiringConfidence < 8).length
   const generatedMockupCount = fs.existsSync(mockupsDir) ? fs.readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file)).length : 0
   const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; startedAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
   const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
@@ -495,6 +498,32 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             </form>
           </div>
 
+          {/* Wiring — verify built screens are connected to the backend (no rebuild) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Wiring</span>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="ui-wiring-verify-all" />
+              <button
+                disabled={builtScreenCount === 0 || mockupRunLive || uiDevelopmentLive}
+                title={builtScreenCount === 0 ? 'No built screens to verify' : mockupRunLive || uiDevelopmentLive ? 'A run is already in progress' : `Read-only check that all ${builtScreenCount} built screen(s) are wired to the backend (cheap model, no rebuild)`}
+                className="rounded-md border border-sky-700 bg-sky-950/30 px-2.5 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Verify wiring{builtScreenCount > 0 ? ` (${builtScreenCount})` : ''}
+              </button>
+            </form>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="ui-wiring-fix-all" />
+              <button
+                disabled={wiringFlaggedCount === 0 || mockupRunLive || uiDevelopmentLive}
+                title={wiringFlaggedCount === 0 ? 'No screens flagged — run Verify wiring first' : mockupRunLive || uiDevelopmentLive ? 'A run is already in progress' : `Wire the ${wiringFlaggedCount} flagged screen(s) to the backend — targeted edits, no rebuild`}
+                className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              >
+                Wire flagged{wiringFlaggedCount > 0 ? ` (${wiringFlaggedCount})` : ''}
+              </button>
+            </form>
+            <span className="text-[11px] text-slate-500">verifies the built screens connect to the API — does not rebuild</span>
+          </div>
+
           {/* Review — see the result */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Review</span>
@@ -679,6 +708,18 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                       >
                         {item.status === 'needs-review' || item.status === 'complete' ? '🛠 Built' : 'Built'}
                       </span>
+                      {(item.status === 'needs-review' || item.status === 'complete') && (
+                        typeof item.wiringConfidence === 'number' ? (
+                          <span
+                            className={`rounded-md px-2 py-0.5 text-[11px] font-medium leading-5 ${item.wiringConfidence >= 8 ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-amber-600 bg-amber-950/30 text-amber-200'}`}
+                            title={item.wiringReason ?? 'Backend wiring confidence'}
+                          >
+                            {item.wiringConfidence >= 8 ? '✓ Wired' : '! Needs wiring'} {item.wiringConfidence}/10
+                          </span>
+                        ) : (
+                          <span className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-[11px] font-medium leading-5 text-slate-500" title="Backend wiring not verified yet — run Verify wiring">Wiring ?</span>
+                        )
+                      )}
                       <span
                         className={`rounded-md px-2 py-0.5 text-[11px] font-medium leading-5 ${item.status === 'complete' ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-slate-700 bg-slate-900/60 text-slate-500'}`}
                         title={item.status === 'complete' ? 'Approved and sent to the Docmee application' : 'Not sent to Docmee yet'}

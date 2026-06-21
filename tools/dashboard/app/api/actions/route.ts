@@ -2303,6 +2303,20 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stopped the bulk mockup run.' : 'Could not stop.', '/docmee-audit')
   }
 
+  if (action === 'ui-wiring-verify-all') {
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) return redirect(request, 'error', 'A design/build run is already in progress. Wait for it to finish or stop it.', '/docmee-audit')
+    runToolDetached(['ui-wiring', 'verify-all'])
+    return redirect(request, 'message', 'Verifying backend wiring for each built screen — read-only, scores how wired each screen is (≥8 = wired). It does NOT rebuild.', '/docmee-audit')
+  }
+
+  if (action === 'ui-wiring-fix-all') {
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) return redirect(request, 'error', 'A design/build run is already in progress. Wait for it to finish or stop it.', '/docmee-audit')
+    runToolDetached(['ui-wiring', 'fix-all'])
+    return redirect(request, 'message', 'Wiring the flagged screens to the backend — targeted edits to the existing components, no rebuild.', '/docmee-audit')
+  }
+
   if (action === 'mockup-save-all') {
     if (!existsSync(mockupsDir)) return redirect(request, 'message', 'No generated mockups to save yet.', '/docmee-audit')
     const files = readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file))
