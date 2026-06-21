@@ -1,12 +1,15 @@
 'use client'
 
-// Screen 2 — AI booking & calendar (Req 9 calendar booking, Req 30 multi-doctor).
+// Screen 2 — AI booking & calendar (Req 9 slot picking, Req 30 multi-doctor).
 //
 // The operational day view of the appointments the AI books over WhatsApp, plus
-// manual booking / rescheduling / cancellation by the secretary. Multi-doctor: a
-// doctor filter scopes the grid and every booking is made against one doctor's
-// working hours + free slots. Renders explicit empty / loading / error /
-// disconnected (Google Calendar) / day-off / no-slots / success states.
+// manual booking / rescheduling / cancellation by the secretary. It renders the
+// approved mockup (tools/logs/mockups/screen-2.html): a per-doctor day GRID with
+// hour lanes + appointment cards (source / urgency / status / assignee visually
+// unmistakable), a right rail with free slots + an AI-activity feed, a chronological
+// LIST view (and the mobile reflow), and a slot-picking booking slide-over. Explicit
+// loading / error / empty / day-off / no-doctors / disconnected-calendar / success /
+// permission-denied states throughout.
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/shared/api/client'
@@ -15,10 +18,19 @@ import { useActiveClinic } from '@/shared/hooks/useActiveClinic'
 import { rolesWith } from '@/shared/permissions'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { SlideOver } from '@/shared/components/SlideOver'
+import {
+  buildDayAxis,
+  formatRanges,
+  isSplitShift,
+  normalizeAvailability,
+  rangesForDate,
+} from '@/shared/calendarGrid'
 import type {
+  AppointmentEventFeedItem,
   AppointmentStatus,
   AppointmentWithNames,
   BookingPatient,
+  Clinic,
   Doctor,
   Service,
   SlotsResponse,
@@ -33,16 +45,31 @@ function addDays(date: string, n: number): string {
   d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10)
 }
+function isToday(date: string): boolean {
+  return date === todayISO()
+}
 function formatDay(date: string, lang: 'es' | 'en'): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', {
-    weekday: 'long',
+    weekday: 'short',
     day: 'numeric',
-    month: 'long',
+    month: 'short',
+    year: 'numeric',
     timeZone: 'UTC',
   })
 }
 /** HH:MM portion of a stored ISO timestamp — the wall-clock the API booked. */
 const timeOf = (iso: string): string => iso.slice(11, 16)
+const minOf = (hhmm: string): number => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+
+/** Up-to-2-letter initials from a name (for the doctor mini-avatar). */
+function initials(name: string | null | undefined): string {
+  if (!name) return '—'
+  const cleaned = name.replace(/^(dr|dra|dr\.|dra\.)\s+/i, '').trim()
+  const parts = cleaned.split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '—'
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
+}
 
 const field =
   'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800'
@@ -50,36 +77,141 @@ const field =
 const STATUS_STYLE: Record<AppointmentStatus, string> = {
   pending: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
   confirmed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-  cancelled: 'bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
-  completed: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
+  arrived: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300',
+  in_progress: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
+  cancelled: 'bg-gray-200 text-gray-500 line-through dark:bg-gray-800 dark:text-gray-400',
+  completed: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
   no_show: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
 }
+
+type ApptSource = 'ai' | 'staff'
+const sourceOf = (a: AppointmentWithNames): ApptSource => (a.conversationId ? 'ai' : 'staff')
+const isUrgent = (a: AppointmentWithNames): boolean =>
+  Boolean((a.metadata as { urgent?: unknown } | undefined)?.urgent)
 
 function StatusBadge({ status }: { status: AppointmentStatus }) {
   const { t } = useI18n()
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[status]}`}>
+    <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[status]}`}>
       {t(`cal.status.${status}`)}
     </span>
   )
 }
 
+function SourceTag({ source }: { source: ApptSource }) {
+  const { t } = useI18n()
+  const ai = source === 'ai'
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+        ai
+          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${ai ? 'bg-indigo-500' : 'bg-emerald-500'}`} />
+      {ai ? t('cal.sourceAi') : t('cal.sourceStaff')}
+    </span>
+  )
+}
+
+function UrgentTag() {
+  const { t } = useI18n()
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-950 dark:text-red-300">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+      {t('cal.urgent')}
+    </span>
+  )
+}
+
+// ── Appointment card (visual — click to manage) ─────────────────────────────────
+function AppointmentCard({
+  appt,
+  onManage,
+  compact = false,
+}: {
+  appt: AppointmentWithNames
+  onManage: () => void
+  compact?: boolean
+}) {
+  const { t } = useI18n()
+  const urgent = isUrgent(appt)
+  const source = sourceOf(appt)
+  const border = urgent
+    ? 'border-l-red-500'
+    : source === 'ai'
+      ? 'border-l-indigo-500'
+      : 'border-l-emerald-500'
+  const bg = urgent ? 'bg-red-50/60 dark:bg-red-950/30' : 'bg-white dark:bg-gray-900'
+
+  return (
+    <button
+      type="button"
+      onClick={onManage}
+      className={`w-full rounded-lg border border-gray-200 border-l-4 ${border} ${bg} p-2.5 text-left shadow-sm transition hover:shadow dark:border-gray-800`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className={`font-semibold ${appt.status === 'cancelled' ? 'line-through' : ''}`}>
+          {appt.patientName || t('cal.unknownPatient')}
+        </span>
+        <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-gray-500">
+          {timeOf(appt.startTime)}
+          {!compact && `–${timeOf(appt.endTime)}`}
+        </span>
+      </div>
+      {appt.serviceName && <p className="mt-0.5 text-[11.5px] text-gray-500">{appt.serviceName}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {urgent && <UrgentTag />}
+        <SourceTag source={source} />
+        <StatusBadge status={appt.status} />
+        {appt.doctorName && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-indigo-600 text-[9px] font-bold text-white">
+              {initials(appt.doctorName)}
+            </span>
+            {appt.doctorName.replace(/^(dra?\.?)\s+/i, '')}
+          </span>
+        )}
+      </div>
+    </button>
+  )
+}
+
 export default function CalendarPage() {
   const { t, language } = useI18n()
+  // Role gating: useAuthGuard redirects a role without the 'calendar' capability
+  // to /inbox (the codebase's permission-denied convention), so this page only
+  // ever renders for authorized roles (secretary / doctor / admin).
   const { ready } = useAuthGuard(rolesWith('calendar'))
-  // Screen 6 — the clinic comes from the shared active-clinic context (the header
-  // switcher), so an admin who switches clinic re-scopes the calendar too.
+  // Screen 6 — the clinic comes from the shared active-clinic context (header switcher).
   const { clinicId } = useActiveClinic()
   const [date, setDate] = useState(todayISO())
   const [doctorId, setDoctorId] = useState('') // '' = all doctors
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [booking, setBooking] = useState(false)
+  const [prefill, setPrefill] = useState<{ doctorId?: string; start?: string }>({})
+  const [manageId, setManageId] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  // A clinic switch invalidates the previously-picked doctor (it belongs to the old
-  // clinic), so fall back to the all-doctors view whenever the active clinic changes.
+  // A clinic switch invalidates the previously-picked doctor — fall back to all.
   useEffect(() => {
     setDoctorId('')
   }, [clinicId])
-  const [booking, setBooking] = useState(false)
-  const [rescheduleId, setRescheduleId] = useState<string | null>(null)
+
+  // Auto-dismiss the success banner.
+  useEffect(() => {
+    if (!success) return
+    const id = setTimeout(() => setSuccess(null), 6000)
+    return () => clearTimeout(id)
+  }, [success])
+
+  const clinicQuery = useQuery({
+    queryKey: ['clinic-current', clinicId],
+    enabled: Boolean(clinicId),
+    queryFn: () => api.get<{ clinic: Clinic }>('/clinics/current'),
+  })
+  const timezone = clinicQuery.data?.clinic.timezone ?? ''
 
   const doctorsQuery = useQuery({
     queryKey: ['doctors', clinicId],
@@ -99,13 +231,28 @@ export default function CalendarPage() {
     queryFn: () => {
       const q = new URLSearchParams({ from, to })
       if (doctorId) q.set('doctorId', doctorId)
-      return api.get<{ appointments: AppointmentWithNames[] }>(`/clinics/${clinicId}/appointments?${q}`)
+      return api.get<{ appointments: AppointmentWithNames[] }>(
+        `/clinics/${clinicId}/appointments?${q}`,
+      )
     },
   })
   const appointments = apptQuery.data?.appointments ?? []
 
   const selectedDoctor = doctorId ? doctors.find((d) => d.id === doctorId) : undefined
-  const rescheduleAppt = rescheduleId ? appointments.find((a) => a.id === rescheduleId) : undefined
+  const manageAppt = manageId ? appointments.find((a) => a.id === manageId) : undefined
+
+  // A single doctor is required for the grid (per-doctor lanes); all-doctors → list.
+  const effectiveView: 'grid' | 'list' = doctorId ? view : 'list'
+
+  const ranges = useMemo(
+    () => (selectedDoctor ? rangesForDate(normalizeAvailability(selectedDoctor.availableDays), date) : []),
+    [selectedDoctor, date],
+  )
+
+  const openBooking = (opts?: { doctorId?: string; start?: string }) => {
+    setPrefill(opts ?? {})
+    setBooking(true)
+  }
 
   if (!ready) {
     return (
@@ -116,248 +263,593 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Header: title, clinic (admin), doctor filter, date nav, book button */}
-      <div className="shrink-0 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="relative flex h-full flex-col overflow-hidden">
+      {/* Title + controls */}
+      <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">{t('cal.crumb')}</p>
             <h1 className="text-lg font-bold">{t('cal.title')}</h1>
-            <p className="text-xs text-gray-400">{t('cal.subtitle')}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => openBooking(doctorId ? { doctorId } : undefined)}
+            disabled={!clinicId || doctors.length === 0}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            + {t('cal.newBooking')}
+          </button>
+        </div>
+
+        {/* Controls row: day-nav · view toggle · doctor filter */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setDate((d) => addDays(d, -1))}
+              aria-label={t('cal.prev')}
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              ‹
+            </button>
+            <div className="px-1 leading-tight">
+              <span className="text-sm font-semibold capitalize">{formatDay(date, language)}</span>
+              <span className="block text-[10.5px] text-gray-400">
+                {isToday(date) ? `${t('cal.today')} · ` : ''}
+                {timezone ? `${timezone} · ` : ''}
+                {t('cal.clinicLocal')}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDate((d) => addDays(d, 1))}
+              aria-label={t('cal.next')}
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              onClick={() => setDate(todayISO())}
+              className="ml-1 rounded-md px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950"
+            >
+              {t('cal.today')}
+            </button>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+              className="ml-1 rounded-md border border-gray-300 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800"
+              aria-label={t('cal.crumb')}
+            />
+          </div>
+
+          {/* View toggle — disabled (forced to list) when no single doctor is picked */}
+          <div className="hidden overflow-hidden rounded-md border border-gray-300 sm:flex dark:border-gray-700">
+            {(['grid', 'list'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                disabled={v === 'grid' && !doctorId}
+                className={`px-3 py-1 text-xs ${
+                  effectiveView === v
+                    ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                    : 'text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:hover:bg-gray-800'
+                }`}
+              >
+                {v === 'grid' ? t('cal.viewDay') : t('cal.viewList')}
+              </button>
+            ))}
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <label htmlFor="doc" className="text-[11px] uppercase tracking-wide text-gray-400">
+              {t('cal.doctor')}
+            </label>
             <select
+              id="doc"
               value={doctorId}
               onChange={(e) => setDoctorId(e.target.value)}
               disabled={!clinicId || doctors.length === 0}
               className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
-              aria-label={t('cal.doctor')}
             >
               <option value="">{t('cal.allDoctors')}</option>
               {doctors.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
+                  {d.specialty ? ` — ${d.specialty}` : ''}
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={() => setBooking(true)}
-              disabled={!clinicId || doctors.length === 0}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {t('cal.book')}
-            </button>
           </div>
         </div>
+      </div>
 
-        {/* Date navigation */}
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setDate((d) => addDays(d, -1))}
-            aria-label={t('cal.prev')}
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            onClick={() => setDate(todayISO())}
-            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-          >
-            {t('cal.today')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDate((d) => addDays(d, 1))}
-            aria-label={t('cal.next')}
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-          >
-            ›
-          </button>
-          <span className="ml-1 text-sm font-medium capitalize">{formatDay(date, language)}</span>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="ml-auto rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-          />
+      {/* Success banner */}
+      {success && (
+        <div className="shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
+          ✓ {t('cal.bookSuccess', { patient: success })}{' '}
+          <span className="text-emerald-600 dark:text-emerald-400">{t('cal.bookSuccessHint')}</span>
+        </div>
+      )}
+
+      {/* Body: grid/list + rail */}
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto p-4">
+          {!clinicId ? (
+            <p className="text-sm text-gray-400">{t('cal.selectDoctor')}</p>
+          ) : doctorsQuery.isLoading ? (
+            <GridSkeleton label={t('cal.loading')} />
+          ) : doctors.length === 0 ? (
+            <EmptyState icon="👩‍⚕️" title={t('cal.noDoctors')} />
+          ) : apptQuery.isLoading ? (
+            <GridSkeleton label={t('cal.loading')} />
+          ) : apptQuery.isError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950">
+              <div className="text-3xl">⚠️</div>
+              <p className="mt-2 text-sm text-red-700 dark:text-red-300">{t('cal.error')}</p>
+              <button
+                type="button"
+                onClick={() => apptQuery.refetch()}
+                className="mt-3 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Per-doctor disconnected-calendar banner */}
+              {selectedDoctor && !selectedDoctor.calendarConnected && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  <span className="font-bold">⚠</span>
+                  <div>
+                    <p className="font-semibold">
+                      {t('cal.disconnected')} — {selectedDoctor.name}
+                    </p>
+                    <p className="mt-0.5">{t('cal.disconnectedHint')}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Doctor strip */}
+              {selectedDoctor && (
+                <DoctorStrip doctor={selectedDoctor} ranges={ranges} />
+              )}
+
+              {effectiveView === 'grid' && selectedDoctor ? (
+                ranges.length === 0 ? (
+                  <EmptyState
+                    icon="🌙"
+                    title={t('cal.dayOff')}
+                    hint={`${selectedDoctor.name}`}
+                  />
+                ) : (
+                  <DayGrid
+                    ranges={ranges}
+                    appointments={appointments}
+                    onManage={setManageId}
+                    onBookSlot={(start) => openBooking({ doctorId, start })}
+                  />
+                )
+              ) : appointments.length === 0 ? (
+                <EmptyState
+                  icon="🗓️"
+                  title={doctorId ? t('cal.emptyDoctor') : t('cal.empty')}
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => openBooking(doctorId ? { doctorId } : undefined)}
+                      className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                    >
+                      + {t('cal.newBooking')}
+                    </button>
+                  }
+                />
+              ) : (
+                <DayList appointments={appointments} onManage={setManageId} />
+              )}
+
+              <Legend />
+            </>
+          )}
         </div>
 
-        {/* Disconnected-calendar banner for the selected doctor */}
-        {selectedDoctor && !selectedDoctor.calendarConnected && (
-          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            <p className="font-semibold">⚠ {t('cal.disconnected')}</p>
-            <p className="mt-0.5">{t('cal.disconnectedHint')}</p>
-          </div>
+        {/* Right rail (desktop, per-doctor) */}
+        {clinicId && selectedDoctor && (
+          <aside className="hidden w-[300px] shrink-0 overflow-y-auto border-l border-gray-200 bg-white p-4 lg:block dark:border-gray-800 dark:bg-gray-900">
+            <FreeSlotsRail
+              clinicId={clinicId}
+              doctor={selectedDoctor}
+              date={date}
+              appointments={appointments}
+              onBookSlot={(start) => openBooking({ doctorId, start })}
+            />
+            <ActivityFeed clinicId={clinicId} date={date} doctorId={doctorId} />
+          </aside>
         )}
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {!clinicId ? (
-          <p className="text-sm text-gray-400">{t('cal.selectDoctor')}</p>
-        ) : doctorsQuery.isLoading ? (
-          <p className="text-sm text-gray-400">{t('cal.loading')}</p>
-        ) : doctors.length === 0 ? (
-          <p className="text-sm text-gray-400">{t('cal.noDoctors')}</p>
-        ) : apptQuery.isLoading ? (
-          <p className="text-sm text-gray-400">{t('cal.loading')}</p>
-        ) : apptQuery.isError ? (
-          <div className="text-sm text-red-600">
-            <p>{t('cal.error')}</p>
-            <button
-              type="button"
-              onClick={() => apptQuery.refetch()}
-              className="mt-2 rounded-md border border-gray-300 px-3 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-            >
-              {t('common.retry')}
-            </button>
-          </div>
-        ) : appointments.length === 0 ? (
-          <p className="text-sm text-gray-400">{doctorId ? t('cal.emptyDoctor') : t('cal.empty')}</p>
-        ) : (
-          <ul className="mx-auto max-w-3xl space-y-2">
-            {appointments.map((appt) => (
-              <AppointmentRow
-                key={appt.id}
-                clinicId={clinicId}
-                appt={appt}
-                onReschedule={() => setRescheduleId(appt.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* Mobile FAB */}
+      {clinicId && doctors.length > 0 && (
+        <button
+          type="button"
+          onClick={() => openBooking(doctorId ? { doctorId } : undefined)}
+          aria-label={t('cal.newBooking')}
+          className="absolute bottom-5 right-5 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-2xl text-white shadow-lg hover:bg-indigo-700 lg:hidden"
+        >
+          +
+        </button>
+      )}
 
       {/* Booking slide-over */}
-      <SlideOver open={booking} onClose={() => setBooking(false)} title={t('cal.book')}>
+      <SlideOver open={booking} onClose={() => setBooking(false)} title={t('cal.newBooking')}>
         <BookingPanel
           clinicId={clinicId}
           doctors={doctors}
           date={date}
+          initialDoctorId={prefill.doctorId}
+          initialStart={prefill.start}
           onClose={() => setBooking(false)}
+          onSuccess={(patient) => {
+            setBooking(false)
+            setSuccess(patient)
+          }}
         />
       </SlideOver>
 
-      {/* Reschedule slide-over */}
-      <SlideOver
-        open={Boolean(rescheduleAppt)}
-        onClose={() => setRescheduleId(null)}
-        title={t('cal.reschedule')}
-      >
-        {rescheduleAppt && (
-          <ReschedulePanel
-            clinicId={clinicId}
-            appt={rescheduleAppt}
-            onClose={() => setRescheduleId(null)}
-          />
+      {/* Manage-appointment slide-over (lifecycle + reschedule + urgency) */}
+      <SlideOver open={Boolean(manageAppt)} onClose={() => setManageId(null)} title={t('cal.manage')}>
+        {manageAppt && (
+          <ManagePanel clinicId={clinicId} appt={manageAppt} onClose={() => setManageId(null)} />
         )}
       </SlideOver>
     </div>
   )
 }
 
-// ── Appointment row with inline lifecycle actions ───────────────────────────────
-function AppointmentRow({
-  clinicId,
-  appt,
-  onReschedule,
-}: {
-  clinicId: string
-  appt: AppointmentWithNames
-  onReschedule: () => void
-}) {
+// ── Doctor strip (name chip + working-hours summary) ────────────────────────────
+function DoctorStrip({ doctor, ranges }: { doctor: Doctor; ranges: { start: string; end: string }[] }) {
   const { t } = useI18n()
-  const qc = useQueryClient()
-  const [error, setError] = useState(false)
-
-  const mutate = useMutation({
-    mutationFn: (status: AppointmentStatus) =>
-      api.patch(`/clinics/${clinicId}/appointments/${appt.id}`, { status }),
-    onMutate: () => setError(false),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['appointments', clinicId] }),
-    onError: () => setError(true),
-  })
-
-  const terminal = appt.status === 'cancelled' || appt.status === 'completed' || appt.status === 'no_show'
-
   return (
-    <li className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold">
-              {timeOf(appt.startTime)}–{timeOf(appt.endTime)}
-            </span>
-            <StatusBadge status={appt.status} />
-          </div>
-          <p className={`mt-1 font-medium ${appt.status === 'cancelled' ? 'line-through' : ''}`}>
-            {appt.patientName || t('cal.unknownPatient')}
-          </p>
-          <p className="text-xs text-gray-500">
-            {appt.doctorName && t('cal.withDoctor', { doctor: appt.doctorName })}
-            {appt.serviceName && ` · ${appt.serviceName}`}
-          </p>
-          {appt.notes && <p className="mt-1 text-xs text-gray-400">{appt.notes}</p>}
-        </div>
-
-        {!terminal && (
-          <div className="flex shrink-0 flex-col items-stretch gap-1">
-            {appt.status === 'pending' && (
-              <button
-                type="button"
-                onClick={() => mutate.mutate('confirmed')}
-                disabled={mutate.isPending}
-                className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {t('cal.confirmAppt')}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onReschedule}
-              className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-            >
-              {t('cal.reschedule')}
-            </button>
-            {appt.status === 'confirmed' && (
-              <button
-                type="button"
-                onClick={() => mutate.mutate('completed')}
-                disabled={mutate.isPending}
-                className="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950"
-              >
-                {t('cal.markCompleted')}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => mutate.mutate('no_show')}
-              disabled={mutate.isPending}
-              className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-            >
-              {t('cal.markNoShow')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm(t('cal.cancelConfirm'))) mutate.mutate('cancelled')
-              }}
-              disabled={mutate.isPending}
-              className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
-            >
-              {t('cal.cancel')}
-            </button>
-          </div>
-        )}
-      </div>
-      {error && <p className="mt-2 text-xs text-red-600">{t('cal.actionError')}</p>}
-    </li>
+    <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+      <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white py-0.5 pl-0.5 pr-3 dark:border-gray-700 dark:bg-gray-900">
+        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
+          {initials(doctor.name)}
+        </span>
+        <span className="font-medium">{doctor.name}</span>
+      </span>
+      {ranges.length > 0 ? (
+        <span className="text-gray-400">
+          {t('cal.workingHours')}: <b className="text-gray-600 dark:text-gray-300">{formatRanges(ranges)}</b>
+          {' · '}
+          {t('cal.slotMinutes', { n: 30 })}
+          {isSplitShift(ranges) ? ` · ${t('cal.splitShift')}` : ''}
+        </span>
+      ) : (
+        <span className="text-gray-400">{t('cal.dayOff')}</span>
+      )}
+    </div>
   )
 }
 
-// ── Shared free-slot picker ─────────────────────────────────────────────────────
+// ── Day grid (per-doctor hour lanes) ────────────────────────────────────────────
+function DayGrid({
+  ranges,
+  appointments,
+  onManage,
+  onBookSlot,
+}: {
+  ranges: { start: string; end: string }[]
+  appointments: AppointmentWithNames[]
+  onManage: (id: string) => void
+  onBookSlot: (start: string) => void
+}) {
+  const { t } = useI18n()
+  const axis = useMemo(() => buildDayAxis(ranges, 30), [ranges])
+  const axisStart = axis.length ? minOf(axis[0]!.time) : 0
+  const axisEnd = axis.length ? minOf(axis.at(-1)!.time) + 30 : 0
+
+  // Bucket each appointment into the 30-min row that contains its start.
+  const byRow = useMemo(() => {
+    const map = new Map<string, AppointmentWithNames[]>()
+    const outside: AppointmentWithNames[] = []
+    for (const a of appointments) {
+      const m = minOf(timeOf(a.startTime))
+      if (m < axisStart || m >= axisEnd) {
+        outside.push(a)
+        continue
+      }
+      const slotMin = axisStart + Math.floor((m - axisStart) / 30) * 30
+      const key = `${String(Math.floor(slotMin / 60)).padStart(2, '0')}:${String(slotMin % 60).padStart(2, '0')}`
+      const arr = map.get(key) ?? []
+      arr.push(a)
+      map.set(key, arr)
+    }
+    return { map, outside }
+  }, [appointments, axisStart, axisEnd])
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+      {axis.map((row) => {
+        const appts = byRow.map.get(row.time) ?? []
+        return (
+          <div key={row.time} className="grid grid-cols-[56px_1fr]">
+            <div className="border-t border-gray-100 px-2 py-1.5 text-right text-[11px] text-gray-400 dark:border-gray-800">
+              {row.time}
+            </div>
+            <div
+              className={`min-h-[56px] border-l border-t border-gray-100 p-1.5 dark:border-gray-800 ${
+                row.kind === 'break'
+                  ? 'bg-amber-50/40 dark:bg-amber-950/20'
+                  : 'bg-white dark:bg-gray-900'
+              }`}
+            >
+              {appts.length > 0 ? (
+                <div className="space-y-1.5">
+                  {appts.map((a) => (
+                    <AppointmentCard key={a.id} appt={a} onManage={() => onManage(a.id)} />
+                  ))}
+                </div>
+              ) : row.kind === 'break' ? (
+                <span className="text-[10.5px] italic text-gray-400">{t('cal.break')}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onBookSlot(row.time)}
+                  className="text-[10.5px] italic text-gray-300 hover:text-indigo-500 dark:text-gray-600"
+                >
+                  {t('cal.free')}
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })}
+      {byRow.outside.length > 0 && (
+        <div className="space-y-1.5 border-t border-gray-100 p-2 dark:border-gray-800">
+          {byRow.outside.map((a) => (
+            <AppointmentCard key={a.id} appt={a} onManage={() => onManage(a.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Day list (all-doctors / list view / mobile) ─────────────────────────────────
+function DayList({
+  appointments,
+  onManage,
+}: {
+  appointments: AppointmentWithNames[]
+  onManage: (id: string) => void
+}) {
+  return (
+    <ul className="space-y-2">
+      {appointments.map((a) => (
+        <li key={a.id} className="flex items-stretch gap-2">
+          <div className="w-12 shrink-0 pt-1 text-right font-mono text-[11px] tabular-nums text-gray-400">
+            {timeOf(a.startTime)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <AppointmentCard appt={a} onManage={() => onManage(a.id)} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ── Legend ──────────────────────────────────────────────────────────────────────
+function Legend() {
+  const { t } = useI18n()
+  const item = (color: string, label: string) => (
+    <span className="flex items-center gap-1.5">
+      <span className={`h-3.5 w-3.5 rounded border-l-4 ${color}`} />
+      {label}
+    </span>
+  )
+  return (
+    <div className="mt-4 flex flex-wrap gap-4 border-t border-gray-200 pt-3 text-[11.5px] text-gray-500 dark:border-gray-800">
+      {item('border-l-indigo-500', t('cal.legendAi'))}
+      {item('border-l-emerald-500', t('cal.legendStaff'))}
+      {item('border-l-red-500', t('cal.legendUrgent'))}
+      <span className="text-gray-400">{t('cal.legendStatuses')}</span>
+    </div>
+  )
+}
+
+// ── Free-slots rail ─────────────────────────────────────────────────────────────
+function FreeSlotsRail({
+  clinicId,
+  doctor,
+  date,
+  appointments,
+  onBookSlot,
+}: {
+  clinicId: string
+  doctor: Doctor
+  date: string
+  appointments: AppointmentWithNames[]
+  onBookSlot: (start: string) => void
+}) {
+  const { t } = useI18n()
+  const query = useQuery({
+    queryKey: ['slots', clinicId, doctor.id, '', date],
+    queryFn: () =>
+      api.get<SlotsResponse>(
+        `/clinics/${clinicId}/appointments/slots?${new URLSearchParams({ doctorId: doctor.id, date })}`,
+      ),
+  })
+
+  const taken = useMemo(
+    () =>
+      appointments
+        .filter((a) => a.status !== 'cancelled')
+        .map((a) => timeOf(a.startTime)),
+    [appointments],
+  )
+
+  return (
+    <section className="mb-5">
+      <h3 className="text-sm font-semibold">{t('cal.freeSlots')}</h3>
+      <p className="mt-0.5 text-[11.5px] text-gray-400">{t('cal.freeSlotsHint')}</p>
+      <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+        <p className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+          🟢 {t('cal.availableToBook')}
+        </p>
+        {query.isLoading ? (
+          <p className="text-xs text-gray-400">{t('cal.slotsLoading')}</p>
+        ) : query.isError ? (
+          <p className="text-xs text-red-600">{t('cal.error')}</p>
+        ) : !query.data?.working ? (
+          <p className="text-xs text-gray-400">{t('cal.dayOff')}</p>
+        ) : query.data.slots.length === 0 && taken.length === 0 ? (
+          <p className="text-xs text-gray-400">{t('cal.noSlots')}</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5">
+            {query.data.slots.map((s) => (
+              <button
+                key={s.start}
+                type="button"
+                onClick={() => onBookSlot(s.start)}
+                className="rounded-md border border-emerald-200 bg-emerald-50 py-1.5 text-center text-xs font-semibold tabular-nums text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+              >
+                {s.start}
+              </button>
+            ))}
+            {taken.map((tk, i) => (
+              <span
+                key={`${tk}-${i}`}
+                className="rounded-md border border-gray-200 bg-gray-50 py-1.5 text-center text-xs font-medium tabular-nums text-gray-400 line-through dark:border-gray-800 dark:bg-gray-800"
+              >
+                {tk}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ── AI booking activity feed ────────────────────────────────────────────────────
+const FEED_DOT: Record<string, string> = {
+  ai: 'bg-indigo-500',
+  staff: 'bg-emerald-500',
+  cancelled: 'bg-gray-400',
+  no_show: 'bg-red-500',
+  rescheduled: 'bg-amber-500',
+}
+
+function feedLabel(ev: AppointmentEventFeedItem): { key: string; via: 'viaAi' | 'viaStaff'; dot: string } {
+  if (ev.eventType === 'created') {
+    return ev.aiSourced
+      ? { key: 'cal.feed.bookedAi', via: 'viaAi', dot: FEED_DOT.ai! }
+      : { key: 'cal.feed.bookedStaff', via: 'viaStaff', dot: FEED_DOT.staff! }
+  }
+  const dot = FEED_DOT[ev.eventType] ?? (ev.aiSourced ? FEED_DOT.ai! : FEED_DOT.staff!)
+  return { key: `cal.feed.${ev.eventType}`, via: ev.aiSourced ? 'viaAi' : 'viaStaff', dot }
+}
+
+function ActivityFeed({ clinicId, date, doctorId }: { clinicId: string; date: string; doctorId: string }) {
+  const { t } = useI18n()
+  const from = `${date}T00:00:00`
+  const to = `${addDays(date, 1)}T00:00:00`
+  const query = useQuery({
+    queryKey: ['appt-events', clinicId, date, doctorId],
+    queryFn: () => {
+      const q = new URLSearchParams({ from, to })
+      if (doctorId) q.set('doctorId', doctorId)
+      return api.get<{ events: AppointmentEventFeedItem[] }>(
+        `/clinics/${clinicId}/appointments/events?${q}`,
+      )
+    },
+  })
+  const events = query.data?.events ?? []
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold">{t('cal.activity')}</h3>
+      <p className="mt-0.5 text-[11.5px] text-gray-400">{t('cal.activityHint')}</p>
+      <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+        {query.isLoading ? (
+          <p className="text-xs text-gray-400">{t('common.loading')}</p>
+        ) : query.isError ? (
+          <p className="text-xs text-red-600">{t('cal.activityError')}</p>
+        ) : events.length === 0 ? (
+          <p className="text-xs text-gray-400">{t('cal.activityEmpty')}</p>
+        ) : (
+          <div className="flex flex-col">
+            {events.map((ev) => {
+              const { key, via, dot } = feedLabel(ev)
+              const patient = ev.patientName || t('cal.unknownPatient')
+              return (
+                <div
+                  key={ev.id}
+                  className="flex gap-2.5 border-t border-gray-100 py-2 first:border-t-0 dark:border-gray-800"
+                >
+                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    <span className="font-medium text-gray-800 dark:text-gray-100">
+                      {t(key as 'cal.feed.bookedAi', { patient })}
+                    </span>{' '}
+                    · {timeOf(ev.startTime)}
+                    <div className="mt-0.5 text-[10.5px] text-gray-400">
+                      {t(`cal.feed.${via}`)} · {timeOf(ev.createdAt)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ── Shared bits: empty state, skeleton ──────────────────────────────────────────
+function EmptyState({
+  icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: string
+  title: string
+  hint?: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center dark:border-gray-800 dark:bg-gray-900">
+      <div className="text-3xl">{icon}</div>
+      <h4 className="text-sm font-semibold">{title}</h4>
+      {hint && <p className="text-xs text-gray-400">{hint}</p>}
+      {action}
+    </div>
+  )
+}
+
+function GridSkeleton({ label }: { label: string }) {
+  return (
+    <div>
+      <div className="space-y-2">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="h-12 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800"
+            style={{ width: `${100 - i * 6}%` }}
+          />
+        ))}
+      </div>
+      <p className="mt-3 text-center text-xs text-gray-400">{label}</p>
+    </div>
+  )
+}
+
+// ── Shared free-slot picker (booking + reschedule) ──────────────────────────────
 function SlotPicker({
   clinicId,
   doctorId,
@@ -423,21 +915,28 @@ function BookingPanel({
   clinicId,
   doctors,
   date: initialDate,
+  initialDoctorId,
+  initialStart,
   onClose,
+  onSuccess,
 }: {
   clinicId: string
   doctors: Doctor[]
   date: string
+  initialDoctorId?: string
+  initialStart?: string
   onClose: () => void
+  onSuccess: (patientName: string) => void
 }) {
   const { t } = useI18n()
   const qc = useQueryClient()
-  const [doctorId, setDoctorId] = useState(doctors[0]?.id ?? '')
+  const [doctorId, setDoctorId] = useState(initialDoctorId ?? doctors[0]?.id ?? '')
   const [serviceId, setServiceId] = useState('')
   const [patientId, setPatientId] = useState('')
   const [date, setDate] = useState(initialDate)
-  const [start, setStart] = useState('')
+  const [start, setStart] = useState(initialStart ?? '')
   const [notes, setNotes] = useState('')
+  const [urgent, setUrgent] = useState(false)
   const [errorKey, setErrorKey] = useState<'cal.bookError' | 'cal.slotTaken' | null>(null)
 
   const servicesQuery = useQuery({
@@ -446,26 +945,58 @@ function BookingPanel({
   })
   const patientsQuery = useQuery({
     queryKey: ['booking-patients', clinicId],
-    queryFn: () => api.get<{ patients: BookingPatient[] }>(`/clinics/${clinicId}/appointments/patients`),
+    queryFn: () =>
+      api.get<{ patients: BookingPatient[] }>(`/clinics/${clinicId}/appointments/patients`),
   })
   const services = servicesQuery.data?.services ?? []
   const patients = patientsQuery.data?.patients ?? []
+  const patientName = patients.find((p) => p.id === patientId)?.fullName || t('cal.unknownPatient')
 
   const mutation = useMutation({
     mutationFn: () =>
-      api.post(`/clinics/${clinicId}/appointments`, { patientId, doctorId, serviceId: serviceId || undefined, date, start, notes: notes || undefined }),
+      api.post(`/clinics/${clinicId}/appointments`, {
+        patientId,
+        doctorId,
+        serviceId: serviceId || undefined,
+        date,
+        start,
+        notes: notes || undefined,
+        urgent: urgent || undefined,
+      }),
     onMutate: () => setErrorKey(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['appointments', clinicId] })
-      onClose()
+      qc.invalidateQueries({ queryKey: ['appt-events', clinicId] })
+      qc.invalidateQueries({ queryKey: ['slots', clinicId] })
+      onSuccess(patientName)
     },
-    onError: (e) => setErrorKey(e instanceof ApiError && e.status === 409 ? 'cal.slotTaken' : 'cal.bookError'),
+    onError: (e) =>
+      setErrorKey(e instanceof ApiError && e.status === 409 ? 'cal.slotTaken' : 'cal.bookError'),
   })
 
   const canSubmit = Boolean(doctorId && patientId && date && start) && !mutation.isPending
 
   return (
     <div className="space-y-3">
+      <label className="block text-sm">
+        <span className="text-gray-500">{t('cal.patient')}</span>
+        <select
+          value={patientId}
+          onChange={(e) => setPatientId(e.target.value)}
+          className={`${field} mt-1`}
+        >
+          <option value="">{t('cal.selectPatient')}</option>
+          {patients.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.fullName || t('cal.unknownPatient')}
+            </option>
+          ))}
+        </select>
+        {patients.length === 0 && !patientsQuery.isLoading && (
+          <span className="mt-1 block text-xs text-gray-400">{t('cal.noPatients')}</span>
+        )}
+      </label>
+
       <label className="block text-sm">
         <span className="text-gray-500">{t('cal.doctor')}</span>
         <select
@@ -479,24 +1010,10 @@ function BookingPanel({
           {doctors.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
+              {d.specialty ? ` — ${d.specialty}` : ''}
             </option>
           ))}
         </select>
-      </label>
-
-      <label className="block text-sm">
-        <span className="text-gray-500">{t('cal.patient')}</span>
-        <select value={patientId} onChange={(e) => setPatientId(e.target.value)} className={`${field} mt-1`}>
-          <option value="">{t('cal.selectPatient')}</option>
-          {patients.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.fullName || t('cal.unknownPatient')}
-            </option>
-          ))}
-        </select>
-        {patients.length === 0 && !patientsQuery.isLoading && (
-          <span className="mt-1 block text-xs text-gray-400">{t('cal.noPatients')}</span>
-        )}
       </label>
 
       <label className="block text-sm">
@@ -547,6 +1064,16 @@ function BookingPanel({
         </div>
       </div>
 
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={urgent}
+          onChange={(e) => setUrgent(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+        />
+        <span className="font-medium text-red-600">{t('cal.urgentField')}</span>
+      </label>
+
       <label className="block text-sm">
         <span className="text-gray-500">{t('cal.notes')}</span>
         <textarea
@@ -581,8 +1108,8 @@ function BookingPanel({
   )
 }
 
-// ── Reschedule form (doctor + service fixed; pick a new date + slot) ────────────
-function ReschedulePanel({
+// ── Manage panel (lifecycle + reschedule + urgency toggle) ──────────────────────
+function ManagePanel({
   clinicId,
   appt,
   onClose,
@@ -595,46 +1122,160 @@ function ReschedulePanel({
   const qc = useQueryClient()
   const [date, setDate] = useState(appt.startTime.slice(0, 10))
   const [start, setStart] = useState('')
-  const [errorKey, setErrorKey] = useState<'cal.bookError' | 'cal.slotTaken' | null>(null)
+  const [errorKey, setErrorKey] = useState<'cal.bookError' | 'cal.slotTaken' | 'cal.actionError' | null>(
+    null,
+  )
 
-  const mutation = useMutation({
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['appointments', clinicId] })
+    qc.invalidateQueries({ queryKey: ['appt-events', clinicId] })
+    qc.invalidateQueries({ queryKey: ['slots', clinicId] })
+  }
+
+  const statusMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      api.patch(`/clinics/${clinicId}/appointments/${appt.id}`, body),
+    onMutate: () => setErrorKey(null),
+    onSuccess: () => {
+      invalidate()
+      onClose()
+    },
+    onError: () => setErrorKey('cal.actionError'),
+  })
+
+  const rescheduleMutation = useMutation({
     mutationFn: () => api.patch(`/clinics/${clinicId}/appointments/${appt.id}`, { date, start }),
     onMutate: () => setErrorKey(null),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['appointments', clinicId] })
+      invalidate()
       onClose()
     },
-    onError: (e) => setErrorKey(e instanceof ApiError && e.status === 409 ? 'cal.slotTaken' : 'cal.bookError'),
+    onError: (e) =>
+      setErrorKey(e instanceof ApiError && e.status === 409 ? 'cal.slotTaken' : 'cal.bookError'),
   })
 
+  const terminal =
+    appt.status === 'cancelled' || appt.status === 'completed' || appt.status === 'no_show'
+  const urgent = isUrgent(appt)
+  const busy = statusMutation.isPending || rescheduleMutation.isPending
+
+  const actionBtn =
+    'rounded-md border px-2.5 py-1.5 text-xs font-medium disabled:opacity-50'
+
   return (
-    <div className="space-y-3">
-      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 text-xs dark:border-gray-800 dark:bg-gray-800">
-        <p className="font-medium">{appt.patientName || t('cal.unknownPatient')}</p>
-        <p className="text-gray-500">
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-semibold">{appt.patientName || t('cal.unknownPatient')}</p>
+          <StatusBadge status={appt.status} />
+        </div>
+        <p className="mt-0.5 font-mono text-xs text-gray-500">
+          {timeOf(appt.startTime)}–{timeOf(appt.endTime)}
+        </p>
+        <p className="text-xs text-gray-500">
           {appt.doctorName && t('cal.withDoctor', { doctor: appt.doctorName })}
           {appt.serviceName && ` · ${appt.serviceName}`}
         </p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {urgent && <UrgentTag />}
+          <SourceTag source={sourceOf(appt)} />
+        </div>
+        {appt.notes && <p className="mt-2 text-xs text-gray-400">{appt.notes}</p>}
       </div>
 
-      <label className="block text-sm">
-        <span className="text-gray-500">{t('cal.book')}</span>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => {
-            if (e.target.value) {
-              setDate(e.target.value)
-              setStart('')
-            }
-          }}
-          className={`${field} mt-1`}
-        />
-      </label>
+      {/* Lifecycle actions */}
+      {!terminal && (
+        <div className="flex flex-wrap gap-2">
+          {appt.status === 'pending' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => statusMutation.mutate({ status: 'confirmed' })}
+              className={`${actionBtn} border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300`}
+            >
+              {t('cal.confirmAppt')}
+            </button>
+          )}
+          {(appt.status === 'confirmed' || appt.status === 'pending') && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => statusMutation.mutate({ status: 'arrived' })}
+              className={`${actionBtn} border-teal-300 text-teal-700 hover:bg-teal-50 dark:border-teal-900 dark:text-teal-300`}
+            >
+              {t('cal.markArrived')}
+            </button>
+          )}
+          {appt.status === 'arrived' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => statusMutation.mutate({ status: 'in_progress' })}
+              className={`${actionBtn} border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:text-indigo-300`}
+            >
+              {t('cal.markInProgress')}
+            </button>
+          )}
+          {(appt.status === 'in_progress' ||
+            appt.status === 'arrived' ||
+            appt.status === 'confirmed') && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => statusMutation.mutate({ status: 'completed' })}
+              className={`${actionBtn} border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300`}
+            >
+              {t('cal.markCompleted')}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => statusMutation.mutate({ status: 'no_show' })}
+            className={`${actionBtn} border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300`}
+          >
+            {t('cal.markNoShow')}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => statusMutation.mutate({ urgent: !urgent })}
+            className={`${actionBtn} border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950`}
+          >
+            {urgent ? t('cal.unmarkUrgent') : t('cal.markUrgent')}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (confirm(t('cal.cancelConfirm'))) statusMutation.mutate({ status: 'cancelled' })
+            }}
+            className={`${actionBtn} border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950`}
+          >
+            {t('cal.cancel')}
+          </button>
+        </div>
+      )}
 
-      <div className="text-sm">
-        <span className="text-gray-500">{t('cal.pickSlot')}</span>
-        <div className="mt-1">
+      {/* Reschedule */}
+      {!terminal && (
+        <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
+          <p className="text-sm font-semibold">{t('cal.reschedule')}</p>
+          <label className="block text-sm">
+            <span className="text-gray-500">{t('cal.book')}</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setDate(e.target.value)
+                  setStart('')
+                }
+              }}
+              className={`${field} mt-1`}
+            />
+          </label>
           <SlotPicker
             clinicId={clinicId}
             doctorId={appt.doctorId ?? ''}
@@ -643,28 +1284,26 @@ function ReschedulePanel({
             value={start}
             onPick={setStart}
           />
+          <button
+            type="button"
+            onClick={() => rescheduleMutation.mutate()}
+            disabled={!start || busy}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {rescheduleMutation.isPending ? t('cal.rescheduling') : t('cal.reschedule')}
+          </button>
         </div>
-      </div>
+      )}
 
       {errorKey && <p className="text-xs text-red-600">{t(errorKey)}</p>}
 
-      <div className="flex gap-2 pt-1">
-        <button
-          type="button"
-          onClick={() => mutation.mutate()}
-          disabled={!start || mutation.isPending}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {mutation.isPending ? t('cal.rescheduling') : t('cal.reschedule')}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-        >
-          {t('cal.bookingClosed')}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+      >
+        {t('cal.bookingClosed')}
+      </button>
     </div>
   )
 }

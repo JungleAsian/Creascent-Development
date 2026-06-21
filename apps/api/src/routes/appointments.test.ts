@@ -77,10 +77,38 @@ vi.mock('@docmee/db', () => ({
       return row
     },
     addEvent: async (clinicId: string, appointmentId: string, eventType: string, actorId?: string) => {
-      const ev = { clinicId, appointmentId, eventType, actorId }
+      const ev = { clinicId, appointmentId, eventType, actorId, createdAt: `2026-06-22T08:${String(store.events.length).padStart(2, '0')}:00` }
       store.events.push(ev)
       return ev
     },
+    listEventsInRange: async (
+      clinicId: string,
+      { from, to, doctorId }: { from: string; to: string; doctorId?: string },
+    ) =>
+      store.events
+        .filter((e) => e.clinicId === clinicId)
+        .map((e) => {
+          const a = store.appts.get(e.appointmentId as string)
+          if (!a) return null
+          const p = store.patients.get(a.patientId as string)
+          return {
+            id: `${e.appointmentId}-${e.eventType}`,
+            appointmentId: e.appointmentId,
+            eventType: e.eventType,
+            createdAt: e.createdAt,
+            patientName: (p?.fullName as string) ?? null,
+            startTime: a.startTime,
+            aiSourced: Boolean(a.conversationId),
+          }
+        })
+        .filter(
+          (it): it is NonNullable<typeof it> =>
+            it !== null &&
+            (it.startTime as string) >= from &&
+            (it.startTime as string) < to &&
+            (!doctorId || store.appts.get(it.appointmentId as string)?.doctorId === doctorId),
+        )
+        .reverse(),
   }),
 }))
 
@@ -222,6 +250,91 @@ describe('Appointment routes (Screen 2 — Req 9/30)', () => {
       payload: { date: '2026-06-29' },
     })
     expect(res.statusCode).toBe(400)
+  })
+
+  it('POST with urgent:true stores the flag on metadata', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/clinics/c-1/appointments',
+      headers: auth,
+      payload: { patientId: 'pat-1', doctorId: 'doc-1', date: '2026-07-06', start: '09:00', urgent: true },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body).appointment.metadata).toEqual({ urgent: true })
+  })
+
+  it('PATCH advances through arrived → in_progress and records each event', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/clinics/c-1/appointments',
+      headers: auth,
+      payload: { patientId: 'pat-1', doctorId: 'doc-1', date: '2026-07-13', start: '09:00' },
+    })
+    const id = JSON.parse(created.body).appointment.id
+
+    const arrived = await app.inject({
+      method: 'PATCH',
+      url: `/clinics/c-1/appointments/${id}`,
+      headers: auth,
+      payload: { status: 'arrived' },
+    })
+    expect(JSON.parse(arrived.body).appointment.status).toBe('arrived')
+
+    const inProgress = await app.inject({
+      method: 'PATCH',
+      url: `/clinics/c-1/appointments/${id}`,
+      headers: auth,
+      payload: { status: 'in_progress' },
+    })
+    expect(JSON.parse(inProgress.body).appointment.status).toBe('in_progress')
+    expect(store.events.some((e) => e.eventType === 'arrived')).toBe(true)
+    expect(store.events.some((e) => e.eventType === 'in_progress')).toBe(true)
+  })
+
+  it('PATCH urgent-only toggles the flag without changing status', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/clinics/c-1/appointments',
+      headers: auth,
+      payload: { patientId: 'pat-1', doctorId: 'doc-1', date: '2026-07-20', start: '09:00' },
+    })
+    const id = JSON.parse(created.body).appointment.id
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/clinics/c-1/appointments/${id}`,
+      headers: auth,
+      payload: { urgent: true },
+    })
+    expect(res.statusCode).toBe(200)
+    const appt = JSON.parse(res.body).appointment
+    expect(appt.status).toBe('pending')
+    expect(appt.metadata).toEqual({ urgent: true })
+  })
+
+  it('GET /events returns the day activity feed (newest first, staff-sourced)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/clinics/c-1/appointments/events?from=2026-07-13T00:00:00&to=2026-07-14T00:00:00&doctorId=doc-1',
+      headers: auth,
+    })
+    expect(res.statusCode).toBe(200)
+    const { events } = JSON.parse(res.body)
+    // The 2026-07-13 appointment recorded arrived + in_progress lifecycle events.
+    const types = events.map((e: { eventType: string }) => e.eventType)
+    expect(types).toContain('arrived')
+    expect(types).toContain('in_progress')
+    expect(events[0].patientName).toBe('Juan Pérez')
+    // A panel booking has no conversation → staff-sourced.
+    expect(events.every((e: { aiSourced: boolean }) => e.aiSourced === false)).toBe(true)
+  })
+
+  it('GET /events cross-clinic → 403', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/clinics/c-1/appointments/events?from=2026-07-13T00:00:00&to=2026-07-14T00:00:00',
+      headers: { authorization: `Bearer ${otherClinicToken}` },
+    })
+    expect(res.statusCode).toBe(403)
   })
 
   it('GET without auth → 401, cross-clinic → 403', async () => {

@@ -300,9 +300,12 @@ export interface MessageDeliveryEvent {
 
 // ── Appointments ──────────────────────────────────────────────────────────────
 
-export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show'
+// Screen 2 — the appointment lifecycle. 'arrived' (patient checked in) and
+// 'in_progress' (visit underway) sit between 'confirmed' and 'completed'.
+export type AppointmentStatus =
+  | 'pending' | 'confirmed' | 'arrived' | 'in_progress' | 'cancelled' | 'completed' | 'no_show'
 export type AppointmentEventType =
-  | 'created' | 'confirmed' | 'cancelled' | 'rescheduled'
+  | 'created' | 'confirmed' | 'arrived' | 'in_progress' | 'cancelled' | 'rescheduled'
   | 'completed' | 'no_show' | 'reminder_sent'
 
 export interface Service {

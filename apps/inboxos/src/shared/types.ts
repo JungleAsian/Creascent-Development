@@ -158,7 +158,27 @@ export interface Patient {
   updatedAt: string
 }
 
-export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show'
+// Screen 2 — the appointment lifecycle. 'arrived' (checked in) and 'in_progress'
+// (visit underway) sit between 'confirmed' and 'completed' (mirrors @docmee/db).
+export type AppointmentStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'arrived'
+  | 'in_progress'
+  | 'cancelled'
+  | 'completed'
+  | 'no_show'
+
+export type AppointmentEventType =
+  | 'created'
+  | 'confirmed'
+  | 'arrived'
+  | 'in_progress'
+  | 'cancelled'
+  | 'rescheduled'
+  | 'completed'
+  | 'no_show'
+  | 'reminder_sent'
 
 export interface Appointment {
   id: string
@@ -167,11 +187,16 @@ export interface Appointment {
   providerId: string | null
   doctorId: string | null
   serviceId: string | null
+  // Screen 2: present when the AI booked the appointment over a channel (WhatsApp).
+  // null when a staff member booked it by hand → drives the AI-vs-staff source mark.
+  conversationId: string | null
   googleEventId: string | null
   status: AppointmentStatus
   startTime: string
   endTime: string
   notes: string | null
+  // Screen 2: metadata.urgent flags an urgent appointment (red card + tag).
+  metadata: Record<string, unknown>
   createdAt: string
 }
 
@@ -182,6 +207,18 @@ export interface AppointmentWithNames extends Appointment {
   doctorName: string | null
   serviceName: string | null
   serviceDurationMinutes: number | null
+}
+
+/** A row of the calendar's "AI booking activity" feed (GET .../appointments/events). */
+export interface AppointmentEventFeedItem {
+  id: string
+  appointmentId: string
+  eventType: AppointmentEventType
+  createdAt: string
+  patientName: string | null
+  startTime: string
+  /** True when the underlying appointment was AI-booked over a channel. */
+  aiSourced: boolean
 }
 
 /** A bookable start time, returned by GET /clinics/:id/appointments/slots. */
