@@ -434,7 +434,12 @@ function runClaudeHeadless(prompt: string, message: string, timeoutMs = RESOLVE_
   })
 }
 
-// Implement an item with Claude Code, capture the commit, move it to review.
+// Resolve an item end-to-end with the assigned AI, fully hands-off:
+//  1. A non-Claude AI (Grok/Gemini/DeepSeek/Codex) first DRAFTS a resolution.
+//  2. Claude Code then IMPLEMENTS it (or resolves directly when Claude is the
+//     assignee / no AI key is available) and commits.
+//  3. The fix is auto-VERIFIED; confidence >= threshold auto-approves (done),
+//     below leaves it in review with the reason.
 async function resolveTask(id: number, provider = 'claude'): Promise<number> {
   const tasks = getTasks()
   const task = tasks.find((item) => item.id === id)
@@ -444,79 +449,93 @@ async function resolveTask(id: number, provider = 'claude'): Promise<number> {
   const planLine = (task.plan && task.plan.trim()) || 'Investigate the relevant code, design a focused fix, and implement it.'
   touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', currentId: task.id, message: `Resolving backlog #${id} with ${provider}: ${task.title}` })
 
-  // Claude Code is the only agentic runner: it edits the repo + commits.
-  if (provider === 'claude' || provider === 'claude-code') {
-    const message = `Resolving backlog #${id}: ${task.title}`
-    const prompt = [
-      `Resolve Docmee backlog item #${task.id}: ${task.title}.`,
-      `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
-      '',
-      'Plan / instruction:',
-      planLine,
-      '',
-      'Requirements:',
-      '- Work locally; keep changes scoped to this item.',
-      '- Run the relevant local checks.',
-      `- Commit with a clear message referencing "backlog #${task.id}".`,
-      '- Report what you changed.'
-    ].join('\n')
-    const { code } = await runClaudeHeadless(prompt, message)
-    touchBacklogRun({ status: code === 0 ? 'complete' : 'failed', message: code === 0 ? `Backlog #${id} resolved — ready for review.` : `Backlog #${id} resolution failed (exit ${code}).` })
-    const after = getTasks()
-    const updated = after.find((item) => item.id === id)
-    if (updated) {
-      updated.status = code === 0 ? 'review' : 'blocked'
-      if (code === 0) {
-        const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8' })
-        if (head.status === 0) updated.commit = (head.stdout || '').trim()
+  // Step 1 — non-Claude AI drafts a concrete resolution (Claude implements it).
+  let proposal: string | null = null
+  if (provider !== 'claude' && provider !== 'claude-code') {
+    const engine = engineForProvider(provider)
+    if (engine) {
+      touchBacklogRun({ status: 'running', message: `${provider} is drafting a resolution for #${id}…` })
+      const draftPrompt = [
+        `You are resolving a backlog item for the Docmee codebase (a TypeScript monorepo).`,
+        `Item #${task.id}: ${task.title}.`,
+        `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+        '',
+        'Plan / instruction:',
+        planLine,
+        '',
+        'Produce a concrete, ready-to-apply resolution:',
+        '1. Root cause / what to change and why.',
+        '2. The exact code changes (a diff or full file snippets with paths).',
+        '3. Steps to apply, plus any commands/tests to run.',
+        'Be specific and concise.'
+      ].join('\n')
+      proposal = await llmChat(draftPrompt, engine)
+      if (proposal) {
+        const t = getTasks()
+        const u = t.find((item) => item.id === id)
+        if (u) { u.result = proposal; u.resultProvider = `${provider}:${engine.model}`; saveTasks(t) }
+        log('backlog', `${provider} drafted a resolution for #${id} — handing to Claude to implement.`)
+      } else {
+        log('backlog', `${provider} produced no draft for #${id} — Claude will resolve directly.`, 'warn')
       }
-      saveTasks(after)
+    } else {
+      log('backlog', `No API key for "${provider}" — Claude will resolve #${id} directly.`, 'warn')
     }
-    return code
   }
 
-  // Other providers run via their chat API: they can't edit the repo, so they
-  // auto-produce a concrete resolution (patch + steps) captured on the item for
-  // the user to apply + verify.
-  const engine = engineForProvider(provider)
-  if (!engine) {
-    const after = getTasks()
-    const updated = after.find((item) => item.id === id)
-    if (updated) { updated.status = 'review'; saveTasks(after) }
-    touchBacklogRun({ status: 'failed', message: `No API runner/key for ${provider} — open it manually and resolve.` })
-    log('backlog', `No API runner for "${provider}" (missing key, or IDE-only like cursor). Use the manual handoff.`, 'warn')
-    return 1
-  }
-  const prompt = [
-    `You are resolving a backlog item for the Docmee codebase (a TypeScript monorepo).`,
-    `Item #${task.id}: ${task.title}.`,
-    `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
-    '',
-    'Plan / instruction:',
-    planLine,
-    '',
-    'You cannot edit files directly. Produce a concrete, ready-to-apply resolution:',
-    '1. Root cause / what to change and why.',
-    '2. The exact code changes (a diff or full file snippets with paths).',
-    '3. Steps to apply, plus any commands/tests to run.',
-    'Be specific and concise.'
-  ].join('\n')
-  const output = await llmChat(prompt, engine)
+  // Step 2 — Claude Code implements (the AI's draft, or the plan directly) + commits.
+  const implementMessage = `Resolving backlog #${id}: ${task.title}`
+  const prompt = proposal
+    ? [
+        `Implement the resolution for Docmee backlog item #${task.id}: ${task.title}.`,
+        `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+        '',
+        `${provider} proposed the solution below — use it as the basis, adapting where it does not match the actual code:`,
+        '---',
+        proposal,
+        '---',
+        '',
+        'Requirements:',
+        '- Work locally; keep changes scoped to this item.',
+        '- Run the relevant local checks.',
+        `- Commit with a clear message referencing "backlog #${task.id}".`,
+        '- Report what you changed.'
+      ].join('\n')
+    : [
+        `Resolve Docmee backlog item #${task.id}: ${task.title}.`,
+        `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+        '',
+        'Plan / instruction:',
+        planLine,
+        '',
+        'Requirements:',
+        '- Work locally; keep changes scoped to this item.',
+        '- Run the relevant local checks.',
+        `- Commit with a clear message referencing "backlog #${task.id}".`,
+        '- Report what you changed.'
+      ].join('\n')
+  touchBacklogRun({ status: 'running', message: proposal ? `Claude is implementing #${id} from ${provider}'s plan…` : implementMessage })
+  const { code } = await runClaudeHeadless(prompt, implementMessage)
   const after = getTasks()
   const updated = after.find((item) => item.id === id)
   if (updated) {
-    if (output) {
-      updated.result = output
-      updated.resultProvider = `${provider}:${engine.model}`
-      updated.status = 'review'
-    } else {
-      updated.status = 'blocked'
+    updated.status = code === 0 ? 'review' : 'blocked'
+    if (code === 0) {
+      const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8' })
+      if (head.status === 0) updated.commit = (head.stdout || '').trim()
     }
     saveTasks(after)
   }
-  touchBacklogRun({ status: output ? 'complete' : 'failed', message: output ? `${provider} produced a resolution for #${id} — review it.` : `${provider} run failed for #${id}.` })
-  log('backlog', output ? `${provider} resolution captured for #${id} (review it in the panel).` : `${provider} produced no output for #${id}.`, output ? 'info' : 'warn')
-  return output ? 0 : 1
+  touchBacklogRun({ status: code === 0 ? 'running' : 'failed', message: code === 0 ? `Backlog #${id} implemented — verifying…` : `Backlog #${id} resolution failed (exit ${code}).` })
+  if (code !== 0) return code
+
+  // Step 3 — auto-verify (verifyTask auto-approves when confidence >= threshold).
+  try {
+    await verifyTask(id, CONFIDENCE_THRESHOLD)
+  } catch (error) {
+    log('backlog', `Auto-verify failed for #${id} — ${(error as Error).message}. Left in review.`, 'warn')
+  }
+  return 0
 }
 
 // Parse the planning run's JSON ({confidence, plan}); fall back to a low score

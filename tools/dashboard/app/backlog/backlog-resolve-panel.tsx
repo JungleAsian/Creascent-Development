@@ -108,7 +108,7 @@ export function BacklogResolvePanel({
                 <input type="hidden" name="id" value={id} />
                 <button className="w-full rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400">Auto-plan &amp; resolve →</button>
               </form>
-              <p className="text-xs text-slate-500">Claude drafts a plan + rates confidence: <span className="text-emerald-200">≥8 auto-approves &amp; resolves</span>; below that it pauses for your approval here.</p>
+              <p className="text-xs text-slate-500">Claude drafts a plan + rates confidence: <span className="text-emerald-200">≥8 auto-approves &amp; resolves</span>; below that it pauses for your approval. After resolving it <span className="text-emerald-200">auto-verifies</span> — confidence ≥8 marks it done automatically.</p>
               <form action="/api/actions" method="post">
                 <input type="hidden" name="action" value="backlog-resolve" />
                 <input type="hidden" name="id" value={id} />
@@ -123,9 +123,9 @@ export function BacklogResolvePanel({
                 <input type="hidden" name="id" value={id} />
                 <input type="hidden" name="provider" value={agent} />
                 <input type="hidden" name="plan" value={text} />
-                <button className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Run {provider.label} →</button>
+                <button className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Run {provider.label} → Claude →</button>
               </form>
-              <p className="text-xs text-amber-200/80">{provider.label} runs via its API: it auto-produces a proposed resolution (patch + steps) below for you to review &amp; apply — it does not edit the repo (only Claude Code commits). Needs <span className="font-mono">{agent.toUpperCase()}_API_KEY</span> in <span className="font-mono">.env.tools</span>.</p>
+              <p className="text-xs text-amber-200/80">Hands-off: <span className="text-violet-100">{provider.label}</span> drafts the fix, then <span className="text-cyan-200">Claude implements &amp; commits</span> it, then it&apos;s <span className="text-emerald-200">auto-verified</span> (confidence ≥8 auto-approves). Needs <span className="font-mono">{agent.toUpperCase()}_API_KEY</span> in <span className="font-mono">.env.tools</span> — without it, Claude resolves directly.</p>
               <button type="button" onClick={copyAndOpen} className="text-xs text-cyan-300 underline">or copy the plan &amp; open {provider.label} manually ↗</button>
             </div>
           ) : (
