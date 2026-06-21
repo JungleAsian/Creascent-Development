@@ -410,7 +410,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                   title={missingMockupCount === 0 ? 'Every screen already has a mockup' : `Sequentially generate mockups for the ${missingMockupCount} screen(s) without one`}
                   className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                 >
-                  Generate all{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
+                  Mockup all{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
                 </button>
               </form>
             )}
