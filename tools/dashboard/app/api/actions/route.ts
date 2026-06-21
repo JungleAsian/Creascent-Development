@@ -2181,6 +2181,35 @@ export async function POST(request: Request) {
     return redirect(request, 'message', 'Verify-all started — Claude verifies each item awaiting review; ≥8 marks it done, below leaves it flagged with a reason.')
   }
 
+  if (action === 'journal-add') {
+    const title = String(form.get('title') ?? '').trim()
+    if (!title) return redirect(request, 'error', 'A title is required', '/journal')
+    const args = ['journal', 'add', '--title', title, '--type', String(form.get('type') ?? 'note')]
+    const body = String(form.get('body') ?? '').trim()
+    const tags = String(form.get('tags') ?? '').trim()
+    const task = String(form.get('task') ?? '').trim()
+    if (body) args.push('--body', body)
+    if (tags) args.push('--tags', tags)
+    if (task) args.push('--task', task)
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Saved to journal' : 'Could not save', '/journal')
+  }
+
+  if (action === 'journal-pin') {
+    const id = String(form.get('id') ?? '')
+    const off = String(form.get('off') ?? '') === '1'
+    const args = ['journal', 'pin', '--id', id]
+    if (off) args.push('--off')
+    const result = runTool(args)
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? (off ? 'Unpinned' : 'Pinned') : 'Failed', '/journal')
+  }
+
+  if (action === 'journal-remove') {
+    const id = String(form.get('id') ?? '')
+    const result = runTool(['journal', 'remove', '--id', id])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Removed' : 'Failed', '/journal')
+  }
+
   if (action === 'ai-add') {
     const name = String(form.get('name') ?? '').trim()
     if (!name) return redirect(request, 'error', 'AI name is required')

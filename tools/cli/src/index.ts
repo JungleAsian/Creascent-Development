@@ -3,6 +3,7 @@ import { program } from 'commander'
 import { setupCmd } from './commands/setup.js'
 import { backlogCmd } from './commands/backlog.js'
 import { activityCmd } from './commands/activity.js'
+import { journalCmd } from './commands/journal.js'
 import { migrateCmd } from './commands/migrate.js'
 import { rlsCmd } from './commands/rls.js'
 import { codegenCmd } from './commands/codegen.js'
@@ -37,6 +38,7 @@ program.name('tool').description('Docmee DevTools CLI').version('2.0.0')
 program.addCommand(setupCmd)
 program.addCommand(backlogCmd)
 program.addCommand(activityCmd)
+program.addCommand(journalCmd)
 program.addCommand(migrateCmd)
 program.addCommand(rlsCmd)
 program.addCommand(codegenCmd)
