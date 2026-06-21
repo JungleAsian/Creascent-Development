@@ -31,6 +31,8 @@ type Task = {
   planApproved?: boolean
   commit?: string
   pr?: string
+  verifyConfidence?: number
+  verifyReason?: string
 }
 const STATUSES: Status[] = ['todo', 'in-progress', 'plan-review', 'blocked', 'review', 'done']
 const CONFIDENCE_THRESHOLD = 8
@@ -503,6 +505,72 @@ async function planTask(id: number, threshold: number, auto: boolean): Promise<v
   }
 }
 
+// Parse the verification run's JSON ({confidence, reason}); fall back low so it
+// errs toward requiring review when the model didn't return clean JSON.
+function parseVerify(output: string): { confidence: number; reason: string } {
+  const stripped = output.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
+  const tryParse = (text: string) => {
+    try {
+      const parsed = JSON.parse(text) as { confidence?: unknown; reason?: unknown }
+      if (typeof parsed.confidence === 'number') {
+        return { confidence: Math.max(1, Math.min(10, Math.round(parsed.confidence))), reason: String(parsed.reason ?? '').trim() }
+      }
+    } catch {
+      // not JSON
+    }
+    return null
+  }
+  let result = tryParse(stripped)
+  if (!result) {
+    const match = stripped.match(/\{[\s\S]*\}/)
+    if (match) result = tryParse(match[0])
+  }
+  return result ?? { confidence: 5, reason: output.trim().slice(0, 2000) || 'No verification output produced.' }
+}
+
+// Verify a fix actually works: Claude inspects the code/commit and rates 1-10 how
+// sure the item is genuinely resolved. >= threshold → done; below → status
+// 'review' with the reason captured so the user can read it and approve.
+async function verifyTask(id: number, threshold: number): Promise<void> {
+  const tasks = getTasks()
+  const task = tasks.find((item) => item.id === id)
+  if (!task) { log('backlog', `Task ${id} not found`, 'error'); process.exitCode = 1; return }
+  const message = `Verifying backlog #${id}: ${task.title}`
+  touchBacklogRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), phase: task.lane ?? 'backlog', message })
+  const prompt = [
+    `VERIFY whether Docmee backlog item #${task.id} is actually fixed: ${task.title}.`,
+    `Lane: ${task.lane ?? 'unspecified'} · Phase: ${task.phase} · Priority: ${task.priority}.`,
+    task.commit ? `A fix was committed at ${task.commit}.` : '',
+    task.plan && task.plan.trim() ? `Intended fix / plan:\n${task.plan}` : '',
+    '',
+    'Investigate the relevant code (and the commit if given). Run or inspect the relevant checks.',
+    'Do NOT change any code — verification only.',
+    'Rate your CONFIDENCE from 1-10 that the item is genuinely resolved and working.',
+    'The reason MUST clearly state what is verified, or what is missing/broken/unverified if not.',
+    '',
+    'Respond with ONLY a JSON object (no prose, no code fences):',
+    '{"confidence": <integer 1-10>, "reason": "<one short paragraph>"}'
+  ].filter(Boolean).join('\n')
+  const { output } = await runClaudeHeadless(prompt, message)
+  const { confidence, reason } = parseVerify(output)
+  const after = getTasks()
+  const updated = after.find((item) => item.id === id)
+  if (!updated) return
+  updated.verifyConfidence = confidence
+  updated.verifyReason = reason
+  if (confidence >= threshold) {
+    updated.status = 'done'
+    saveTasks(after)
+    touchBacklogRun({ status: 'complete', message: `Verified resolved (confidence ${confidence}/10 ≥ ${threshold}) — marked done.` })
+    log('backlog', `Backlog #${id} verified ${confidence}/10 ≥ ${threshold} — marked done.`)
+  } else {
+    updated.status = 'review'
+    saveTasks(after)
+    touchBacklogRun({ status: 'complete', message: `Verification needs review (confidence ${confidence}/10 < ${threshold}).` })
+    log('backlog', `Backlog #${id} verification ${confidence}/10 < ${threshold} — flagged for review.`)
+  }
+}
+
 // Sequentially work the whole backlog: for each open "todo" item Claude drafts a
 // plan + confidence, then the gate decides — >= threshold auto-resolves (implement
 // + commit), below queues it to plan-review for the user. One item at a time so the
@@ -567,6 +635,15 @@ backlogCmd
   .option('--auto', 'Resolve immediately when the plan is auto-approved')
   .action(async (opts: { id: string; threshold?: string; auto?: boolean }) => {
     await planTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD, Boolean(opts.auto))
+  })
+
+backlogCmd
+  .command('verify')
+  .description('Verify a fix actually works; confidence >= threshold auto-marks done, else flags for review with a reason')
+  .requiredOption('--id <id>')
+  .option('--threshold <n>', `Confidence needed to auto-resolve (default ${CONFIDENCE_THRESHOLD})`)
+  .action(async (opts: { id: string; threshold?: string }) => {
+    await verifyTask(Number(opts.id), Number(opts.threshold) || CONFIDENCE_THRESHOLD)
   })
 
 backlogCmd

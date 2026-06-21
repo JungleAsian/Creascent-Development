@@ -2115,6 +2115,22 @@ export async function POST(request: Request) {
     return redirect(request, 'message', `Auto-planning backlog #${id} — Claude drafts a plan, rates confidence, and auto-resolves if ≥8 (otherwise it waits for your approval).`)
   }
 
+  if (action === 'backlog-verify') {
+    const id = String(form.get('id') ?? '')
+    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    }
+    runToolDetached(['backlog', 'verify', '--id', id])
+    return redirect(request, 'message', `Verifying backlog #${id} — Claude checks whether the fix actually works and rates confidence; ≥8 marks it done, below flags it for review with a reason.`)
+  }
+
+  if (action === 'backlog-approve') {
+    const id = String(form.get('id') ?? '')
+    const result = runTool(['backlog', 'done', '--id', id])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Backlog #${id} approved — marked done.` : `Backlog #${id} approve failed`)
+  }
+
   if (action === 'backlog-resolve') {
     const id = String(form.get('id') ?? '')
     const plan = String(form.get('plan') ?? '')
