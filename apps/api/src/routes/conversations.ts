@@ -21,6 +21,7 @@ import {
   createClinicsRepository,
   createErrorReviewsRepository,
   createMessageTemplatesRepository,
+  createPatientsRepository,
 } from '@docmee/db'
 import type { ConversationStatus } from '@docmee/db'
 import { decryptValue } from '@docmee/shared'
@@ -162,10 +163,20 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
         lastByConversation.set(conversationId, { content, contentType, role })
       }
 
+      // Attach each thread's patient name so the list row (and thread header) can show
+      // who the patient is rather than the raw phone/handle. One join query, not an
+      // N+1 — mirrors the tag-name fan-in above. Absent for unnamed/unlinked patients.
+      const patientNameRows = await repo.listPatientNamesByClinic(clinicId)
+      const patientNameByConversation = new Map<string, string>()
+      for (const { conversationId, patientName } of patientNameRows) {
+        patientNameByConversation.set(conversationId, patientName)
+      }
+
       return filtered.map((c) => ({
         ...c,
         tags: tagsByConversation.get(c.id) ?? [],
         lastMessage: lastByConversation.get(c.id) ?? null,
+        patientName: patientNameByConversation.get(c.id) ?? null,
       }))
     })
     return { conversations }
@@ -175,9 +186,18 @@ const conversationsRoute: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const clinicId = resolveClinicScope(request)
     if (!clinicId) return reply.code(403).send({ error: 'Forbidden' })
-    const conversation = await withDb(async (sql) =>
-      createConversationsRepository(sql).findById(clinicId, request.params.id),
-    )
+    const conversation = await withDb(async (sql) => {
+      const convo = await createConversationsRepository(sql).findById(clinicId, request.params.id)
+      if (!convo) return null
+      // Enrich with the patient's name (mirrors the list fan-in) so the thread header
+      // can show who the patient is rather than the raw phone/handle.
+      let patientName: string | null = null
+      if (convo.patientId) {
+        const patient = await createPatientsRepository(sql).findById(clinicId, convo.patientId)
+        patientName = patient?.fullName?.trim() ? patient.fullName : null
+      }
+      return { ...convo, patientName }
+    })
     if (!conversation) return reply.code(404).send({ error: 'Conversation not found' })
     return { conversation }
   })

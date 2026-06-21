@@ -78,6 +78,17 @@ export interface ConversationsRepository {
   listLastMessageByClinic(
     clinicId: string,
   ): Promise<Array<{ conversationId: string; content: string; contentType: string; role: string }>>
+  /**
+   * Every (conversationId, patient full name) pair for a clinic where the thread is
+   * linked to a named patient, in one query. Lets the conversation-list endpoint show
+   * the patient's real name per row instead of the raw channel handle (a phone
+   * number / IGSID) without an N+1 fetch — mirrors the tag-name fan-in. Conversations
+   * with no patient or an unnamed patient are simply absent (the caller falls back to
+   * the channel handle).
+   */
+  listPatientNamesByClinic(
+    clinicId: string,
+  ): Promise<Array<{ conversationId: string; patientName: string }>>
   /** Distinct tags linked to any of a patient's conversations (patient history view). */
   listTagsForPatient(clinicId: string, patientId: string): Promise<ConversationTag[]>
   /** Resolve a clinic tag by its name (case-sensitive), or null. */
@@ -225,6 +236,17 @@ export function createConversationsRepository(sql: Sql): ConversationsRepository
         FROM conversation_messages m
         WHERE m.clinic_id = ${clinicId}
         ORDER BY m.conversation_id, m.created_at DESC
+      `
+    },
+
+    async listPatientNamesByClinic(clinicId) {
+      return sql<Array<{ conversationId: string; patientName: string }>>`
+        SELECT c.id AS "conversationId", p.full_name AS "patientName"
+        FROM conversations c
+        JOIN patients p ON p.id = c.patient_id
+        WHERE c.clinic_id = ${clinicId}
+          AND p.full_name IS NOT NULL
+          AND p.full_name <> ''
       `
     },
 

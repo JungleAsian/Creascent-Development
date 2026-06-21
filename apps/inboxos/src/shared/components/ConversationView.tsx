@@ -301,11 +301,13 @@ export function ConversationView({
         <div className="flex items-center gap-3 px-4 py-3">
           {/* Patient avatar. */}
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gray-200 text-[13px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200">
-            {avatarLabel(conversation?.channelContactHandle)}
+            {avatarLabel(conversation?.patientName || conversation?.channelContactHandle)}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-[15px] font-bold">{conversation?.channelContactHandle ?? '…'}</h3>
+              <h3 className="truncate text-[15px] font-bold">
+                {conversation?.patientName || conversation?.channelContactHandle || '…'}
+              </h3>
               {/* Mode pill (Req 5/6) — who is driving the thread. */}
               <span
                 className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
@@ -318,6 +320,14 @@ export function ConversationView({
               </span>
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-gray-400">
+              {/* When the title shows the patient's name, surface the raw handle
+                  (phone / IGSID) here so staff can still see/verify the number. */}
+              {conversation?.patientName && (
+                <>
+                  <span className="truncate">{conversation.channelContactHandle}</span>
+                  <span aria-hidden>·</span>
+                </>
+              )}
               {conversation && (
                 <span className={`inline-flex items-center gap-1 font-bold ${CHANNEL_META[conversation.channel].text}`}>
                   <span aria-hidden className={`h-2 w-2 rounded-full ${CHANNEL_META[conversation.channel].dot}`} />

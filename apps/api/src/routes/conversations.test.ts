@@ -252,6 +252,11 @@ vi.mock('@docmee/db', () => ({
           contentType: (m.contentType as string) ?? 'text',
           role: (m.role as string) ?? 'user',
         })),
+    // Patient names per conversation, attached to the list response so each row can
+    // show the patient's name instead of the raw handle. old-1 is linked to a named
+    // patient; the others fall back to the channel handle (absent here → null).
+    listPatientNamesByClinic: async (clinicId: string) =>
+      clinicId === 'c-1' ? [{ conversationId: 'old-1', patientName: 'María Rodríguez' }] : [],
     findById: async (clinicId: string, id: string) => {
       const c = store.conversations.get(id)
       return c && c.clinicId === clinicId ? c : null
@@ -323,7 +328,12 @@ vi.mock('@docmee/db', () => ({
       return tpl && tpl.clinicId === clinicId && tpl.status === 'approved' ? tpl : null
     },
   }),
-  createPatientsRepository: () => ({}),
+  createPatientsRepository: () => ({
+    // The detail endpoint enriches a conversation with its patient's name. p-1 is the
+    // named patient linked to old-1.
+    findById: async (clinicId: string, id: string) =>
+      clinicId === 'c-1' && id === 'p-1' ? { id: 'p-1', clinicId, fullName: 'María Rodríguez' } : null,
+  }),
   createKnowledgeRepository: () => ({}),
   createNotificationsRepository: () => ({}),
   createUsersRepository: () => ({}),
@@ -444,6 +454,25 @@ describe('conversation routes', () => {
     // theirs-1 has no messages → lastMessage is null.
     const noMessages = body.conversations.find((c: { id: string }) => c.id === 'theirs-1')
     expect(noMessages.lastMessage).toBeNull()
+  })
+
+  it('GET /conversations attaches the patient name per row (real name over raw handle)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/conversations', headers: auth })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    // old-1 is linked to a named patient → patientName attached.
+    const named = body.conversations.find((c: { id: string }) => c.id === 'old-1')
+    expect(named.patientName).toBe('María Rodríguez')
+    // open-1 has no patient → patientName null (the row falls back to the handle).
+    const anon = body.conversations.find((c: { id: string }) => c.id === 'open-1')
+    expect(anon.patientName).toBeNull()
+  })
+
+  it('GET /conversations/:id enriches the detail with the patient name', async () => {
+    const res = await app.inject({ method: 'GET', url: '/conversations/old-1', headers: auth })
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.conversation.patientName).toBe('María Rodríguez')
   })
 
   // ── Assigned conversation views (Rev1 #12) ──

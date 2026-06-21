@@ -41,6 +41,7 @@ describe('@docmee/db — package boundary', () => {
     expect(typeof conversations.countActive).toBe('function')
     expect(typeof conversations.create).toBe('function')
     expect(typeof conversations.addNote).toBe('function')
+    expect(typeof conversations.listPatientNamesByClinic).toBe('function')
 
     const messages = db.createMessagesRepository(mockSql)
     expect(typeof messages.create).toBe('function')

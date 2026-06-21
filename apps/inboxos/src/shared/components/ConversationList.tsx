@@ -344,6 +344,9 @@ function ThreadRow({
   const row = safety ? SAFETY_ROW[safety] : null
   const mode = conversationMode(c.status)
   const ch = CHANNEL[c.channel]
+  // Show the patient's real name when we have one; fall back to the raw channel
+  // handle (phone / IGSID) for an unidentified contact — matches the design rows.
+  const displayName = c.patientName || c.channelContactHandle
 
   return (
     <li>
@@ -357,7 +360,7 @@ function ThreadRow({
         {/* Avatar with a channel badge. */}
         <span className="relative shrink-0">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-gray-200 text-[13px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200">
-            {avatarLabel(c.channelContactHandle)}
+            {avatarLabel(displayName)}
           </span>
           <span
             aria-hidden
@@ -370,7 +373,7 @@ function ThreadRow({
 
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="flex-1 truncate text-[13.5px] font-bold">{c.channelContactHandle}</span>
+            <span className="flex-1 truncate text-[13.5px] font-bold">{displayName}</span>
             <span className="shrink-0 text-[11px] text-gray-400">{relativeTime(c.lastMessageAt)}</span>
           </span>
 

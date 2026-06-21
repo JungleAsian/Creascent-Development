@@ -52,6 +52,11 @@ export interface Conversation {
     contentType: ContentType
     role: MessageRole
   } | null
+  // The linked patient's display name, attached by GET /conversations (list) and
+  // GET /conversations/:id (detail) so the list row + thread header can show who the
+  // patient is instead of the raw channel handle (a phone number / IGSID). `null`
+  // when the thread has no patient or the patient has no name on file.
+  patientName?: string | null
   createdAt: string
   updatedAt: string
 }
