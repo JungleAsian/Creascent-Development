@@ -9,7 +9,8 @@ import { useHeartbeat } from '@/shared/hooks/useHeartbeat'
 import { useFeatures } from '@/shared/hooks/useFeatures'
 import { useI18n } from '@/shared/hooks/useI18n'
 import { can } from '@/shared/permissions'
-import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
+import { Sidebar, type NavGroup, type NavLink } from '@/shared/components/Sidebar'
+import { NavIcon } from '@/shared/components/NavIcon'
 import { NotificationBell } from '@/shared/components/NotificationBell'
 import { PushOptIn } from '@/shared/components/PushOptIn'
 import { InstallPrompt } from '@/shared/components/InstallPrompt'
@@ -24,23 +25,35 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
 
   // Req 2: nav links derive from the shared RBAC matrix (mirrors the API's
   // requireRole gating) so a role only ever sees surfaces it can actually use.
-  const links = useMemo<NavLink[]>(() => {
+  // Req 2: nav derives from the RBAC matrix; grouped + iconified to match the IA
+  // Studio rail. Each section only appears if the role has items in it.
+  const groups = useMemo<NavGroup[]>(() => {
     const role = user?.role
-    const base: NavLink[] = []
-    if (can(role, 'inbox')) base.push({ href: '/inbox', label: t('nav.inbox') })
+
+    const workspace: NavLink[] = []
+    if (can(role, 'inbox')) workspace.push({ href: '/inbox', label: t('nav.inbox'), icon: <NavIcon name="inbox" /> })
     // Alerts center (Screen 11) — available to everyone who can see the inbox.
-    if (can(role, 'inbox')) base.push({ href: '/alerts', label: t('nav.alerts') })
-    if (can(role, 'calendar')) base.push({ href: '/calendar', label: t('nav.calendar') })
-    if (can(role, 'metrics')) base.push({ href: '/metrics', label: t('nav.metrics') })
+    if (can(role, 'inbox')) workspace.push({ href: '/alerts', label: t('nav.alerts'), icon: <NavIcon name="alerts" /> })
+    if (can(role, 'calendar')) workspace.push({ href: '/calendar', label: t('nav.calendar'), icon: <NavIcon name="calendar" /> })
+
+    const insights: NavLink[] = []
+    if (can(role, 'metrics')) insights.push({ href: '/metrics', label: t('nav.metrics'), icon: <NavIcon name="metrics" /> })
     // Req 40: the advanced analytics dashboard is additionally gated behind a
     // server feature flag (capability is necessary but not sufficient).
     if (can(role, 'analytics') && features.advancedAnalytics) {
-      base.push({ href: '/analytics', label: t('nav.analytics') })
+      insights.push({ href: '/analytics', label: t('nav.analytics'), icon: <NavIcon name="analytics" /> })
     }
-    if (can(role, 'qos')) base.push({ href: '/qos', label: t('nav.qos') })
-    if (can(role, 'reports')) base.push({ href: '/reports', label: t('nav.reports') })
-    if (can(role, 'studio')) base.push({ href: '/studio', label: t('nav.studio') })
-    return base
+    if (can(role, 'qos')) insights.push({ href: '/qos', label: t('nav.qos'), icon: <NavIcon name="qos" /> })
+    if (can(role, 'reports')) insights.push({ href: '/reports', label: t('nav.reports'), icon: <NavIcon name="reports" /> })
+
+    const admin: NavLink[] = []
+    if (can(role, 'studio')) admin.push({ href: '/studio', label: t('nav.studio'), icon: <NavIcon name="studio" /> })
+
+    const result: NavGroup[] = []
+    if (workspace.length) result.push({ label: t('nav.group.workspace'), items: workspace })
+    if (insights.length) result.push({ label: t('nav.group.insights'), items: insights })
+    if (admin.length) result.push({ items: admin }) // unlabeled — pinned below a divider
+    return result
   }, [t, user?.role, features.advancedAnalytics])
 
   if (!ready) {
@@ -55,7 +68,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden md:flex">
-        <Sidebar links={links} title={t('nav.inbox')} />
+        <Sidebar groups={groups} title={t('nav.inbox')} />
       </div>
 
       {/* Mobile drawer */}
@@ -68,7 +81,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
             className="absolute inset-0 bg-black/40"
           />
           <div className="relative z-10" onClick={() => setDrawerOpen(false)}>
-            <Sidebar links={links} title={t('nav.inbox')} />
+            <Sidebar groups={groups} title={t('nav.inbox')} />
           </div>
         </div>
       )}

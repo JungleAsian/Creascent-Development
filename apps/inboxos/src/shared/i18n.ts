@@ -41,6 +41,8 @@ const es: Dict = {
   'nav.group.messaging': 'Mensajería',
   'nav.group.operations': 'Operaciones',
   'nav.group.compliance': 'Cumplimiento',
+  'nav.group.workspace': 'Espacio de trabajo',
+  'nav.group.insights': 'Análisis',
 
   'lang.toggle': 'Idioma',
   'lang.es': 'Español',
@@ -1236,6 +1238,8 @@ const en: Dict = {
   'nav.group.messaging': 'Messaging',
   'nav.group.operations': 'Operations',
   'nav.group.compliance': 'Compliance',
+  'nav.group.workspace': 'Workspace',
+  'nav.group.insights': 'Insights',
 
   'lang.toggle': 'Language',
   'lang.es': 'Spanish',
