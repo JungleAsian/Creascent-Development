@@ -97,9 +97,82 @@ deployCmd.command('env').action(() => {
 })
 
 deployCmd.command('vps').action(async () => {
+  if (!requireVpsConfig()) {
+    process.exitCode = 1
+    return
+  }
   recordLock('vps')
-  log('deploy', 'VPS deploy plan: git push, SSH git pull, pnpm install, pnpm build, migrations, PM2 reload, health check.')
-  await sendNotification('VPS deployment requested. Confirm settings before running production deployment.', 'critical')
+  const branch = process.env.GITHUB_BRANCH || 'main'
+  const deployPath = process.env.VPS_DEPLOY_PATH as string
+  const ecosystem = process.env.PM2_ECOSYSTEM_FILE || 'ecosystem.config.cjs'
+  // Build product apps in dependency order (db first). Overridable for unusual setups.
+  const buildCmd = process.env.VPS_BUILD_CMD
+    || 'pnpm install --frozen-lockfile && pnpm --filter @docmee/db --filter @docmee/api --filter @docmee/workers --filter @docmee/inboxos build'
+  const migrateCmd = process.env.VPS_MIGRATE_CMD || 'pnpm --filter @docmee/db db:migrate'
+
+  // 1) Push the current HEAD to the deploy branch the VPS pulls from.
+  log('deploy', `Pushing HEAD to origin/${branch}...`)
+  const push = spawnSync('git', ['push', 'origin', `HEAD:${branch}`], {
+    cwd: path.resolve(toolsRoot, '..'),
+    encoding: 'utf8',
+    stdio: 'pipe'
+  })
+  if (push.status !== 0) {
+    log('deploy', `git push failed: ${(push.stderr || push.stdout || '').trim()}`, 'error')
+    await sendNotification('VPS deploy aborted: git push failed.', 'critical')
+    await closeDiscordClient()
+    process.exitCode = 1
+    return
+  }
+
+  // Repo URL the VPS clones from on first deploy (the VPS needs its own GitHub
+  // auth — a deploy key/token — for a private repo).
+  const repoUrl = process.env.DEPLOY_REPO_URL
+    || (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: path.resolve(toolsRoot, '..'), encoding: 'utf8' }).stdout || '').trim()
+
+  // 2) On the VPS: bootstrap the clone if missing, then sync to the pushed
+  // commit, install, build, migrate, and reload PM2.
+  const remote = [
+    `mkdir -p $(dirname ${deployPath})`,
+    `if [ ! -d ${deployPath}/.git ]; then git clone ${repoUrl} ${deployPath}; fi`,
+    `cd ${deployPath}`,
+    'git fetch --all --prune',
+    `git reset --hard origin/${branch}`,
+    buildCmd,
+    migrateCmd,
+    `pm2 startOrReload ${ecosystem} --update-env`,
+    'pm2 save'
+  ].join(' && ')
+  log('deploy', 'Running remote deploy (sync, install, build, migrate, PM2 reload)...')
+  const remoteResult = ssh([`"${remote}"`])
+  if (remoteResult.output) log('deploy', remoteResult.output)
+  if (!remoteResult.ok) {
+    log('deploy', 'Remote deploy step failed. The VPS may be in a partial state — review the output above.', 'error')
+    await sendNotification('VPS deploy failed during the remote build/reload step.', 'critical')
+    await closeDiscordClient()
+    process.exitCode = 1
+    return
+  }
+
+  // 3) Health check the API.
+  const host = process.env.VPS_DOMAIN || process.env.VPS_HOST
+  const apiPort = process.env.API_PORT || '3001'
+  const healthUrl = `http://${host}:${apiPort}/health`
+  let healthy = false
+  try {
+    const response = await fetch(healthUrl)
+    healthy = response.ok
+    log('deploy', `Health ${healthUrl}: HTTP ${response.status}`, response.ok ? 'info' : 'warn')
+  } catch (error) {
+    log('deploy', `Health check ${healthUrl} failed: ${String(error)}`, 'warn')
+  }
+  if (!healthy) process.exitCode = 1
+  await sendNotification(
+    healthy
+      ? `VPS deploy succeeded (branch ${branch}). API health OK.`
+      : `VPS deploy ran but the API health check did not pass — verify the VPS.`,
+    healthy ? 'development' : 'critical'
+  )
   await closeDiscordClient()
 })
 

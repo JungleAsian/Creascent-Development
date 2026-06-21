@@ -26,6 +26,10 @@ import { featureCmd } from './commands/feature.js'
 import { forgeCmd } from './commands/forge.js'
 import { guardianCmd } from './commands/guardian.js'
 import { aegisCmd } from './commands/aegis.js'
+import { enhancementCmd } from './commands/enhancement.js'
+import { designAuditCmd } from './commands/design-audit.js'
+import { uiDevelopmentCmd } from './commands/ui-development.js'
+import { designRunCmd } from './commands/design-run.js'
 
 program.name('tool').description('Docmee DevTools CLI').version('2.0.0')
 program.addCommand(setupCmd)
@@ -54,4 +58,8 @@ program.addCommand(featureCmd)
 program.addCommand(forgeCmd)
 program.addCommand(guardianCmd)
 program.addCommand(aegisCmd)
+program.addCommand(enhancementCmd)
+program.addCommand(designAuditCmd)
+program.addCommand(uiDevelopmentCmd)
+program.addCommand(designRunCmd)
 program.parse()

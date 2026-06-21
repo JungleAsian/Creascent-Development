@@ -9,6 +9,7 @@ import { closeDiscordClient } from '../../../discord/src/bot.js'
 import { notifyCostAlert } from '../../../discord/src/notifications/cost-alert.js'
 import { phaseDefinitions, type PhaseState } from '../lib/phases.js'
 import { toolsRoot } from '../lib/paths.js'
+import { costDisplayCurrency, formatCost, getUsdToCad } from '../lib/exchange-rate.js'
 
 type CostEntry = { provider: string; input: number; output: number; tokens: number; minutes: number; usd: number; createdAt: string }
 type DevCostEntry = {
@@ -27,6 +28,19 @@ type DevCostEntry = {
   notes: string
 }
 type CostStore = { runtime: CostEntry[]; development: DevCostEntry[] }
+type FeatureRunState = {
+  phase?: string
+  workflow?: string
+  status?: string
+  startedAt?: string
+  heartbeatAt?: string
+  message?: string
+}
+type FeatureTimelineEntry = {
+  timestamp: number
+  workflow: 'features-development' | 'frontend-development' | 'ui-development'
+  feature?: string
+}
 type ClaudeUsage = {
   input_tokens?: number
   output_tokens?: number
@@ -53,7 +67,11 @@ const pricing: Record<string, { input: number; output: number; cached?: number }
   'gpt-4o': { input: 5, output: 15 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },
   'deepseek-chat': { input: 0.27, output: 1.1 },
-  'deepseek-coder': { input: 0.27, output: 1.1 }
+  'deepseek-coder': { input: 0.27, output: 1.1 },
+  // Rough GPT-5/Codex-class estimate. Codex is a product plan, so per-token cost
+  // is not exposed — cached context (the bulk of Codex token throughput) is
+  // priced cheaply so the estimate is not dominated by re-read tokens.
+  codex: { input: 1.25, output: 10, cached: 0.125 }
 }
 
 function store(): CostStore {
@@ -119,10 +137,109 @@ function phaseFeature(phaseId: string) {
   return phase ? `${phase.id}/${phase.name}` : 'Claude Code usage sync'
 }
 
+function featureRunForTimestamp(timestamp?: string) {
+  const featureRunPath = path.join(toolsRoot, 'logs', 'feature-run.json')
+  const frontendRunPath = path.join(toolsRoot, 'logs', 'frontend-run.json')
+  const uiRunPath = path.join(toolsRoot, 'logs', 'ui-run.json')
+  let featureRun: FeatureRunState = {}
+  let frontendRun: FeatureRunState = {}
+  let uiRun: FeatureRunState = {}
+  try {
+    if (fs.existsSync(featureRunPath)) featureRun = JSON.parse(fs.readFileSync(featureRunPath, 'utf8')) as FeatureRunState
+  } catch {
+    featureRun = {}
+  }
+  try {
+    if (fs.existsSync(frontendRunPath)) frontendRun = JSON.parse(fs.readFileSync(frontendRunPath, 'utf8')) as FeatureRunState
+  } catch {
+    frontendRun = {}
+  }
+  try {
+    if (fs.existsSync(uiRunPath)) uiRun = JSON.parse(fs.readFileSync(uiRunPath, 'utf8')) as FeatureRunState
+  } catch {
+    uiRun = {}
+  }
+  const when = Date.parse(timestamp ?? '')
+  const started = Date.parse(featureRun.startedAt ?? '')
+  const frontendStarted = Date.parse(frontendRun.startedAt ?? '')
+  const uiStarted = Date.parse(uiRun.startedAt ?? '')
+  if (Number.isNaN(when)) return null
+  if (uiRun.workflow === 'ui-development' && !Number.isNaN(uiStarted) && when >= uiStarted && /developing|ui development/i.test(uiRun.message ?? '')) {
+    return {
+      phase: 'UI-DEVELOPMENT',
+      feature: (uiRun.message ?? 'UI Development').replace(/^Developing UI screen\s+/i, 'Screen ').trim()
+    }
+  }
+  // Frontend now tracks in its own run file.
+  if (frontendRun.workflow === 'frontend-development' && !Number.isNaN(frontendStarted) && when >= frontendStarted && /developing/i.test(frontendRun.message ?? '')) {
+    return {
+      phase: 'FRONTEND',
+      feature: (frontendRun.message ?? 'Frontend development').replace(/^Session \d+:\s+developing frontend item\s+/i, 'Req ').trim()
+    }
+  }
+  if (featureRun.workflow === 'features-development' && !Number.isNaN(started) && when >= started && /developing/i.test(featureRun.message ?? '')) {
+    const feature = (featureRun.message ?? 'Feature development')
+      .replace(/^Session \d+:\s+developing feature\s+/i, 'Req ')
+      .replace(/^Developing feature\s+/i, 'Req ')
+      .trim()
+    return {
+      phase: featureRun.phase ?? 'Features',
+      feature
+    }
+  }
+  const timeline = featureTimelineForTimestamp(when)
+  if (!timeline) return null
+  return {
+    phase: timeline.workflow === 'ui-development' ? 'UI-DEVELOPMENT' : timeline.workflow === 'frontend-development' ? 'FRONTEND' : 'FEATURES',
+    feature: timeline.feature ?? (timeline.workflow === 'ui-development' ? 'UI Development' : timeline.workflow === 'frontend-development' ? 'Frontend Development' : 'Features Development')
+  }
+}
+
+function featureTimelineForTimestamp(timestamp: number) {
+  const entries: FeatureTimelineEntry[] = []
+  const logRoot = path.join(toolsRoot, 'logs')
+  if (!fs.existsSync(logRoot)) return null
+  for (const file of fs.readdirSync(logRoot).filter((name) => /^(feature|ui-development)-\d{4}-\d{2}-\d{2}\.log$/.test(name))) {
+    for (const line of fs.readFileSync(path.join(logRoot, file), 'utf8').split(/\r?\n/)) {
+      const uiMatch = line.match(/^\[(.*?)\].*Developing UI screen\s+(\d+)\s*:\s*(.+)$/i)
+      if (uiMatch) {
+        const startedAt = Date.parse(uiMatch[1])
+        if (Number.isNaN(startedAt)) continue
+        entries.push({
+          timestamp: startedAt,
+          workflow: 'ui-development',
+          feature: `Screen ${uiMatch[2]}: ${uiMatch[3].trim()}`
+        })
+        continue
+      }
+      const match = line.match(/^\[(.*?)\].*Starting (frontend development|feature development) session/i)
+      if (match) {
+        const startedAt = Date.parse(match[1])
+        if (Number.isNaN(startedAt)) continue
+        entries.push({
+          timestamp: startedAt,
+          workflow: match[2].toLowerCase().startsWith('frontend') ? 'frontend-development' : 'features-development'
+        })
+        continue
+      }
+      const requirement = line.match(/\bRequirement\s+(\d+)\s*:\s*([^—\-\n]+)/i)
+      const current = entries.at(-1)
+      if (requirement && current && !current.feature) {
+        current.feature = `Req ${requirement[1]}: ${requirement[2].trim()}`
+      }
+    }
+  }
+  return entries
+    .filter((entry) => entry.timestamp <= timestamp)
+    .sort((left, right) => right.timestamp - left.timestamp)[0] ?? null
+}
+
 export function syncClaudeUsage() {
   const root = normalizeFilePath(repoRoot())
   const data = store()
-  data.development = data.development.filter((entry) => !(entry.id.startsWith('claude-') && entry.tool === 'claude-code' && entry.capture_method === 'auto'))
+  // Incremental: keep everything already accounted and only add request IDs not
+  // seen before. Claude requests are immutable, so prior cost is never recomputed
+  // or lost (earlier this wiped+rebuilt every auto entry on each sync).
   const existingIds = new Set(data.development.map((entry) => entry.id))
   const seenRequests = new Set<string>()
   const entries: DevCostEntry[] = []
@@ -152,13 +269,14 @@ export function syncClaudeUsage() {
       const output = Number(usage.output_tokens ?? 0)
       const cached = Number(usage.cache_read_input_tokens ?? 0)
       if (input + output + cached <= 0) continue
-      const phase = phaseForTimestamp(item.timestamp)
+      const featureRun = featureRunForTimestamp(item.timestamp)
+      const phase = featureRun?.phase ?? phaseForTimestamp(item.timestamp)
       if (!phase) continue
       entries.push({
         id,
         timestamp: item.timestamp ?? new Date().toISOString(),
         phase,
-        feature: phaseFeature(phase),
+        feature: featureRun?.feature ?? phaseFeature(phase),
         tool: 'claude-code',
         model: item.message?.model ?? 'claude-sonnet-4-6',
         session_minutes: 0,
@@ -178,6 +296,117 @@ export function syncClaudeUsage() {
     saveStore(data)
   }
   return { imported: entries.length, scanned, skipped }
+}
+
+type CodexSessionEvent = {
+  timestamp?: string
+  type?: string
+  payload?: { id?: string; type?: string; info?: { total_token_usage?: CodexTokenUsage } }
+}
+type CodexTokenUsage = {
+  input_tokens?: number
+  cached_input_tokens?: number
+  output_tokens?: number
+  reasoning_output_tokens?: number
+  total_tokens?: number
+}
+
+function codexSessionFiles() {
+  const root = path.join(os.homedir(), '.codex')
+  const out: string[] = []
+  const walk = (dir: string) => {
+    if (!fs.existsSync(dir)) return
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.isFile() && entry.name.endsWith('.jsonl')) out.push(full)
+    }
+  }
+  walk(path.join(root, 'sessions'))
+  walk(path.join(root, 'archived_sessions'))
+  return out
+}
+
+// Import Codex session token usage into the development cost store so Codex work
+// (Docmee development + support) is reflected in Development Cost. Codex is a
+// product plan, so per-token cost is not exposed locally — cost is an estimate
+// (capture_method 'estimated'); tokens are exact.
+//
+// Incremental: never wipe. A new session is added; a session already imported is
+// topped up only when its cumulative usage has grown (accounting the delta), so
+// re-syncing adds the not-yet-accounted cost without recomputing everything.
+export function syncCodexUsage() {
+  const data = store()
+  const byId = new Map(data.development.map((entry) => [entry.id, entry]))
+  let imported = 0
+  let updated = 0
+  let scanned = 0
+
+  for (const file of codexSessionFiles()) {
+    let sessionId = ''
+    let lastTimestamp = ''
+    let total: CodexTokenUsage | undefined
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      if (!line.trim()) continue
+      try {
+        const event = JSON.parse(line) as CodexSessionEvent
+        if (event.type === 'session_meta' && event.payload?.id) sessionId = event.payload.id
+        if (event.payload?.type === 'token_count' && event.payload.info?.total_token_usage) {
+          total = event.payload.info.total_token_usage
+          if (event.timestamp) lastTimestamp = event.timestamp
+        }
+      } catch {
+        // Ignore partial JSONL lines while Codex is mid-write.
+      }
+    }
+    if (!total) continue
+    sessionId = sessionId || path.basename(file, '.jsonl')
+    const id = `codex-session-${sessionId}`
+    const input = Number(total.input_tokens ?? 0)
+    const cached = Number(total.cached_input_tokens ?? 0)
+    const output = Number(total.output_tokens ?? 0) + Number(total.reasoning_output_tokens ?? 0)
+    if (input + cached + output <= 0) continue
+    scanned += 1
+    const existing = byId.get(id)
+    if (existing) {
+      // Top up only if this session has grown since it was last accounted.
+      const prior = existing.input_tokens + existing.output_tokens + existing.cached_tokens
+      if (input + output + cached <= prior) continue
+      existing.input_tokens = input
+      existing.output_tokens = output
+      existing.cached_tokens = cached
+      existing.cost_usd = estimateCost('codex', input, output, cached)
+      existing.timestamp = lastTimestamp || existing.timestamp
+      updated += 1
+      continue
+    }
+    const correlated = featureRunForTimestamp(lastTimestamp)
+    const phase = correlated?.phase ?? phaseForTimestamp(lastTimestamp) ?? 'SUPPORT'
+    const entry: DevCostEntry = {
+      id,
+      timestamp: lastTimestamp || new Date().toISOString(),
+      phase,
+      feature: correlated?.feature ?? 'Codex development & support',
+      tool: 'codex-pro',
+      model: 'codex',
+      session_minutes: 0,
+      input_tokens: input,
+      output_tokens: output,
+      cached_tokens: cached,
+      cost_usd: estimateCost('codex', input, output, cached),
+      capture_method: 'estimated',
+      notes: `Imported from Codex session usage (${sessionId})`
+    }
+    data.development.push(entry)
+    byId.set(id, entry)
+    imported += 1
+  }
+
+  if (imported > 0 || updated > 0) {
+    data.development.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    saveStore(data)
+  }
+  return { imported, updated, scanned }
 }
 
 function devSummary(entries: DevCostEntry[], groupBy: 'phase' | 'tool' | 'feature' = 'tool') {
@@ -219,29 +448,46 @@ costCmd.command('log')
     const today = new Date().toISOString().split('T')[0]
     const todaySpend = data.runtime.filter((item) => item.createdAt.startsWith(today)).reduce((sum, item) => sum + item.usd, 0)
     const threshold = Number(process.env.COST_ALERT_THRESHOLD_USD || '10')
-    log('cost', `Logged ${entry.provider} cost $${entry.usd.toFixed(4)}`)
+    const exchange = await getUsdToCad()
+    const display = costDisplayCurrency()
+    log('cost', `Logged ${entry.provider} cost ${formatCost(entry.usd, exchange, display)}`)
     if (todaySpend > threshold) {
-      log('cost', `Daily spend $${todaySpend.toFixed(2)} exceeded threshold $${threshold}`, 'warn')
+      log('cost', `Daily spend ${formatCost(todaySpend, exchange, display)} exceeded threshold ${formatCost(threshold, exchange, display)}`, 'warn')
       try {
-        await notifyCostAlert(todaySpend, threshold)
+        await notifyCostAlert(todaySpend, threshold, exchange.rate)
       } finally {
         await closeDiscordClient()
       }
     }
   })
 
-costCmd.command('today').action(() => {
+costCmd.command('today').action(async () => {
+  loadConfig()
+  const exchange = await getUsdToCad()
+  const display = costDisplayCurrency()
   const today = new Date().toISOString().split('T')[0]
-  console.table(entries().filter((entry) => entry.createdAt.startsWith(today)))
+  const todayEntries = entries().filter((entry) => entry.createdAt.startsWith(today))
+  console.table(todayEntries.map((entry) => ({
+    provider: entry.provider,
+    cost: formatCost(entry.usd, exchange, display),
+    createdAt: entry.createdAt
+  })))
+  const total = todayEntries.reduce((sum, entry) => sum + entry.usd, 0)
+  console.log(`Total today: ${formatCost(total, exchange, display)}`)
+  console.log(`Exchange rate: 1 USD = ${exchange.rates.CAD.toFixed(4)} CAD / ${exchange.rates.GTQ.toFixed(4)} GTQ`)
 })
-costCmd.command('summary').action(() => {
+costCmd.command('summary').action(async () => {
+  loadConfig()
+  const exchange = await getUsdToCad()
+  const display = costDisplayCurrency()
   const totals = entries().reduce<Record<string, number>>((acc, entry) => {
     acc[entry.provider] = (acc[entry.provider] || 0) + entry.usd
     return acc
   }, {})
   const developmentTotal = developmentEntries().reduce((sum, entry) => sum + entry.cost_usd, 0)
-  console.table(Object.entries(totals).map(([provider, usd]) => ({ type: 'runtime', provider, usd: usd.toFixed(4) })))
-  console.log(`Development total: $${developmentTotal.toFixed(4)}`)
+  console.table(Object.entries(totals).map(([provider, usd]) => ({ type: 'runtime', provider, cost: formatCost(usd, exchange, display) })))
+  console.log(`Development total: ${formatCost(developmentTotal, exchange, display)}`)
+  console.log(`Exchange rate: 1 USD = ${exchange.rates.CAD.toFixed(4)} CAD / ${exchange.rates.GTQ.toFixed(4)} GTQ`)
 })
 
 const devCmd = costCmd.command('dev').description('Track one-time development build cost')
@@ -279,7 +525,7 @@ devCmd.command('log')
     const data = store()
     data.development = [...data.development, entry]
     saveStore(data)
-    log('cost', `Logged development session ${entry.phase}/${entry.feature} $${entry.cost_usd.toFixed(4)}`)
+    log('cost', `Logged development session ${entry.phase}/${entry.feature} USD $${entry.cost_usd.toFixed(4)}`)
   })
 
 devCmd.command('sync-claude')
@@ -289,11 +535,21 @@ devCmd.command('sync-claude')
     log('cost', `Claude usage sync imported ${result.imported} new cost entr${result.imported === 1 ? 'y' : 'ies'}`)
   })
 
+devCmd.command('sync-codex')
+  .description('Import Codex session token usage (development, support, anything Docmee)')
+  .action(() => {
+    const result = syncCodexUsage()
+    log('cost', `Codex usage sync: ${result.imported} new, ${result.updated} updated from ${result.scanned} session(s)`)
+  })
+
 devCmd.command('summary')
   .option('--phase <phase>')
   .option('--tool <tool>')
   .option('--by <by>', 'Group by phase, tool, or feature', 'tool')
-  .action((opts: { phase?: string; tool?: string; by: 'phase' | 'tool' | 'feature' }) => {
+  .action(async (opts: { phase?: string; tool?: string; by: 'phase' | 'tool' | 'feature' }) => {
+    loadConfig()
+    const exchange = await getUsdToCad()
+    const display = costDisplayCurrency()
     const filtered = developmentEntries()
       .filter((entry) => !opts.phase || entry.phase === opts.phase)
       .filter((entry) => !opts.tool || entry.tool === opts.tool)
@@ -304,14 +560,24 @@ devCmd.command('summary')
       input: value.input,
       output: value.output,
       cached: value.cached,
-      usd: value.usd.toFixed(4)
+      cost: formatCost(value.usd, exchange, display)
     })))
+    console.log(`Exchange rate: 1 USD = ${exchange.rates.CAD.toFixed(4)} CAD / ${exchange.rates.GTQ.toFixed(4)} GTQ`)
   })
 
-devCmd.command('projection').action(() => {
+devCmd.command('projection').action(async () => {
+  loadConfig()
+  const exchange = await getUsdToCad()
+  const display = costDisplayCurrency()
   const entries = developmentEntries()
   const phases = new Set(entries.map((entry) => entry.phase))
   const total = entries.reduce((sum, entry) => sum + entry.cost_usd, 0)
   const avg = phases.size > 0 ? total / phases.size : 0
-  console.table([{ phases: `${phases.size}/19`, cost_to_date: total.toFixed(4), avg_phase: avg.toFixed(4), projected_total: (avg * 19).toFixed(4) }])
+  console.table([{
+    phases: `${phases.size}/19`,
+    cost_to_date: formatCost(total, exchange, display),
+    avg_phase: formatCost(avg, exchange, display),
+    projected_total: formatCost(avg * 19, exchange, display)
+  }])
+  console.log(`Exchange rate: 1 USD = ${exchange.rates.CAD.toFixed(4)} CAD / ${exchange.rates.GTQ.toFixed(4)} GTQ`)
 })

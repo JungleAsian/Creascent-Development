@@ -8,12 +8,16 @@ import { logsDir, promptsDir, toolsRoot } from '../lib/paths.js'
 import { closeDiscordClient, sendNotification } from '../../../discord/src/bot.js'
 
 type FeatureStatus = 'complete' | 'partial' | 'missing'
+type StageStatus = 'complete' | 'pending' | 'needs-audit'
+type FeatureMode = 'backend' | 'frontend'
 type Feature = {
   id: number
   phase: string
   area: string
   feature: string
   status: FeatureStatus
+  backendStatus?: StageStatus
+  frontendStatus?: StageStatus
   priority: 'critical' | 'high' | 'medium' | 'low'
   evidence: string
   nextStep: string
@@ -27,7 +31,14 @@ type ClaudeSessionResult = {
 
 const coverageFile = path.join(logsDir, 'rev1-feature-coverage.json')
 const featureRunFile = path.join(logsDir, 'feature-run.json')
+const frontendRunFile = path.join(logsDir, 'frontend-run.json')
 const claudeLimitResumeBufferMs = 2 * 60 * 1000
+
+// Backend (features) and frontend now track independently in separate run files
+// so they can run/report at the same time and never share a heartbeat.
+function runFileForWorkflow(workflow?: string) {
+  return workflow === 'frontend-development' ? frontendRunFile : featureRunFile
+}
 
 function repoRoot() {
   return path.resolve(toolsRoot, '..')
@@ -53,20 +64,22 @@ function touchFeatureRun(partial: {
   resumeAt?: string
   message?: string
 }) {
+  const workflow = partial.workflow ?? 'features-development'
+  const runFile = runFileForWorkflow(workflow)
   let current = {}
-  if (fs.existsSync(featureRunFile)) {
+  if (fs.existsSync(runFile)) {
     try {
-      current = JSON.parse(fs.readFileSync(featureRunFile, 'utf8')) as Record<string, unknown>
+      current = JSON.parse(fs.readFileSync(runFile, 'utf8')) as Record<string, unknown>
     } catch {
       current = {}
     }
   }
   fs.mkdirSync(logsDir, { recursive: true })
-  fs.writeFileSync(featureRunFile, `${JSON.stringify({
+  fs.writeFileSync(runFile, `${JSON.stringify({
     ...current,
     ...partial,
     pid: partial.pid ?? process.pid,
-    workflow: 'features-development',
+    workflow,
     heartbeatAt: new Date().toISOString()
   }, null, 2)}\n`)
 }
@@ -97,15 +110,19 @@ function currentBranch() {
   return gitValue(['branch', '--show-current'], 'unknown')
 }
 
-async function pushFeatureCommits(beforeHead: string, feature: Feature) {
+// Local-first: record the local commit but do NOT push. Pushing to the remote
+// is the deploy step's job (deploy vps pushes HEAD), aligning backend/frontend
+// with the UI lane's build-local-then-deploy model.
+async function recordFeatureCommit(beforeHead: string, feature: Feature, mode: FeatureMode) {
   const afterHead = currentHead()
   const branch = currentBranch()
+  const workflow = workflowForMode(mode)
 
   if (!afterHead || afterHead === beforeHead) {
     const message = 'No new commit created in this feature session.'
     touchFeatureRun({
       phase: feature.phase,
-      workflow: 'features-development',
+      workflow,
       githubStatus: 'skipped',
       githubMessage: message,
       githubBranch: branch,
@@ -114,52 +131,34 @@ async function pushFeatureCommits(beforeHead: string, feature: Feature) {
     return { ok: true, status: 'skipped' as GitHubSyncStatus, message, branch, commit: afterHead }
   }
 
+  const message = `Committed locally (${afterHead} on ${branch}). Push happens at deploy.`
   touchFeatureRun({
     phase: feature.phase,
-    workflow: 'features-development',
-    githubStatus: 'pending',
-    githubMessage: 'Pushing completed feature commit to GitHub.',
+    workflow,
+    githubStatus: 'skipped',
+    githubMessage: message,
     githubBranch: branch,
     lastCommitHash: afterHead
   })
-
-  const pushArgs = branch && branch !== 'unknown' ? ['push', 'origin', branch] : ['push']
-  const pushResult = runGit(pushArgs)
-  if (!pushResult.ok) {
-    const message = pushResult.output || 'GitHub push failed.'
-    touchFeatureRun({
-      phase: feature.phase,
-      workflow: 'features-development',
-      status: 'failed',
-      githubStatus: 'failed',
-      githubMessage: message,
-      githubBranch: branch,
-      lastCommitHash: afterHead
-    })
-    await sendNotification(`Feature development GitHub push failed after Req ${feature.id} - ${feature.feature}. ${message}`, 'critical')
-    return { ok: false, status: 'failed' as GitHubSyncStatus, message, branch, commit: afterHead }
-  }
-
-  const message = `Pushed feature commit ${afterHead} to GitHub branch ${branch}.`
-  touchFeatureRun({
-    phase: feature.phase,
-    workflow: 'features-development',
-    githubStatus: 'pushed',
-    githubMessage: message,
-    githubBranch: branch,
-    lastCommitHash: afterHead,
-    pushedAt: new Date().toISOString()
-  })
-  return { ok: true, status: 'pushed' as GitHubSyncStatus, message, branch, commit: afterHead }
+  return { ok: true, status: 'skipped' as GitHubSyncStatus, message, branch, commit: afterHead }
 }
 
 function priorityRank(priority: Feature['priority']) {
   return { critical: 0, high: 1, medium: 2, low: 3 }[priority]
 }
 
-function openFeatures() {
+function workflowForMode(mode: FeatureMode) {
+  return mode === 'frontend' ? 'frontend-development' : 'features-development'
+}
+
+function frontendStage(item: Feature): StageStatus {
+  if (item.frontendStatus) return item.frontendStatus
+  return item.status === 'complete' ? 'needs-audit' : 'pending'
+}
+
+function openFeatures(mode: FeatureMode = 'backend') {
   return readFeatures()
-    .filter((item) => item.status !== 'complete')
+    .filter((item) => mode === 'frontend' ? frontendStage(item) !== 'complete' : item.status !== 'complete')
     .sort((left, right) => {
       return priorityRank(left.priority) - priorityRank(right.priority)
         || left.phase.localeCompare(right.phase)
@@ -181,20 +180,28 @@ function changedFeatures(before: Map<number, FeatureStatus>, after: Feature[]) {
     .map((item) => `Req ${item.id}: ${before.get(item.id)} -> ${item.status}`)
 }
 
-function writeFeaturePrompt(features: Feature[]) {
+function writeFeaturePrompt(features: Feature[], mode: FeatureMode) {
   fs.mkdirSync(promptsDir, { recursive: true })
   const selected = features.slice(0, 8)
-  const promptFile = path.join(promptsDir, 'FEATURE-DEVELOPMENT-CONTEXT.md')
+  const promptFile = path.join(promptsDir, mode === 'frontend' ? 'FRONTEND-DEVELOPMENT-CONTEXT.md' : 'FEATURE-DEVELOPMENT-CONTEXT.md')
+  const title = mode === 'frontend' ? 'Docmee Frontend Development' : 'Docmee Features Development'
+  const summary = mode === 'frontend'
+    ? 'Continue Docmee frontend development from the open frontend acceptance queue.'
+    : 'Continue Docmee feature development from the open Rev 1 coverage queue.'
+  const statusLine = mode === 'frontend' ? 'Frontend status' : 'Current status'
+  const updateRule = mode === 'frontend'
+    ? '- Update tools/logs/rev1-feature-coverage.json after each completed or materially advanced frontend item. Set frontendStatus to complete only after UI/product acceptance is supported.'
+    : '- Update tools/logs/rev1-feature-coverage.json after each completed or materially advanced feature.'
   const lines = [
-    '# Docmee Features Development',
+    `# ${title}`,
     '',
-    'Continue Docmee feature development from the open Rev 1 coverage queue.',
+    summary,
     '',
     'Rules:',
     '- Work locally first.',
     '- Keep changes focused on the listed feature gaps.',
     '- Do not mark a feature complete unless the code and local verification support it.',
-    '- Update tools/logs/rev1-feature-coverage.json after each completed or materially advanced feature.',
+    updateRule,
     '- Run the relevant local checks before stopping.',
     '- Commit useful completed work with a clear message.',
     '- After completing one feature, stop cleanly; DevTools will automatically launch the next session for the next open feature.',
@@ -207,7 +214,7 @@ function writeFeaturePrompt(features: Feature[]) {
       `## Requirement ${item.id}: ${item.feature}`,
       `Phase: ${item.phase}`,
       `Area: ${item.area}`,
-      `Current status: ${item.status}`,
+      `${statusLine}: ${mode === 'frontend' ? frontendStage(item) : item.status}`,
       `Priority: ${item.priority}`,
       `Evidence: ${item.evidence}`,
       `Next step: ${item.nextStep}`,
@@ -240,13 +247,14 @@ function parseClaudeResetTime(output: string) {
   return reset
 }
 
-async function waitForClaudeRefresh(feature: Feature, output: string) {
+async function waitForClaudeRefresh(feature: Feature, output: string, mode: FeatureMode) {
+  const workflow = workflowForMode(mode)
   const resetAt = parseClaudeResetTime(output) ?? new Date(Date.now() + 5 * 60 * 60 * 1000)
   const resumeAt = new Date(resetAt.getTime() + claudeLimitResumeBufferMs)
-  const message = `Feature development paused: Claude session limit reached. Resume at ${resumeAt.toLocaleString()}.`
+  const message = `${mode === 'frontend' ? 'Frontend development' : 'Feature development'} paused: Claude session limit reached. Resume at ${resumeAt.toLocaleString()}.`
   touchFeatureRun({
     phase: feature.phase,
-    workflow: 'features-development',
+    workflow,
     status: 'paused',
     resumeAt: resumeAt.toISOString(),
     message
@@ -255,7 +263,7 @@ async function waitForClaudeRefresh(feature: Feature, output: string) {
   while (Date.now() < resumeAt.getTime()) {
     touchFeatureRun({
       phase: feature.phase,
-      workflow: 'features-development',
+      workflow,
       status: 'paused',
       resumeAt: resumeAt.toISOString(),
       message
@@ -264,7 +272,7 @@ async function waitForClaudeRefresh(feature: Feature, output: string) {
   }
   touchFeatureRun({
     phase: feature.phase,
-    workflow: 'features-development',
+    workflow,
     status: 'running',
     resumeAt: undefined,
     message: 'Claude limit refreshed; resuming feature development.'
@@ -272,16 +280,18 @@ async function waitForClaudeRefresh(feature: Feature, output: string) {
   await sendNotification('Claude limit refreshed. Feature development is resuming automatically.', 'development')
 }
 
-function runClaudeFeatureDevelopment(promptFile: string, firstFeature: Feature, sessionNumber: number) {
+function runClaudeFeatureDevelopment(promptFile: string, firstFeature: Feature, sessionNumber: number, mode: FeatureMode) {
   return new Promise<ClaudeSessionResult>((resolve) => {
     const prompt = fs.readFileSync(promptFile, 'utf8')
     let output = ''
+    const workflow = workflowForMode(mode)
+    const label = mode === 'frontend' ? 'frontend item' : 'feature'
     touchFeatureRun({
       phase: firstFeature.phase,
-      workflow: 'features-development',
+      workflow,
       status: 'running',
       startedAt: new Date().toISOString(),
-      message: `Session ${sessionNumber}: developing feature ${firstFeature.id}: ${firstFeature.feature}`
+      message: `Session ${sessionNumber}: developing ${label} ${firstFeature.id}: ${firstFeature.feature}`
     })
 
     const child = spawn(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
@@ -295,9 +305,9 @@ function runClaudeFeatureDevelopment(promptFile: string, firstFeature: Feature, 
       touchFeatureRun({
         pid: child.pid,
         phase: firstFeature.phase,
-        workflow: 'features-development',
+        workflow,
         status: 'running',
-        message: `Session ${sessionNumber}: developing feature ${firstFeature.id}: ${firstFeature.feature}`
+        message: `Session ${sessionNumber}: developing ${label} ${firstFeature.id}: ${firstFeature.feature}`
       })
     }, 10000)
 
@@ -316,7 +326,7 @@ function runClaudeFeatureDevelopment(promptFile: string, firstFeature: Feature, 
       touchFeatureRun({
         pid: child.pid,
         phase: firstFeature.phase,
-        workflow: 'features-development',
+        workflow,
         status: code === 0 ? 'running' : 'failed',
         message: code === 0
           ? `Session ${sessionNumber} finished; checking queue for next feature.`
@@ -334,62 +344,61 @@ export const featureCmd = new Command('feature').description('Manage Docmee feat
 featureCmd.command('watch')
   .description('Start automated Claude feature development from the open feature coverage queue')
   .option('--max-sessions <count>', 'Maximum Claude sessions to run before stopping', '50')
-  .action(async (opts: { maxSessions: string }) => {
+  .option('--mode <mode>', 'Queue mode: backend or frontend', 'backend')
+  .action(async (opts: { maxSessions: string; mode: string }) => {
+    const mode = opts.mode === 'frontend' ? 'frontend' : 'backend'
+    const workflow = workflowForMode(mode)
+    const automationLabel = mode === 'frontend' ? 'Frontend development' : 'Feature development'
     const attempted = new Set<number>()
     const maxSessions = Math.max(1, Number(opts.maxSessions) || 50)
     let sessionNumber = 0
 
     while (sessionNumber < maxSessions) {
-      const features = openFeatures()
+      const features = openFeatures(mode)
       if (features.length === 0) {
-        touchFeatureRun({ workflow: 'features-development', status: 'complete', message: 'All features are complete' })
-        log('feature', 'All features are complete.')
-        await sendNotification('Feature development automation completed. All Rev 1 features are marked complete.', 'development')
+        touchFeatureRun({ workflow, status: 'complete', message: mode === 'frontend' ? 'All frontend items are complete' : 'All features are complete' })
+        log('feature', mode === 'frontend' ? 'All frontend items are complete.' : 'All features are complete.')
+        await sendNotification(`${automationLabel} automation completed. ${mode === 'frontend' ? 'All frontend acceptance items are marked complete.' : 'All Rev 1 features are marked complete.'}`, 'development')
         await closeDiscordClient()
         return
       }
 
       const feature = nextFeature(features, attempted)
       const before = statusSnapshot(readFeatures())
-      const promptFile = writeFeaturePrompt([feature, ...features.filter((item) => item.id !== feature.id)])
+      const promptFile = writeFeaturePrompt([feature, ...features.filter((item) => item.id !== feature.id)], mode)
       sessionNumber += 1
       attempted.add(feature.id)
       const headBefore = currentHead()
-      log('feature', `Starting feature development session ${sessionNumber}/${maxSessions} with ${features.length} open feature(s). Prompt: ${promptFile}`)
-      await sendNotification(`Feature development session ${sessionNumber} started. ${features.length} open feature(s). Working on Req ${feature.id} - ${feature.feature}.`, 'development')
+      log('feature', `Starting ${automationLabel.toLowerCase()} session ${sessionNumber}/${maxSessions} with ${features.length} open item(s). Prompt: ${promptFile}`)
+      await sendNotification(`${automationLabel} session ${sessionNumber} started. ${features.length} open item(s). Working on Req ${feature.id} - ${feature.feature}.`, 'development')
 
-      const result = await runClaudeFeatureDevelopment(promptFile, feature, sessionNumber)
+      const result = await runClaudeFeatureDevelopment(promptFile, feature, sessionNumber, mode)
       const allAfter = readFeatures()
-      const updatedOpen = openFeatures()
+      const updatedOpen = openFeatures(mode)
       const changes = changedFeatures(before, allAfter)
 
       if (result.code !== 0) {
         if (isClaudeLimitMessage(result.output)) {
-          await waitForClaudeRefresh(feature, result.output)
+          await waitForClaudeRefresh(feature, result.output, mode)
           attempted.delete(feature.id)
           continue
         }
-        await sendNotification(`Feature development failed during Req ${feature.id} - ${feature.feature}. Fix the blocker, then resume.`, 'critical')
+        await sendNotification(`${automationLabel} failed during Req ${feature.id} - ${feature.feature}. Fix the blocker, then resume.`, 'critical')
         await closeDiscordClient()
         process.exitCode = result.code
         return
       }
 
-      const githubSync = await pushFeatureCommits(headBefore, feature)
-      if (!githubSync.ok) {
-        await closeDiscordClient()
-        process.exitCode = 1
-        return
-      }
+      const commitRecord = await recordFeatureCommit(headBefore, feature, mode)
 
       await sendNotification(
-        `Feature development session ${sessionNumber} finished. ${updatedOpen.length} feature(s) remain open. GitHub sync: ${githubSync.message}${changes.length ? ` Changes: ${changes.join('; ')}` : ' No status change detected; moving to the next open feature.'}`,
+        `${automationLabel} session ${sessionNumber} finished. ${updatedOpen.length} item(s) remain open. ${commitRecord.message}${changes.length ? ` Changes: ${changes.join('; ')}` : ' No status change detected; moving to the next open item.'}`,
         'development'
       )
 
       if (updatedOpen.length === 0) {
-        touchFeatureRun({ workflow: 'features-development', status: 'complete', message: 'All features are complete' })
-        await sendNotification('Feature development automation completed. All Rev 1 features are marked complete.', 'development')
+        touchFeatureRun({ workflow, status: 'complete', message: mode === 'frontend' ? 'All frontend items are complete' : 'All features are complete' })
+        await sendNotification(`${automationLabel} automation completed. ${mode === 'frontend' ? 'All frontend acceptance items are marked complete.' : 'All Rev 1 features are marked complete.'}`, 'development')
         await closeDiscordClient()
         return
       }
@@ -401,19 +410,19 @@ featureCmd.command('watch')
 
       touchFeatureRun({
         phase: updatedOpen[0]?.phase ?? feature.phase,
-        workflow: 'features-development',
+        workflow,
         status: 'running',
-        message: `Continuing feature queue. ${updatedOpen.length} feature(s) remain open.`
+        message: `Continuing ${mode === 'frontend' ? 'frontend' : 'feature'} queue. ${updatedOpen.length} item(s) remain open.`
       })
     }
 
-    const remaining = openFeatures()
+    const remaining = openFeatures(mode)
     touchFeatureRun({
-      workflow: 'features-development',
+      workflow,
       status: remaining.length === 0 ? 'complete' : 'stopped',
-      message: remaining.length === 0 ? 'All features are complete' : `Stopped after max session limit. ${remaining.length} feature(s) remain open.`
+      message: remaining.length === 0 ? (mode === 'frontend' ? 'All frontend items are complete' : 'All features are complete') : `Stopped after max session limit. ${remaining.length} item(s) remain open.`
     })
-    await sendNotification(`Feature development stopped after ${maxSessions} session(s). ${remaining.length} feature(s) remain open.`, remaining.length === 0 ? 'development' : 'critical')
+    await sendNotification(`${automationLabel} stopped after ${maxSessions} session(s). ${remaining.length} item(s) remain open.`, remaining.length === 0 ? 'development' : 'critical')
     await closeDiscordClient()
     process.exitCode = remaining.length === 0 ? 0 : 1
   })
