@@ -2511,12 +2511,27 @@ export async function POST(request: Request) {
       'deploy-redis': ['deploy', 'redis'],
       'deploy-local': ['deploy', 'local'],
       'deploy-env': ['deploy', 'env'],
+      'deploy-preflight': ['deploy', 'preflight'],
       'deploy-vps': ['deploy', 'vps'],
       'deploy-rollback': ['deploy', 'rollback']
     }
     const args = commandByAction[action]
     if (!args) return redirect(request, 'error', 'Unknown deploy action')
     const result = runTool(args)
+    if (action === 'deploy-preflight') {
+      const issues = (result.output || '')
+        .split('\n')
+        .filter((line) => /MISSING|< 5\.0|not reachable|must be production|could not reach/.test(line))
+        .map((line) => line.replace(/^\[[^\]]*\]\s*/, '').trim())
+        .filter(Boolean)
+      return redirect(
+        request,
+        result.ok ? 'message' : 'error',
+        result.ok
+          ? 'Preflight passed — the VPS looks deploy-ready.'
+          : `Preflight blocked: ${issues.join(' · ').slice(0, 320) || 'see deploy logs for details'}`
+      )
+    }
     if (action === 'deploy-vps') {
       if (!result.ok) {
         return redirect(request, 'error', 'VPS deployment request failed before verification could run.')

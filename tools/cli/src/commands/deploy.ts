@@ -50,6 +50,85 @@ function keyPath() {
   return (process.env.VPS_SSH_KEY_PATH || '~/.ssh/id_ed25519').replace(/^~/, os.homedir())
 }
 
+// Deploy-critical env that must live in the VPS .env.production. 'critical' aborts
+// the deploy; 'warn' is surfaced but allowed (the client has a same-host fallback).
+const REQUIRED_PROD_ENV: Array<{ key: string; severity: 'critical' | 'warn'; note: string }> = [
+  { key: 'DATABASE_URL', severity: 'critical', note: 'Postgres connection' },
+  { key: 'REDIS_URL', severity: 'critical', note: 'Redis >= 5 (BullMQ)' },
+  { key: 'CORS_ORIGINS', severity: 'critical', note: 'prod panel origin — the API blocks the panel if unset' },
+  { key: 'NEXT_PUBLIC_API_URL', severity: 'warn', note: 'baked at build time; needed if the API is not at <host>:3001' }
+]
+
+function majorVersion(version: string): number | null {
+  const match = /(\d+)\./.exec(version.trim())
+  return match ? Number(match[1]) : null
+}
+
+// Validate the VPS is deploy-ready: .env.production exists with the required keys
+// and NODE_ENV=production, Redis is >= 5, and the toolchain is installed. Returns
+// ok=false when any blocking issue is found so `deploy vps` can abort early.
+function vpsPreflight(): { ok: boolean } {
+  const deployPath = process.env.VPS_DEPLOY_PATH as string
+  const env = `${deployPath}/.env.production`
+  const keys = REQUIRED_PROD_ENV.map((entry) => entry.key).join(' ')
+  const remote = [
+    `if [ -f ${env} ]; then echo ENVFILE_OK; for k in ${keys} NODE_ENV; do if grep -qE ^$k= ${env}; then echo ENV_OK $k=$(grep -E ^$k= ${env} | head -1 | cut -d= -f2-); else echo ENV_MISSING $k; fi; done; else echo ENVFILE_MISSING; fi`,
+    `echo REDIS $(redis-cli INFO server 2>/dev/null | grep -i redis_version | cut -d: -f2 || echo none)`,
+    `for t in node pnpm pm2 caddy; do if command -v $t >/dev/null 2>&1; then echo TOOL_OK $t; else echo TOOL_MISSING $t; fi; done`
+  ].join('; ')
+
+  const res = ssh([`"${remote}"`])
+  const out = (res.output || '').replace(/\r/g, '')
+  if (!out) {
+    log('deploy', 'Preflight could not reach the VPS — check SSH settings.', 'error')
+    return { ok: false }
+  }
+
+  let critical = 0
+  if (out.includes('ENVFILE_MISSING')) {
+    log('deploy', `MISSING ${env} on the VPS — create it from .env.example before deploying.`, 'error')
+    critical++
+  } else {
+    for (const entry of REQUIRED_PROD_ENV) {
+      if (new RegExp(`ENV_MISSING ${entry.key}(\\s|$)`).test(out)) {
+        log('deploy', `${entry.severity === 'critical' ? 'MISSING' : 'WARN'} env ${entry.key} — ${entry.note}`, entry.severity === 'critical' ? 'error' : 'warn')
+        if (entry.severity === 'critical') critical++
+      }
+    }
+    const nodeEnv = /ENV_OK NODE_ENV=(\S+)/.exec(out)?.[1]
+    if (nodeEnv !== 'production') {
+      log('deploy', `NODE_ENV is "${nodeEnv ?? 'unset'}" — must be production (a dev value breaks the inboxos build and loads the wrong env).`, 'error')
+      critical++
+    }
+  }
+
+  const redis = /REDIS (\S+)/.exec(out)?.[1]
+  const redisMajor = redis && redis !== 'none' ? majorVersion(redis) : null
+  if (!redis || redis === 'none') {
+    log('deploy', 'Redis not reachable on the VPS (redis-cli).', 'error')
+    critical++
+  } else if (redisMajor !== null && redisMajor < 5) {
+    log('deploy', `Redis ${redis} < 5.0 — BullMQ requires >= 5. Run "pnpm tool deploy redis".`, 'error')
+    critical++
+  } else {
+    log('deploy', `Redis ${redis} OK (>= 5).`)
+  }
+
+  for (const tool of ['node', 'pnpm', 'pm2']) {
+    if (new RegExp(`TOOL_MISSING ${tool}(\\s|$)`).test(out)) {
+      log('deploy', `MISSING ${tool} on the VPS — run vps-bootstrap.sh.`, 'error')
+      critical++
+    }
+  }
+  if (/TOOL_MISSING caddy(\s|$)/.test(out)) {
+    log('deploy', 'caddy not found (ok if you front the app with nginx instead).', 'warn')
+  }
+
+  if (critical === 0) log('deploy', 'Preflight passed — the VPS looks deploy-ready.')
+  else log('deploy', `Preflight found ${critical} blocking issue(s) — fix before deploying.`, 'error')
+  return { ok: critical === 0 }
+}
+
 export const deployCmd = new Command('deploy').description('Deploy locally or to Hostinger VPS')
 
 deployCmd.command('redis').action(() => {
@@ -61,9 +140,20 @@ deployCmd.command('redis').action(() => {
 })
 
 deployCmd.command('check').action(() => {
-  const result = ssh(['"node -v; pnpm -v; pm2 -v; caddy version; redis-cli ping; ufw status"'])
+  const result = ssh(['"node -v; pnpm -v; pm2 -v; caddy version; redis-cli ping; redis-cli INFO server | grep redis_version; ufw status"'])
   log('deploy', result.ok ? 'VPS check completed' : `VPS check failed: ${result.output}`, result.ok ? 'info' : 'warn')
 })
+
+deployCmd
+  .command('preflight')
+  .description('Validate the VPS is deploy-ready (.env.production keys, NODE_ENV=production, Redis >=5, toolchain)')
+  .action(() => {
+    if (!requireVpsConfig()) {
+      process.exitCode = 1
+      return
+    }
+    if (!vpsPreflight().ok) process.exitCode = 1
+  })
 
 deployCmd.command('keygen').action(() => {
   loadConfig()
@@ -97,10 +187,20 @@ deployCmd.command('env').action(() => {
   log('deploy', `${envPath} is ready to sync via SCP after VPS settings are confirmed.`)
 })
 
-deployCmd.command('vps').action(async () => {
+deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis preflight (not recommended)').action(async (opts: { skipPreflight?: boolean }) => {
   if (!requireVpsConfig()) {
     process.exitCode = 1
     return
+  }
+  if (!opts.skipPreflight) {
+    log('deploy', 'Running pre-deploy checks (env, Redis, toolchain)...')
+    if (!vpsPreflight().ok) {
+      log('deploy', 'Aborting deploy — fix the issues above, or re-run with --skip-preflight.', 'error')
+      await sendNotification('VPS deploy aborted at preflight (env/Redis not ready).', 'critical')
+      await closeDiscordClient()
+      process.exitCode = 1
+      return
+    }
   }
   recordLock('vps')
   const branch = process.env.GITHUB_BRANCH || 'main'
