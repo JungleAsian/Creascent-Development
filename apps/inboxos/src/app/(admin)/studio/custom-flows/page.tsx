@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
+import { FlowCanvas } from '@/shared/components/FlowCanvas'
 import { useI18n } from '@/shared/hooks/useI18n'
 import type {
   CustomFlow,
@@ -34,12 +35,15 @@ interface EditableStep {
   next: string
   action: '' | CustomFlowAction
   branches: EditableBranch[]
+  x?: number
+  y?: number
 }
 interface EditableFlow {
   name: string
   keywords: string
   language: CustomFlowLanguage
   steps: EditableStep[]
+  startStepId?: string
 }
 
 function emptyStep(id: string): EditableStep {
@@ -58,6 +62,8 @@ function stepToEditable(s: CustomFlowStep): EditableStep {
       keywords: (b.keywords ?? []).join(', '),
       next: b.next,
     })),
+    x: s.x,
+    y: s.y,
   }
 }
 
@@ -80,6 +86,7 @@ function flowToEditable(flow?: CustomFlow): EditableFlow {
     keywords: flow.triggerKeywords.join(', '),
     language: flow.language,
     steps,
+    startStepId: flow.startStepId ?? undefined,
   }
 }
 
@@ -95,38 +102,46 @@ function templateToEditable(t: FlowTemplate): EditableFlow {
 const splitCsv = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
 const splitLines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean)
 
+/** EditableStep[] -> canonical CustomFlowStep[] (preserves canvas x/y). */
+function editableStepsToCustom(steps: EditableStep[]): CustomFlowStep[] {
+  return steps.map((s, i) => {
+    const branches = s.branches
+      .filter((b) => b.next.trim())
+      .map((b) => ({
+        op: b.op,
+        ...(b.op === 'contains' || b.op === 'equals' ? { keywords: splitCsv(b.keywords) } : {}),
+        next: b.next.trim(),
+      }))
+    return {
+      id: s.id.trim() || `step${i + 1}`,
+      messages: splitLines(s.messages),
+      ...(s.collect.trim() ? { collect: s.collect.trim() } : {}),
+      ...(s.next.trim() ? { next: s.next.trim() } : {}),
+      ...(s.action ? { action: s.action } : {}),
+      ...(branches.length ? { branches } : {}),
+      ...(typeof s.x === 'number' ? { x: s.x } : {}),
+      ...(typeof s.y === 'number' ? { y: s.y } : {}),
+    } as CustomFlowStep
+  })
+}
+
+/** CustomFlowStep[] (from the canvas) -> EditableStep[] for the form model. */
+function customStepsToEditable(steps: CustomFlowStep[]): EditableStep[] {
+  return steps.map((s) => ({ ...stepToEditable(s), x: s.x, y: s.y }))
+}
+
 /** Build the API payload, or null when nothing meaningful was entered. */
 function editableToPayload(e: EditableFlow): Record<string, unknown> | null {
-  const steps: CustomFlowStep[] = e.steps
-    .map((s, i) => {
-      const messages = splitLines(s.messages)
-      const branches = s.branches
-        .filter((b) => b.next.trim())
-        .map((b) => ({
-          op: b.op,
-          ...(b.op === 'contains' || b.op === 'equals' ? { keywords: splitCsv(b.keywords) } : {}),
-          next: b.next.trim(),
-        }))
-      return {
-        id: s.id.trim() || `step${i + 1}`,
-        messages,
-        ...(s.collect.trim() ? { collect: s.collect.trim() } : {}),
-        ...(s.next.trim() ? { next: s.next.trim() } : {}),
-        ...(s.action ? { action: s.action } : {}),
-        ...(branches.length ? { branches } : {}),
-      } as CustomFlowStep
-    })
-    // drop fully-empty rows (no messages, no branches)
-    .filter((s) => s.messages.length > 0 || (s.branches?.length ?? 0) > 0)
-
+  // drop fully-empty rows (no messages, no branches)
+  const steps = editableStepsToCustom(e.steps).filter((s) => s.messages.length > 0 || (s.branches?.length ?? 0) > 0)
   if (steps.length === 0) return null
-
+  const startStepId = e.startStepId && steps.some((s) => s.id === e.startStepId) ? e.startStepId : steps[0]!.id
   return {
     name: e.name.trim(),
     triggerKeywords: splitCsv(e.keywords),
     language: e.language,
     steps,
-    startStepId: steps[0]!.id,
+    startStepId,
     messages: [],
   }
 }
@@ -301,6 +316,7 @@ function FlowEditor({
   const { t } = useI18n()
   const [model, setModel] = useState<EditableFlow>(() => flowToEditable(flow))
   const [error, setError] = useState('')
+  const [view, setView] = useState<'form' | 'canvas'>('form')
 
   const payload = useMemo(() => editableToPayload(model), [model])
 
@@ -365,7 +381,27 @@ function FlowEditor({
       </label>
 
       <div className="space-y-3">
-        <p className="text-sm font-medium">{t('studio.customFlows.steps')}</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">{t('studio.customFlows.steps')}</p>
+          <div className="inline-flex overflow-hidden rounded-md border border-gray-300 text-xs dark:border-gray-700">
+            <button type="button" onClick={() => setView('form')} className={`px-2.5 py-1 ${view === 'form' ? 'bg-indigo-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>
+              {t('studio.customFlows.viewForm')}
+            </button>
+            <button type="button" onClick={() => setView('canvas')} className={`px-2.5 py-1 ${view === 'canvas' ? 'bg-indigo-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>
+              {t('studio.customFlows.viewCanvas')}
+            </button>
+          </div>
+        </div>
+        {view === 'canvas' ? (
+          <FlowCanvas
+            steps={editableStepsToCustom(model.steps)}
+            startStepId={model.startStepId ?? model.steps[0]?.id ?? null}
+            onChange={({ steps, startStepId }) =>
+              setModel((m) => ({ ...m, steps: customStepsToEditable(steps), startStepId: startStepId ?? undefined }))
+            }
+          />
+        ) : (
+          <>
         {model.steps.map((step, si) => (
           <div key={si} className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-700">
             <div className="flex items-center gap-2">
@@ -485,6 +521,8 @@ function FlowEditor({
         >
           + {t('studio.customFlows.addStep')}
         </button>
+          </>
+        )}
       </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}

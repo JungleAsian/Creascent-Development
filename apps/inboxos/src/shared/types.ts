@@ -521,6 +521,9 @@ export interface CustomFlowStep {
   collect?: string | null
   next?: string | null
   action?: CustomFlowAction | null
+  /** Visual-canvas node position (Rev 2). Persisted in the steps JSONB. */
+  x?: number
+  y?: number
 }
 
 export interface CustomFlow {
