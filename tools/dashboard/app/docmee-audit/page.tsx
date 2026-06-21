@@ -23,6 +23,7 @@ import { LaneFlowStrip } from '../lane-flow-strip'
 import { LaneItemGauge } from '../lane-item-gauge'
 import { runLiveness, isProcessAlive, heartbeatAge } from '../lib/run-live'
 import { ElapsedTimer } from '../elapsed-timer'
+import { Icon } from '../icon'
 import { readJson } from '../lib/read-json'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
@@ -371,7 +372,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             </div>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="ui-mockup-stop" />
-              <button className="shrink-0 rounded-md border border-red-700 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/50">Stop run</button>
+              <button className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-700 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/50"><Icon name="stop" className="h-3.5 w-3.5" />Stop run</button>
             </form>
           </div>
           {typeof designRun.total === 'number' && designRun.total > 0 && (
@@ -410,7 +411,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <input type="hidden" name="action" value="phase-build-watch" />
               <input type="hidden" name="from" value={uiDevelopmentPhase} />
               <input type="hidden" name="workflow" value="ui-development" />
-              <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}>Build screens</button>
+              <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 inline-flex items-center gap-1" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}><Icon name="build" className="h-3.5 w-3.5" />Build screens</button>
             </form>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-build-stop" />
@@ -439,8 +440,8 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             {mockupRunLive ? (
               <form action="/api/actions" method="post">
                 <input type="hidden" name="action" value="ui-mockup-stop" />
-                <button className="rounded-md border border-red-800 px-2.5 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/40" title={designRun.message ?? 'Stop bulk mockup generation'}>
-                  Stop{typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? ` (${designRun.processed}/${designRun.total})` : ''}
+                <button className="inline-flex items-center gap-1 rounded-md border border-red-800 px-2.5 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/40" title={designRun.message ?? 'Stop bulk mockup generation'}>
+                  <Icon name="stop" className="h-3.5 w-3.5" />Stop{typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? ` (${designRun.processed}/${designRun.total})` : ''}
                 </button>
               </form>
             ) : (
@@ -449,9 +450,9 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                 <button
                   disabled={missingMockupCount === 0}
                   title={missingMockupCount === 0 ? 'Every screen already has a mockup' : `Sequentially generate mockups for the ${missingMockupCount} screen(s) without one`}
-                  className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                  className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                 >
-                  Mockup all{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
+                  <Icon name="plus" className="h-3.5 w-3.5" />Mockup all{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
                 </button>
               </form>
             )}
@@ -472,20 +473,18 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={savedMockups().length === 0}
                 title={savedMockups().length === 0 ? 'No saved mockups in the Library yet' : `Export all ${savedMockups().length} saved screen(s) to one PDF, saved in the Library`}
-                className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Report PDF
+                <Icon name="report" className="h-3.5 w-3.5" />PDF
               </button>
             </form>
             {fs.existsSync(path.join(savedMockupsDir, 'UI-Design-Report.pdf')) && (
               <a
                 href="/api/mockup-library/UI-Design-Report.pdf"
                 download="UI-Design-Report.pdf"
-                title="Download the generated UI Design Report PDF"
-                aria-label="Download UI Design Report PDF"
-                className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-950/20 px-2.5 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-950/50"
+                className="inline-flex items-center justify-center rounded-md border border-emerald-700 bg-emerald-950/20 p-1.5 text-emerald-200 hover:bg-emerald-950/50"
               >
-                <span aria-hidden="true">⬇</span> Download
+                <Icon name="download" className="h-4 w-4" label="Download UI Design Report PDF" />
               </a>
             )}
             <span className="mx-1 h-5 w-px bg-slate-700" aria-hidden="true" />
@@ -494,9 +493,9 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={approvedBuildableCount === 0 || mockupRunLive || uiDevelopmentLive}
                 title={approvedBuildableCount === 0 ? 'No screens to build — generate a mockup first' : mockupRunLive || uiDevelopmentLive ? 'A build/design run is already in progress' : `Sequentially build the ${approvedBuildableCount} screen(s) that have an approved mockup (not yet complete) into real components`}
-                className="rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
-                Approve &amp; build all{approvedBuildableCount > 0 ? ` (${approvedBuildableCount})` : ''}
+                <Icon name="build" className="h-3.5 w-3.5" />Approve &amp; build all{approvedBuildableCount > 0 ? ` (${approvedBuildableCount})` : ''}
               </button>
             </form>
           </div>
@@ -509,9 +508,9 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={builtScreenCount === 0 || mockupRunLive || uiDevelopmentLive}
                 title={builtScreenCount === 0 ? 'No built screens to verify' : mockupRunLive || uiDevelopmentLive ? 'A run is already in progress' : `Read-only check that all ${builtScreenCount} built screen(s) are wired to the backend (cheap model, no rebuild)`}
-                className="rounded-md border border-sky-700 bg-sky-950/30 px-2.5 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-sky-700 bg-sky-950/30 px-2.5 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Verify wiring{builtScreenCount > 0 ? ` (${builtScreenCount})` : ''}
+                <Icon name="check" className="h-3.5 w-3.5" />Verify wiring{builtScreenCount > 0 ? ` (${builtScreenCount})` : ''}
               </button>
             </form>
             <form action="/api/actions" method="post">
@@ -519,9 +518,9 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={wiringFlaggedCount === 0 || mockupRunLive || uiDevelopmentLive}
                 title={wiringFlaggedCount === 0 ? 'No screens flagged — run Verify wiring first' : mockupRunLive || uiDevelopmentLive ? 'A run is already in progress' : `Wire the ${wiringFlaggedCount} flagged screen(s) to the backend — targeted edits, no rebuild`}
-                className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
-                Wire flagged{wiringFlaggedCount > 0 ? ` (${wiringFlaggedCount})` : ''}
+                <Icon name="auto" className="h-3.5 w-3.5" />Wire flagged{wiringFlaggedCount > 0 ? ` (${wiringFlaggedCount})` : ''}
               </button>
             </form>
             <span className="text-[11px] text-slate-500">verifies the built screens connect to the API — does not rebuild</span>

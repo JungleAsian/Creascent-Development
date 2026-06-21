@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import { Icon } from '../icon'
 
 // Browses saved reference mockups (tools/mockup-library/) with view links.
 export function MockupLibrary({ files, report }: { files: string[]; report?: string }) {
@@ -15,7 +16,7 @@ export function MockupLibrary({ files, report }: { files: string[]; report?: str
         className="inline-flex items-center gap-1 rounded-md border border-amber-700 bg-amber-950/20 px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-950/50"
         aria-haspopup="dialog"
       >
-        Library ({files.length})
+        <Icon name="library" className="h-3.5 w-3.5" />Library ({files.length})
       </button>
       <dialog
         ref={ref}
