@@ -311,6 +311,11 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   const generatedMockupCount = fs.existsSync(mockupsDir) ? fs.readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file)).length : 0
   const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
   const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
+  // Heartbeat/liveness for the design+mockup runs (Mockup all / Approve & build /
+  // single design) so every running process — not just the ui-development build —
+  // surfaces a heartbeat + progress, not only a Stop button.
+  const designLiveness = runLiveness(designRun, isProcessAlive(designRun.pid))
+  const designRunActive = mockupRunLive || designLiveness.live || designLiveness.stale
   const backendComplete = countStage(features, backendStage, 'complete')
   const frontendComplete = countStage(features, frontendStage, 'complete')
   const backendOpen = features.length - backendComplete
@@ -343,6 +348,31 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
       {searchParams?.message && <p className="mt-3 rounded-md border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 rounded-md border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">{searchParams.error}</p>}
       {uiDevelopmentStale && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">⚠ The UI development watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
+
+      {designRunActive && (
+        <div className={`mt-3 rounded-md border p-3 ${designLiveness.stale ? 'border-amber-800 bg-amber-950/30' : 'border-cyan-900 bg-cyan-950/20'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-cyan-100">{designRun.message ?? 'Design / mockup run in progress…'}</p>
+              <p className="mt-0.5 text-xs text-cyan-300/80">
+                {typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? `${designRun.processed}/${designRun.total} · ` : ''}
+                heartbeat {heartbeatAge(designRun.heartbeatAt)}
+                {designLiveness.stale ? ' · ⚠ no recent heartbeat — may be hung' : ''}
+                {designRun.pid ? ` · PID ${designRun.pid}` : ''}
+              </p>
+            </div>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="ui-mockup-stop" />
+              <button className="shrink-0 rounded-md border border-red-700 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/50">Stop run</button>
+            </form>
+          </div>
+          {typeof designRun.total === 'number' && designRun.total > 0 && (
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800" title={`${designRun.processed ?? 0}/${designRun.total}`}>
+              <div className={`h-full rounded ${designLiveness.stale ? 'bg-amber-500' : 'bg-cyan-500'}`} style={{ width: `${Math.round(((designRun.processed ?? 0) / designRun.total) * 100)}%` }} />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-4 rounded-md border border-cyan-800 bg-cyan-950/20 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
