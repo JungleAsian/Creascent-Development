@@ -10,7 +10,8 @@ import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 type Priority = 'critical' | 'high' | 'medium' | 'low' | 'infrastructure'
 type Status = 'todo' | 'in-progress' | 'plan-review' | 'blocked' | 'review' | 'done'
 type Lane = 'backend' | 'frontend' | 'ui' | 'infra'
-type Assignee = 'claude' | 'codex'
+type Assignee = 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
+const ASSIGNEES: Assignee[] = ['claude', 'codex', 'grok', 'cursor', 'gemini', 'deepseek']
 // `auto`/`key`/`source` mark items collected by `backlog sync` (TODO/FIXME scan)
 // so re-runs dedup by key and auto-remove items whose comment was deleted.
 // `assignee`/`plan`/`commit`/`pr` drive the resolution workflow + Claude handoff.
@@ -358,7 +359,7 @@ backlogCmd
   .command('update')
   .description('Update resolution fields on a task (assignee, plan, commit, pr)')
   .requiredOption('--id <id>')
-  .option('--assignee <assignee>', 'claude or codex')
+  .option('--assignee <assignee>', ASSIGNEES.join(' | '))
   .option('--plan <plan>')
   .option('--commit <commit>')
   .option('--pr <pr>')
@@ -371,7 +372,7 @@ backlogCmd
       process.exitCode = 1
       return
     }
-    if (opts.assignee === 'claude' || opts.assignee === 'codex') task.assignee = opts.assignee
+    if (opts.assignee && (ASSIGNEES as string[]).includes(opts.assignee)) task.assignee = opts.assignee as Assignee
     if (opts.plan !== undefined) task.plan = opts.plan
     if (opts.commit !== undefined) task.commit = opts.commit
     if (opts.pr !== undefined) task.pr = opts.pr

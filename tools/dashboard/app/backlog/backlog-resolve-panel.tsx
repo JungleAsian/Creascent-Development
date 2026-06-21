@@ -2,8 +2,21 @@
 
 import { useRef, useState } from 'react'
 
-// Per-item resolution: pick an agent (Claude auto-runs; Codex is a guided manual
-// handoff), edit the plan/instruction, hand off, then link the commit/PR.
+// Per-item resolution: pick an AI to assign (Claude auto-runs via the headless
+// CLI; the others are guided manual handoffs — copy the plan + open the tool),
+// edit the plan/instruction, hand off, then save the assignment + commit/PR.
+type Agent = 'claude' | 'codex' | 'grok' | 'cursor' | 'gemini' | 'deepseek'
+
+const PROVIDERS: Record<Agent, { label: string; url?: string }> = {
+  claude: { label: 'Claude' },
+  codex: { label: 'Codex', url: 'https://chatgpt.com/codex' },
+  grok: { label: 'Grok', url: 'https://grok.com' },
+  cursor: { label: 'Cursor', url: 'https://cursor.com' },
+  gemini: { label: 'Gemini', url: 'https://gemini.google.com/app' },
+  deepseek: { label: 'DeepSeek', url: 'https://chat.deepseek.com' }
+}
+const AGENTS = Object.keys(PROVIDERS) as Agent[]
+
 export function BacklogResolvePanel({
   id,
   title,
@@ -28,15 +41,16 @@ export function BacklogResolvePanel({
   pr?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
-  const [agent, setAgent] = useState<'claude' | 'codex'>(assignee === 'codex' ? 'codex' : 'claude')
+  const [agent, setAgent] = useState<Agent>(assignee && assignee in PROVIDERS ? (assignee as Agent) : 'claude')
   const defaultPlan = `Investigate the ${lane || 'relevant'} code for "${title}", design a focused fix, implement it, run local checks, and commit referencing backlog #${id}.`
   const [text, setText] = useState(plan || defaultPlan)
   const close = () => ref.current?.close()
+  const provider = PROVIDERS[agent]
 
-  const copyForCodex = () => {
+  const copyAndOpen = () => {
     const prompt = `Resolve Docmee backlog item #${id}: ${title}.\nLane: ${lane || 'unspecified'} · Phase: ${phase} · Priority: ${priority}.\n\nPlan / instruction:\n${text}`
     navigator.clipboard.writeText(prompt).catch(() => {})
-    window.open('https://chatgpt.com/codex', '_blank', 'noopener,noreferrer')
+    if (provider.url) window.open(provider.url, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -58,16 +72,16 @@ export function BacklogResolvePanel({
           <button type="button" onClick={close} aria-label="Close" className="shrink-0 rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800">✕</button>
         </div>
         <div className="space-y-3 px-4 py-4">
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-slate-400">Assign to</span>
-            {(['claude', 'codex'] as const).map((value) => (
+            {AGENTS.map((value) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => setAgent(value)}
                 className={`rounded-md border px-2.5 py-1 font-medium ${agent === value ? 'border-cyan-500 bg-cyan-950/40 text-cyan-100' : 'border-slate-700 text-slate-300 hover:bg-slate-800'}`}
               >
-                {value === 'claude' ? 'Claude' : 'Codex'}
+                {PROVIDERS[value].label}
               </button>
             ))}
           </div>
@@ -99,8 +113,8 @@ export function BacklogResolvePanel({
             </div>
           ) : (
             <div className="space-y-1">
-              <button type="button" onClick={copyForCodex} className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Copy plan + open Codex →</button>
-              <p className="text-xs text-amber-200/80">Codex runs manually (it has no CLI runner here): the plan is copied for you. When done, set the item to <span className="font-medium">review</span> and link the PR below.</p>
+              <button type="button" onClick={copyAndOpen} className="w-full rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400">Copy plan + open {provider.label} →</button>
+              <p className="text-xs text-amber-200/80">{provider.label} runs manually (no CLI runner here): the plan is copied for you. When done, set the item to <span className="font-medium">review</span> and save the assignment / PR below.</p>
             </div>
           )}
 
@@ -108,11 +122,12 @@ export function BacklogResolvePanel({
             <form action="/api/actions" method="post" className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="action" value="backlog-update" />
               <input type="hidden" name="id" value={id} />
+              <input type="hidden" name="assignee" value={agent} />
               <label className="text-xs text-slate-400">
                 PR link
                 <input name="pr" defaultValue={pr ?? ''} placeholder="https://github.com/…/pull/123" className="mt-1 block w-72 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100" />
               </label>
-              <button className="rounded-md border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Save link</button>
+              <button className="rounded-md border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Save assignment &amp; link</button>
               {commit && <span className="text-xs text-slate-500">commit <span className="font-mono text-slate-300">{commit}</span></span>}
             </form>
           </div>
