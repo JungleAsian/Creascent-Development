@@ -15,6 +15,7 @@ export function BacklogReviewPanel({
   pr,
   result,
   resultProvider,
+  confidence,
   verifyConfidence,
   verifyReason
 }: {
@@ -27,6 +28,7 @@ export function BacklogReviewPanel({
   pr?: string
   result?: string
   resultProvider?: string
+  confidence?: number
   verifyConfidence?: number
   verifyReason?: string
 }) {
@@ -84,6 +86,22 @@ export function BacklogReviewPanel({
             {verified && <span className={`rounded px-2 py-0.5 font-medium ${passed ? 'bg-emerald-900 text-emerald-100' : 'bg-amber-900 text-amber-100'}`}>verify {verifyConfidence}/10</span>}
             {commit && <span className="font-mono text-slate-500">commit {commit}</span>}
             {pr && <a href={pr} target="_blank" rel="noreferrer" className="text-cyan-300 underline">PR ↗</a>}
+          </div>
+
+          {/* Confidence rating */}
+          <div className="flex items-center gap-3 rounded-md border border-slate-800 bg-slate-950/40 p-3">
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 text-base font-bold ${verified ? (passed ? 'border-emerald-500 text-emerald-300' : 'border-amber-500 text-amber-300') : 'border-slate-600 text-slate-500'}`}>
+              {verified ? `${verifyConfidence}` : '—'}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-100">Confidence rating{verified ? <span className="ml-1 text-slate-400">{verifyConfidence}/10</span> : ''}</p>
+              <p className="text-xs text-slate-400">
+                {verified
+                  ? (passed ? 'Verified — high confidence the fix works (≥8).' : 'Below 8 — review before approving.')
+                  : 'Not verified yet — click “Run verification” below to score it 1–10.'}
+                {typeof confidence === 'number' && <span className="ml-1 text-slate-500">· plan confidence {confidence}/10</span>}
+              </p>
+            </div>
           </div>
 
           {/* 1 — Suggested solution */}

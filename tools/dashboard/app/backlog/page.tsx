@@ -164,7 +164,7 @@ export default function BacklogPage({ searchParams }: PageProps) {
       <span className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium sm:inline ${statusTone(row.status)}`}>{row.status}</span>
       <div className="flex shrink-0 items-center gap-1.5">
         <BacklogResolvePanel id={row.id} title={row.title} lane={row.lane} phase={row.phase} priority={row.priority} plan={row.plan} confidence={row.confidence} assignee={row.assignee} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} />
-        <BacklogReviewPanel id={row.id} title={row.title} status={row.status} assignee={row.assignee} plan={row.plan} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} verifyConfidence={row.verifyConfidence} verifyReason={row.verifyReason} />
+        <BacklogReviewPanel id={row.id} title={row.title} status={row.status} assignee={row.assignee} plan={row.plan} commit={row.commit} pr={row.pr} result={row.result} resultProvider={row.resultProvider} confidence={row.confidence} verifyConfidence={row.verifyConfidence} verifyReason={row.verifyReason} />
         <BacklogRowControls id={row.id} status={row.status} />
       </div>
     </li>
