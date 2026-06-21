@@ -84,6 +84,7 @@ async function seed() {
     const users = [
       { clinic_id: clinicAId, user_id: 'aaaaaaaa-0000-0000-0000-000000000001', email: 'admin@demo-a.test', full_name: 'Admin Demo A', status: 'active' },
       { clinic_id: clinicAId, user_id: 'aaaaaaaa-0000-0000-0000-000000000002', email: 'secretary@demo-a.test', full_name: 'Secretaria Demo A', status: 'active' },
+      { clinic_id: clinicAId, user_id: 'aaaaaaaa-0000-0000-0000-0000000000aa', email: 'studio@demo.test', full_name: 'IA Studio Admin', status: 'active' },
       { clinic_id: clinicBId, user_id: 'bbbbbbbb-0000-0000-0000-000000000001', email: 'admin@demo-b.test', full_name: 'Admin Demo B', status: 'active' },
     ]
     for (const u of users) {
@@ -100,6 +101,7 @@ async function seed() {
     const roleSpecs = [
       { clinicId: clinicAId, name: 'clinic_admin' },
       { clinicId: clinicAId, name: 'secretary' },
+      { clinicId: clinicAId, name: 'ia_studio_admin' },
       { clinicId: clinicBId, name: 'clinic_admin' },
     ]
     const roleIds = new Map<string, string>()
@@ -114,6 +116,7 @@ async function seed() {
     const assignments = [
       { email: 'admin@demo-a.test', clinicId: clinicAId, role: 'clinic_admin' },
       { email: 'secretary@demo-a.test', clinicId: clinicAId, role: 'secretary' },
+      { email: 'studio@demo.test', clinicId: clinicAId, role: 'ia_studio_admin' },
       { email: 'admin@demo-b.test', clinicId: clinicBId, role: 'clinic_admin' },
     ]
     for (const a of assignments) {
