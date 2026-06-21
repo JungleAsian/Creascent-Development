@@ -78,9 +78,22 @@ function renderToPdf(browser: string, htmlPath: string, pdfPath: string): boolea
   return result.status === 0 && fs.existsSync(pdfPath)
 }
 
-// Force a wide page so desktop-width mockups aren't clipped; paginate vertically.
+// Print-friendly wrapper so each mockup fits the page and nothing is cut across
+// page breaks: a wide page for desktop layouts, images constrained to the page
+// width, and break-inside:avoid on media + common block/card containers so an
+// image or card never straddles (overlaps) two pages.
 function withPageSize(html: string): string {
-  const style = '<style>@page { size: 1280px 1810px; margin: 0 } html, body { margin: 0 }</style>'
+  const style = [
+    '<style>',
+    '@page { size: 1280px 1810px; margin: 0 }',
+    'html, body { margin: 0 !important; }',
+    'img, svg, video, canvas, picture, iframe { max-width: 100% !important; height: auto; }',
+    'img, svg, video, canvas, figure, picture, table, pre, blockquote,',
+    '[class*="card"], [class*="panel"], [class*="tile"], [class*="box"], [class*="screen"], [class*="phone"], [class*="device"]',
+    '  { break-inside: avoid !important; page-break-inside: avoid !important; }',
+    'section, article, header, footer, li, tr { break-inside: avoid; page-break-inside: avoid; }',
+    '</style>'
+  ].join(' ')
   return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${style}</head>`) : style + html
 }
 
