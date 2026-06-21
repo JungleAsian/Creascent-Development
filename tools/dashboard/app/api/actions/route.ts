@@ -64,6 +64,27 @@ Mockup rules:
 
 Output: only create/overwrite tools/logs/mockups/screen-${item.id}.html, then stop.`
 }
+
+// Mirrors screenDesignPrompt in docmee-audit/page.tsx — the per-screen build
+// prompt used by the bulk "Approve & Build all" queue.
+function screenDesignPrompt(item: { id: number; screen: string; phase: string; featuresCovered: string; priority: string; nextStep: string }) {
+  return `Implement Docmee UI Screen ${item.id}: ${item.screen} from the approved Claude Design mockup provided below.
+
+Product: Docmee, a medical-clinic AI booking and patient-communication platform.
+
+Screen: ${item.screen}
+Phase: ${item.phase}
+Features covered: ${item.featuresCovered}
+Priority: ${item.priority}
+Current next step: ${item.nextStep}
+
+Requirements:
+- Implement the approved mockup EXACTLY in the Docmee product (apps/inboxos) — real, usable UI, not a placeholder.
+- Quiet professional medical SaaS style; English and Spanish labels must both fit; mobile must be a real responsive reflow.
+- Include empty, loading, error, offline/disconnected, permission-denied, and success states.
+- Make patient safety, bot mode, human mode, urgent status, assignment, and handoff visually unmistakable.
+- Run relevant local checks, commit the work with a clear message, and set this screen's status to needs-review in tools/logs/ui-development-records.json.`
+}
 const docmeeUpdateFile = path.join(logsRoot, 'docmee-technology-update.json')
 const codexAccountFile = path.join(logsRoot, 'codex-account.json')
 const costFile = path.join(logsRoot, 'cost.json')
@@ -2257,9 +2278,29 @@ export async function POST(request: Request) {
     return redirect(request, 'message', `Generating ${queue.length} mockup(s) sequentially with Claude — each appears on its screen as it finishes.`, '/docmee-audit')
   }
 
+  if (action === 'ui-build-approved-all') {
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A design/build run is already in progress. Wait for it to finish or stop it.', '/docmee-audit')
+    }
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const queue = records
+      .filter((row) => row.status === 'planned' && existsSync(path.join(mockupsDir, `screen-${row.id}.html`)))
+      .sort((a, b) => a.id - b.id)
+      .map((row) => {
+        const mockup = readFileSync(path.join(mockupsDir, `screen-${row.id}.html`), 'utf8')
+        return { id: row.id, prompt: `${screenDesignPrompt(row)}\n\n## Approved HTML mockup (source: tools/logs/mockups/screen-${row.id}.html) — build the real Docmee component to match this mockup exactly\n${mockup}` }
+      })
+    if (queue.length === 0) return redirect(request, 'message', 'No approved screens to build — generate + approve mockups first (only planned screens with a mockup are built).', '/docmee-audit')
+    mkdirSync(logsRoot, { recursive: true })
+    writeFileSync(path.join(logsRoot, 'mockup-build-queue.json'), JSON.stringify(queue, null, 2))
+    runToolDetached(['mockup', 'build-all'])
+    return redirect(request, 'message', `Approving + building ${queue.length} screen(s) from their mockups — each is built with Claude Code and lands in review when done.`, '/docmee-audit')
+  }
+
   if (action === 'ui-mockup-stop') {
     const result = runTool(['mockup', 'stop'])
-    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stopped bulk mockup generation.' : 'Could not stop.', '/docmee-audit')
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stopped the bulk mockup run.' : 'Could not stop.', '/docmee-audit')
   }
 
   if (action === 'mockup-save-all') {

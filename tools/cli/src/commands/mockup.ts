@@ -14,6 +14,7 @@ const libraryDir = path.join(toolsRoot, 'mockup-library')
 const REPORT_NAME = 'UI-Design-Report.pdf'
 const designRunFile = path.join(logsDir, 'design-run.json')
 const mockupQueueFile = path.join(logsDir, 'mockup-queue.json')
+const mockupBuildQueueFile = path.join(logsDir, 'mockup-build-queue.json')
 const mockupsOutDir = path.join(logsDir, 'mockups')
 const repoRoot = path.resolve(toolsRoot, '..')
 const MOCKUP_TIMEOUT_MS = 8 * 60 * 1000
@@ -173,12 +174,43 @@ mockupCmd
   })
 
 mockupCmd
+  .command('build-all')
+  .description('Sequentially build every queued approved screen from its mockup (queue written by the dashboard)')
+  .action(async () => {
+    let queue: Array<{ id: number; prompt: string }> = []
+    try { queue = JSON.parse(fs.readFileSync(mockupBuildQueueFile, 'utf8')) } catch { queue = [] }
+    if (!Array.isArray(queue) || queue.length === 0) {
+      touchDesignRun({ status: 'complete', message: 'No approved screens queued to build.' })
+      log('mockup', 'No approved screens queued to build.', 'warn')
+      return
+    }
+    const total = queue.length
+    let built = 0
+    let failed = 0
+    touchDesignRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), total, processed: 0, message: `Building ${total} approved screen(s)…` })
+    logActivity({ actor: 'claude', event: 'mockup.build-all.start', severity: 'info', source: 'ui', message: `Building ${total} approved screen(s) sequentially.` })
+    for (const [index, item] of queue.entries()) {
+      const state = readDesignRun()
+      if (state.status === 'stopped' || state.status === 'stopping') { log('mockup', 'Stopped by user.', 'warn'); break }
+      touchDesignRun({ status: 'running', total, processed: index, currentId: item.id, message: `(${index + 1}/${total}) Building screen #${item.id} from its mockup…` })
+      const code = await runClaudeMockup(item.prompt, `Build screen #${item.id} (${index + 1}/${total})`)
+      if (code === 0) built += 1
+      else { failed += 1; log('mockup', `Screen #${item.id} build failed (exit ${code}).`, 'warn') }
+    }
+    touchDesignRun({ status: 'complete', total, processed: total, currentId: null, message: `Build done: ${built} built, ${failed} failed.` })
+    logActivity({ actor: 'claude', event: 'mockup.build-all.done', severity: failed ? 'warn' : 'success', source: 'ui', message: `Approve & build finished — ${built}/${total} built${failed ? `, ${failed} failed` : ''}.` })
+    try { fs.unlinkSync(mockupBuildQueueFile) } catch { /* ignore */ }
+    log('mockup', `Approve & build complete: ${built}/${total} built, ${failed} failed.`)
+  })
+
+mockupCmd
   .command('stop')
   .description('Stop a running bulk mockup generation and clear its state')
   .action(() => {
     const state = readDesignRun()
     killTree(typeof state.pid === 'number' ? state.pid : undefined)
-    fs.writeFileSync(designRunFile, `${JSON.stringify({ status: 'stopped', pid: 0, message: 'Mockup generation stopped by user.', heartbeatAt: new Date().toISOString(), workflow: 'claude-design' }, null, 2)}\n`)
+    fs.writeFileSync(designRunFile, `${JSON.stringify({ status: 'stopped', pid: 0, message: 'Mockup run stopped by user.', heartbeatAt: new Date().toISOString(), workflow: 'claude-design' }, null, 2)}\n`)
     try { fs.unlinkSync(mockupQueueFile) } catch { /* ignore */ }
-    log('mockup', 'Bulk mockup generation stopped.')
+    try { fs.unlinkSync(mockupBuildQueueFile) } catch { /* ignore */ }
+    log('mockup', 'Bulk mockup run stopped.')
   })
