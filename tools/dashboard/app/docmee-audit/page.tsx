@@ -662,20 +662,20 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <span className="group-open:hidden">▸ </span><span className="hidden group-open:inline">▾ </span>Development stages
             </summary>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 leading-5 font-medium text-cyan-100">Generate mockup</span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 leading-5 font-medium text-cyan-100"><Icon name="plus" className="h-3 w-3" />Generate mockup</span>
               <span className="text-slate-500" aria-hidden="true">→</span>
-              <span className="rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 leading-5 font-medium text-cyan-100">Preview</span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 leading-5 font-medium text-cyan-100"><Icon name="eye" className="h-3 w-3" />Preview</span>
               <span className="text-slate-500" aria-hidden="true">→</span>
-              <span className="rounded-md border border-amber-600 bg-amber-950/20 px-2 py-0.5 leading-5 font-medium text-amber-200">Save</span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber-600 bg-amber-950/20 px-2 py-0.5 leading-5 font-medium text-amber-200"><Icon name="library" className="h-3 w-3" />Save</span>
               <span className="text-slate-500">(→ Library)</span>
               <span className="text-slate-500" aria-hidden="true">→</span>
-              <span className="rounded-md bg-emerald-500 px-2 py-0.5 leading-5 font-semibold text-slate-950">Approve &amp; Build</span>
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-0.5 leading-5 font-semibold text-slate-950"><Icon name="build" className="h-3 w-3" />Approve &amp; Build</span>
               <span className="text-slate-500" aria-hidden="true">→</span>
-              <span className="rounded-md border border-cyan-600 bg-cyan-950/40 px-2 py-0.5 leading-5 font-medium text-cyan-100">🛠 Built</span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-cyan-600 bg-cyan-950/40 px-2 py-0.5 leading-5 font-medium text-cyan-100"><Icon name="build" className="h-3 w-3" />Built</span>
               <span className="text-slate-500" aria-hidden="true">→</span>
-              <span className="rounded-md bg-emerald-500 px-2 py-0.5 leading-5 font-semibold text-slate-950">Approve</span>
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-0.5 leading-5 font-semibold text-slate-950"><Icon name="check" className="h-3 w-3" />Approve</span>
               <span className="text-slate-500" aria-hidden="true">→</span>
-              <span className="rounded-md border border-emerald-600 bg-emerald-950/40 px-2 py-0.5 leading-5 font-medium text-emerald-200">✓ Sent to Docmee</span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-600 bg-emerald-950/40 px-2 py-0.5 leading-5 font-medium text-emerald-200"><Icon name="check" className="h-3 w-3" />Sent to Docmee</span>
             </div>
             <p className="mt-2 text-slate-500">Each row shows only the buttons for its current stage — e.g. a screen with no mockup yet shows just <span className="text-cyan-100">Generate mockup</span>; the rest appear as it advances.</p>
           </details>
@@ -705,28 +705,31 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                   <td className="min-w-[280px] p-3">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span
-                        className={`rounded-md px-2 py-0.5 text-[11px] font-medium leading-5 ${item.status === 'needs-review' || item.status === 'complete' ? 'border border-cyan-600 bg-cyan-950/40 text-cyan-100' : 'border border-slate-700 bg-slate-900/60 text-slate-500'}`}
+                        className={`inline-flex items-center justify-center rounded-md px-2 py-1 ${item.status === 'needs-review' || item.status === 'complete' ? 'border border-cyan-600 bg-cyan-950/40 text-cyan-100' : 'border border-slate-700 bg-slate-900/60 text-slate-600'}`}
                         title={item.status === 'needs-review' || item.status === 'complete' ? 'Built — Claude Code implemented this screen in the Docmee codebase' : 'Not built yet'}
+                        aria-label={item.status === 'needs-review' || item.status === 'complete' ? 'Built' : 'Not built'}
                       >
-                        {item.status === 'needs-review' || item.status === 'complete' ? '🛠 Built' : 'Built'}
+                        <Icon name="build" className="h-3.5 w-3.5" />
                       </span>
                       {(item.status === 'needs-review' || item.status === 'complete') && (
                         typeof item.wiringConfidence === 'number' ? (
                           <span
-                            className={`rounded-md px-2 py-0.5 text-[11px] font-medium leading-5 ${item.wiringConfidence >= 8 ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-amber-600 bg-amber-950/30 text-amber-200'}`}
-                            title={item.wiringReason ?? 'Backend wiring confidence'}
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium leading-5 ${item.wiringConfidence >= 8 ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-amber-600 bg-amber-950/30 text-amber-200'}`}
+                            title={`${item.wiringConfidence >= 8 ? 'Wired' : 'Needs wiring'} — ${item.wiringReason ?? 'backend wiring confidence'}`}
+                            aria-label={`${item.wiringConfidence >= 8 ? 'Wired' : 'Needs wiring'} ${item.wiringConfidence}/10`}
                           >
-                            {item.wiringConfidence >= 8 ? '✓ Wired' : '! Needs wiring'} {item.wiringConfidence}/10
+                            <Icon name="auto" className="h-3.5 w-3.5" />{item.wiringConfidence}/10
                           </span>
                         ) : (
-                          <span className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-[11px] font-medium leading-5 text-slate-500" title="Backend wiring not verified yet — run Verify wiring">Wiring ?</span>
+                          <span className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-[11px] font-medium leading-5 text-slate-500" title="Backend wiring not verified yet — run Verify wiring" aria-label="Wiring not verified"><Icon name="auto" className="h-3.5 w-3.5" />?</span>
                         )
                       )}
                       <span
-                        className={`rounded-md px-2 py-0.5 text-[11px] font-medium leading-5 ${item.status === 'complete' ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-slate-700 bg-slate-900/60 text-slate-500'}`}
+                        className={`inline-flex items-center justify-center rounded-md px-2 py-1 ${item.status === 'complete' ? 'border border-emerald-600 bg-emerald-950/40 text-emerald-200' : 'border border-slate-700 bg-slate-900/60 text-slate-600'}`}
                         title={item.status === 'complete' ? 'Approved and sent to the Docmee application' : 'Not sent to Docmee yet'}
+                        aria-label={item.status === 'complete' ? 'Sent to Docmee' : 'Not sent to Docmee'}
                       >
-                        {item.status === 'complete' ? '✓ Sent to Docmee' : 'Sent to Docmee'}
+                        <Icon name="check" className="h-3.5 w-3.5" />
                       </span>
                       {item.status !== 'complete' && (
                         <MockupFlow
@@ -743,7 +746,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                           <input type="hidden" name="action" value="ui-screen-status" />
                           <input type="hidden" name="id" value={item.id} />
                           <input type="hidden" name="status" value="complete" />
-                          <button className="rounded-md bg-emerald-500 px-2 py-0.5 text-[11px] leading-5 font-semibold text-slate-950 hover:bg-emerald-400" title="Approve this screen and mark the task complete">Approve ✓</button>
+                          <button className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1 text-slate-950 hover:bg-emerald-400" title="Approve this screen and mark the task complete" aria-label="Approve screen"><Icon name="check" className="h-3.5 w-3.5" /></button>
                         </form>
                       )}
                       {item.status === 'complete' && (
@@ -751,12 +754,12 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                           <input type="hidden" name="action" value="ui-screen-status" />
                           <input type="hidden" name="id" value={item.id} />
                           <input type="hidden" name="status" value="needs-review" />
-                          <button className="rounded-md border border-slate-600 px-2 py-0.5 text-[11px] leading-5 text-slate-300 hover:bg-slate-800" title="Re-open this screen for another review/rework pass">Re-open</button>
+                          <button className="inline-flex items-center justify-center rounded-md border border-slate-600 p-1 text-slate-300 hover:bg-slate-800" title="Re-open this screen for another review/rework pass" aria-label="Re-open screen"><Icon name="refresh" className="h-3.5 w-3.5" /></button>
                         </form>
                       )}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap p-3"><DetailButton buttonLabel="View" title={`Screen ${item.id}: ${item.screen} — Next UI work`} body={item.nextStep} /></td>
+                  <td className="whitespace-nowrap p-3"><DetailButton buttonLabel="" icon="eye" title={`Screen ${item.id}: ${item.screen} — Next UI work`} body={item.nextStep} /></td>
                   <td className="min-w-[220px] p-3">
                     <BuildProgressGauge
                       size="sm"
