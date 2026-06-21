@@ -307,7 +307,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   // Bulk mockup controls: how many screens still lack a mockup, how many are
   // generated (savable), and whether a bulk run (design-run.json) is live.
   const missingMockupCount = uiDevelopmentRecords.filter((row) => !mockupExists(row.id)).length
-  const approvedBuildableCount = uiDevelopmentRecords.filter((row) => row.status === 'planned' && mockupExists(row.id)).length
+  const approvedBuildableCount = uiDevelopmentRecords.filter((row) => row.status !== 'complete' && mockupExists(row.id)).length
   const generatedMockupCount = fs.existsSync(mockupsDir) ? fs.readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file)).length : 0
   const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
   const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
@@ -441,7 +441,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <input type="hidden" name="action" value="ui-build-approved-all" />
               <button
                 disabled={approvedBuildableCount === 0 || mockupRunLive || uiDevelopmentLive}
-                title={approvedBuildableCount === 0 ? 'No approved screens to build — generate a mockup on a planned screen first' : mockupRunLive || uiDevelopmentLive ? 'A build/design run is already in progress' : `Sequentially build the ${approvedBuildableCount} planned screen(s) that have an approved mockup, into real components`}
+                title={approvedBuildableCount === 0 ? 'No screens to build — generate a mockup first' : mockupRunLive || uiDevelopmentLive ? 'A build/design run is already in progress' : `Sequentially build the ${approvedBuildableCount} screen(s) that have an approved mockup (not yet complete) into real components`}
                 className="rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
                 Approve &amp; build all{approvedBuildableCount > 0 ? ` (${approvedBuildableCount})` : ''}

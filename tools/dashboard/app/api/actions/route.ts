@@ -2285,13 +2285,13 @@ export async function POST(request: Request) {
     }
     const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
     const queue = records
-      .filter((row) => row.status === 'planned' && existsSync(path.join(mockupsDir, `screen-${row.id}.html`)))
+      .filter((row) => row.status !== 'complete' && existsSync(path.join(mockupsDir, `screen-${row.id}.html`)))
       .sort((a, b) => a.id - b.id)
       .map((row) => {
         const mockup = readFileSync(path.join(mockupsDir, `screen-${row.id}.html`), 'utf8')
         return { id: row.id, prompt: `${screenDesignPrompt(row)}\n\n## Approved HTML mockup (source: tools/logs/mockups/screen-${row.id}.html) — build the real Docmee component to match this mockup exactly\n${mockup}` }
       })
-    if (queue.length === 0) return redirect(request, 'message', 'No approved screens to build — generate + approve mockups first (only planned screens with a mockup are built).', '/docmee-audit')
+    if (queue.length === 0) return redirect(request, 'message', 'No screens to build — every screen with a mockup is already complete. Generate a mockup first.', '/docmee-audit')
     mkdirSync(logsRoot, { recursive: true })
     writeFileSync(path.join(logsRoot, 'mockup-build-queue.json'), JSON.stringify(queue, null, 2))
     runToolDetached(['mockup', 'build-all'])
