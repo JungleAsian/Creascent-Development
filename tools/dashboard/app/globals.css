@@ -1127,3 +1127,54 @@ details:not([open]) .details-toggle-label::after {
     display: none;
   }
 }
+
+/* ---- Form-factor tuning for phones / tablets ----
+   The tool is fluid (single-column grids, flex-wrap, scroll tables) at <=767px.
+   These rules tighten data tables so the unavoidable horizontal scroll is shorter
+   and, crucially, DISCOVERABLE (a visible thin scrollbar), and honor device safe
+   areas now that the viewport is full-bleed (viewportFit: cover). */
+@media (max-width: 767px) {
+  .dashboard-content {
+    /* keep clear of the bottom nav AND the device's home-indicator inset */
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    padding-left: calc(0.75rem + env(safe-area-inset-left));
+    padding-right: calc(0.75rem + env(safe-area-inset-right));
+  }
+
+  .dashboard-content table {
+    font-size: 0.8rem;
+  }
+  .dashboard-content th,
+  .dashboard-content td {
+    padding: 0.5rem 0.625rem;
+  }
+
+  /* Make horizontal scroll obvious instead of a hidden affordance. */
+  .dashboard-content .overflow-x-auto {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+    overscroll-behavior-x: contain;
+  }
+  .dashboard-content .overflow-x-auto::-webkit-scrollbar {
+    height: 6px;
+  }
+  .dashboard-content .overflow-x-auto::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.5);
+    border-radius: 9999px;
+  }
+}
+
+/* Ultra-narrow phones: trim chrome so content gets the most room. */
+@media (max-width: 380px) {
+  .dashboard-content {
+    padding-inline: calc(0.5rem + env(safe-area-inset-left));
+  }
+  .dashboard-content h1 {
+    font-size: 1.25rem;
+    line-height: 1.6rem;
+  }
+  .dashboard-content h2 {
+    font-size: 1.05rem;
+    line-height: 1.4rem;
+  }
+}
