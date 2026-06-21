@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import { Icon } from '../icon'
 
 // One "Review" button per item that opens everything needed to review a
 // resolution in plain language — suggested solution, next steps, verification,
@@ -60,10 +61,11 @@ export function BacklogReviewPanel({
       <button
         type="button"
         onClick={() => ref.current?.showModal()}
-        className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium leading-5 ${reviewy ? 'border-sky-600 bg-sky-950/40 text-sky-100 hover:bg-sky-900/50' : 'border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+        className={`inline-flex items-center justify-center rounded-md border p-1 ${reviewy ? 'border-sky-600 bg-sky-950/40 text-sky-100 hover:bg-sky-900/50' : 'border-slate-700 text-slate-300 hover:bg-slate-800'}`}
         title="Open the review panel: suggested solution, next steps, verification, and approval"
+        aria-label="Review this item"
       >
-        Review
+        <Icon name="eye" className="h-3.5 w-3.5" />
       </button>
       {verified && (
         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${passed ? 'bg-emerald-900 text-emerald-100' : 'bg-amber-900 text-amber-100'}`} title="Latest verification confidence">{verifyConfidence}/10</span>

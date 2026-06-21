@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import { Icon } from '../icon'
 
 // Automated mockup-first flow (Option A, HTML preview):
 //  1. Generate mockup  -> Claude Code writes tools/logs/mockups/screen-N.html
@@ -32,8 +33,8 @@ export function MockupFlow({
         <input type="hidden" name="prompt" value={mockupPrompt} />
         <input type="hidden" name="uiScreenId" value={screenId} />
         <input type="hidden" name="uiScreen" value={screenName} />
-        <button className="whitespace-nowrap rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 text-[11px] leading-5 font-medium text-cyan-100 hover:bg-cyan-950/60" title="Generate an HTML mockup with Claude Code for your approval">
-          Generate mockup
+        <button className="inline-flex items-center justify-center rounded-md border border-cyan-700 bg-cyan-950/30 p-1 text-cyan-100 hover:bg-cyan-950/60" title="Generate an HTML mockup with Claude Code for your approval" aria-label="Generate mockup">
+          <Icon name="plus" className="h-3.5 w-3.5" />
         </button>
       </form>
     )
@@ -44,24 +45,26 @@ export function MockupFlow({
       <button
         type="button"
         onClick={() => ref.current?.showModal()}
-        className="whitespace-nowrap rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 text-[11px] leading-5 font-medium text-cyan-100 hover:bg-cyan-950/60"
+        className="inline-flex items-center justify-center rounded-md border border-cyan-700 bg-cyan-950/30 p-1 text-cyan-100 hover:bg-cyan-950/60"
         aria-haspopup="dialog"
+        title="Preview the generated mockup"
+        aria-label="Preview mockup"
       >
-        Preview mockup
+        <Icon name="eye" className="h-3.5 w-3.5" />
       </button>
       <form action="/api/actions" method="post" className="inline">
         <input type="hidden" name="action" value="mockup-build" />
         <input type="hidden" name="id" value={screenId} />
         <input type="hidden" name="prompt" value={buildPrompt} />
-        <button className="whitespace-nowrap rounded-md bg-emerald-500 px-2 py-0.5 text-[11px] leading-5 font-semibold text-slate-950 hover:bg-emerald-400" title="Approve this mockup and build the real screen in Docmee">
-          Approve &amp; Build
+        <button className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-emerald-500 px-2 py-0.5 text-[11px] leading-5 font-semibold text-slate-950 hover:bg-emerald-400" title="Approve this mockup and build the real screen in Docmee">
+          <Icon name="build" className="h-3.5 w-3.5" />Build
         </button>
       </form>
       <form action="/api/actions" method="post" className="inline">
         <input type="hidden" name="action" value="mockup-save" />
         <input type="hidden" name="id" value={screenId} />
-        <button className="whitespace-nowrap rounded-md border border-amber-600 bg-amber-950/20 px-2 py-0.5 text-[11px] leading-5 font-medium text-amber-200 hover:bg-amber-950/50" title="Save this mockup to the reference library (mockup-library/Screen_Phase_Features.html) for later">
-          Save
+        <button className="inline-flex items-center justify-center rounded-md border border-amber-600 bg-amber-950/20 p-1 text-amber-200 hover:bg-amber-950/50" title="Save this mockup to the reference library (mockup-library/Screen_Phase_Features.html) for later" aria-label="Save mockup to library">
+          <Icon name="library" className="h-3.5 w-3.5" />
         </button>
       </form>
       <form action="/api/actions" method="post" className="inline">
@@ -69,8 +72,8 @@ export function MockupFlow({
         <input type="hidden" name="prompt" value={mockupPrompt} />
         <input type="hidden" name="uiScreenId" value={screenId} />
         <input type="hidden" name="uiScreen" value={screenName} />
-        <button className="whitespace-nowrap rounded-md border border-slate-600 px-2 py-0.5 text-[11px] leading-5 text-slate-300 hover:bg-slate-800" title="Discard and regenerate the mockup">
-          Regenerate
+        <button className="inline-flex items-center justify-center rounded-md border border-slate-600 p-1 text-slate-300 hover:bg-slate-800" title="Discard and regenerate the mockup" aria-label="Regenerate mockup">
+          <Icon name="refresh" className="h-3.5 w-3.5" />
         </button>
       </form>
       <dialog

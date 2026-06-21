@@ -1,5 +1,7 @@
 'use client'
 
+import { Icon } from '../icon'
+
 const STATUSES = ['todo', 'in-progress', 'blocked', 'review', 'done'] as const
 
 // Per-row backlog controls: a status dropdown (auto-submits on change) and a
@@ -23,7 +25,7 @@ export function BacklogRowControls({ id, status }: { id: number; status: string 
       <form action="/api/actions" method="post" className="inline">
         <input type="hidden" name="action" value="backlog-delete" />
         <input type="hidden" name="id" value={id} />
-        <button className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950/40" title={`Delete task ${id}`} aria-label={`Delete task ${id}`}>✕</button>
+        <button className="inline-flex items-center justify-center rounded border border-red-800 p-1 text-red-300 hover:bg-red-950/40" title={`Delete task ${id}`} aria-label={`Delete task ${id}`}><Icon name="trash" className="h-3.5 w-3.5" /></button>
       </form>
     </div>
   )

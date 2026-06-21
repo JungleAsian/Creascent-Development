@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { Icon } from '../icon'
 
 // Per-item resolution: pick an AI to assign, then the button engages it.
 // Claude auto-runs agentically via the headless CLI (edits + commits). API
@@ -66,9 +67,11 @@ export function BacklogResolvePanel({
       <button
         type="button"
         onClick={() => ref.current?.showModal()}
-        className="whitespace-nowrap rounded-md border border-cyan-700 bg-cyan-950/30 px-2 py-0.5 text-[11px] font-medium leading-5 text-cyan-100 hover:bg-cyan-950/60"
+        title="Resolve this item — review the plan and approve, all click-driven"
+        aria-label="Resolve this item"
+        className="inline-flex items-center justify-center rounded-md border border-cyan-700 bg-cyan-950/30 p-1 text-cyan-100 hover:bg-cyan-950/60"
       >
-        Resolve
+        <Icon name="build" className="h-3.5 w-3.5" />
       </button>
       <dialog
         ref={ref}
