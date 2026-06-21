@@ -115,6 +115,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
   const [currentId, currentName, currentBuilder] = currentDefinition
   const currentControl = controlById.get(currentId) ?? { phaseId: currentId, status: 'pending', updatedAt: new Date(0).toISOString() }
   const done = phases.filter((phase) => phase.status === 'done').length
+  const allComplete = done === definitions.length
   const currentPrompt = promptInfo(currentId)
   const ready = readyState()
   const readyCritical = ready.summary?.critical ?? 1
@@ -133,8 +134,8 @@ export default function BuildControlPage({ searchParams }: PageProps) {
     <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Build Control</h1>
-          <p className="mt-2 text-sm text-slate-400">Full automation for all 19 phases through Claude Code.</p>
+          <h1 className="text-2xl font-semibold">Build Control{allComplete && <span className="ml-2 rounded bg-emerald-900 px-2 py-0.5 align-middle text-xs font-medium text-emerald-100">complete</span>}</h1>
+          <p className="mt-2 text-sm text-slate-400">{allComplete ? 'The 19-phase build is finished — this page is now a historical record.' : 'Full automation for all 19 phases through Claude Code.'}</p>
         </div>
         <a href={buildControlUrl} target="_blank" rel="noreferrer" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Open Notion spec</a>
       </div>
@@ -155,8 +156,21 @@ export default function BuildControlPage({ searchParams }: PageProps) {
       </div>
       {searchParams?.message && <p className="mt-3 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-3 text-sm text-red-300">{searchParams.error}</p>}
-      {buildRun.stale && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">⚠ The build watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
+      {!allComplete && buildRun.stale && <p className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">⚠ The build watcher process is alive but has not sent a heartbeat recently — it may be hung. You can start a new run.</p>}
 
+      {allComplete && (
+        <div className="mt-4 rounded-md border border-emerald-800 bg-emerald-950/30 p-4">
+          <h2 className="text-sm font-semibold text-emerald-100">Build complete — 19/19 phases</h2>
+          <p className="mt-1 text-sm text-slate-300">The phased build pipeline is finished, so there is nothing to start here. Day-to-day work now runs through <a href="/backlog" className="text-cyan-300 underline">Backlog</a> / <a href="/overview" className="text-cyan-300 underline">Mission Control</a>; any future phased builds are driven from <a href="/rev1-coverage" className="text-cyan-300 underline">Features Development</a>. The full phase record and local-launch / deploy actions remain below.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="/rev1-coverage" className="min-h-10 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Features Development →</a>
+            <a href="/deploy" className="min-h-10 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Deploy →</a>
+            <a href="/overview" className="min-h-10 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Mission Control →</a>
+          </div>
+        </div>
+      )}
+
+      {!allComplete && (
       <div className={startLocked ? 'mt-4 rounded-md border border-amber-800 bg-amber-950/30 p-4' : 'mt-4 rounded-md border border-emerald-800 bg-emerald-950/30 p-4'}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -221,7 +235,9 @@ export default function BuildControlPage({ searchParams }: PageProps) {
           </div>
         )}
       </div>
+      )}
 
+      {!allComplete && (
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -299,6 +315,7 @@ export default function BuildControlPage({ searchParams }: PageProps) {
           </div>
         </div>
       </div>
+      )}
 
       <div className="mt-6">
       <CompactSection title="Build Progress" subtitle="Full 19-phase progress list and final local/deploy actions." badge={<span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{done}/19 complete</span>}>

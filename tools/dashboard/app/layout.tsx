@@ -20,7 +20,6 @@ const nav: NavItem[] = [
   ['Grok', '/grok'],
   ['Gemini', '/gemini'],
   ['Build Control', '/build-control'],
-  ['Phase Progress', '/phases'],
   ['Six Gates', '/gates'],
   ['Post-Deployment Log', '/post-deployment'],
   ['Pre-deployment', '/predeployment'],
