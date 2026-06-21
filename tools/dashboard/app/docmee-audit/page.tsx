@@ -360,103 +360,119 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
           />
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <form action="/api/actions" method="post">
-            <input type="hidden" name="action" value="start-readiness" />
-            <input type="hidden" name="phase" value={uiDevelopmentPhase} />
-            <input type="hidden" name="workflow" value="ui-development" />
-            <input type="hidden" name="redirectTo" value="/docmee-audit" />
-            <button className="rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Run Start Check</button>
-          </form>
-          <form action="/api/actions" method="post">
-            <input type="hidden" name="action" value="phase-build-watch" />
-            <input type="hidden" name="from" value={uiDevelopmentPhase} />
-            <input type="hidden" name="workflow" value="ui-development" />
-            <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}>Start UI Development</button>
-          </form>
-          <form action="/api/actions" method="post">
-            <input type="hidden" name="action" value="phase-build-stop" />
-            <button disabled={!uiDevelopmentLive} className="rounded-md border border-red-800 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Stop</button>
-          </form>
-          <details className="relative">
-            <summary className="grid cursor-pointer list-none place-items-center rounded-md bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-500">Build All Screens →</summary>
-            <form action="/api/actions" method="post" className="absolute left-0 z-20 mt-1 w-72 rounded-md border border-cyan-800 bg-slate-900 p-3 shadow-lg">
-              <input type="hidden" name="action" value="ui-build-all" />
-              <p className="text-xs leading-5 text-slate-300">Sequentially build all <span className="font-semibold text-cyan-200">{uiDevelopmentRecords.filter((row) => row.status !== 'complete').length}</span> not-yet-approved screen(s) with Claude Code, one after another. Each lands in <span className="font-semibold text-cyan-200">review</span> for you to approve later. Runs unattended and uses Claude credits.</p>
-              <button disabled={uiDevelopmentLive} className="mt-2 w-full rounded-md bg-cyan-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Build all sequentially</button>
-            </form>
-          </details>
-          <ClaudeDesignButton prompt={uiDevelopmentPrompt(uiDevelopmentRecords)} label="Manual Claude Design" />
-          <form action="/api/actions" method="post">
-            <input type="hidden" name="action" value="app-launch" />
-            <button className="rounded-md border border-emerald-700 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-950/40">Launch App Locally</button>
-          </form>
-          <a
-            href={`${reviewUrl}/inbox`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
-          >
-            Review screens in app →
-          </a>
-          {mockupRunLive ? (
+        <div className="mt-4 space-y-2.5">
+          {/* Build — generate the real screens */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Build</span>
             <form action="/api/actions" method="post">
-              <input type="hidden" name="action" value="ui-mockup-stop" />
-              <button className="inline-flex min-h-11 items-center gap-1 rounded-md border border-red-700 bg-red-950/30 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/50" title={designRun.message ?? 'Stop bulk mockup generation'}>
-                Stop mockups{typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? ` (${designRun.processed}/${designRun.total})` : ''}
-              </button>
+              <input type="hidden" name="action" value="phase-build-watch" />
+              <input type="hidden" name="from" value={uiDevelopmentPhase} />
+              <input type="hidden" name="workflow" value="ui-development" />
+              <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}>Start UI Development</button>
             </form>
-          ) : (
             <form action="/api/actions" method="post">
-              <input type="hidden" name="action" value="ui-mockup-all" />
+              <input type="hidden" name="action" value="phase-build-stop" />
+              <button disabled={!uiDevelopmentLive} className="rounded-md border border-red-800 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Stop</button>
+            </form>
+            <details className="relative">
+              <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Build all →</summary>
+              <form action="/api/actions" method="post" className="absolute left-0 z-20 mt-1 w-72 rounded-md border border-slate-700 bg-slate-900 p-3 shadow-lg">
+                <input type="hidden" name="action" value="ui-build-all" />
+                <p className="text-xs leading-5 text-slate-300">Sequentially build all <span className="font-semibold text-cyan-200">{uiDevelopmentRecords.filter((row) => row.status !== 'complete').length}</span> not-yet-approved screen(s) with Claude Code, one after another. Each lands in <span className="font-semibold text-cyan-200">review</span> for you to approve later. Runs unattended and uses Claude credits.</p>
+                <button disabled={uiDevelopmentLive} className="mt-2 w-full rounded-md bg-cyan-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Build all sequentially</button>
+              </form>
+            </details>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="start-readiness" />
+              <input type="hidden" name="phase" value={uiDevelopmentPhase} />
+              <input type="hidden" name="workflow" value="ui-development" />
+              <input type="hidden" name="redirectTo" value="/docmee-audit" />
+              <button className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Start check</button>
+            </form>
+          </div>
+
+          {/* Mockups — design references */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mockups</span>
+            {mockupRunLive ? (
+              <form action="/api/actions" method="post">
+                <input type="hidden" name="action" value="ui-mockup-stop" />
+                <button className="rounded-md border border-red-800 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/40" title={designRun.message ?? 'Stop bulk mockup generation'}>
+                  Stop mockups{typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? ` (${designRun.processed}/${designRun.total})` : ''}
+                </button>
+              </form>
+            ) : (
+              <form action="/api/actions" method="post">
+                <input type="hidden" name="action" value="ui-mockup-all" />
+                <button
+                  disabled={missingMockupCount === 0}
+                  title={missingMockupCount === 0 ? 'Every screen already has a mockup' : `Sequentially generate mockups for the ${missingMockupCount} screen(s) without one`}
+                  className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  Generate all{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
+                </button>
+              </form>
+            )}
+            <ClaudeDesignButton prompt={uiDevelopmentPrompt(uiDevelopmentRecords)} label="Manual design" />
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="mockup-save-all" />
               <button
-                disabled={missingMockupCount === 0}
-                title={missingMockupCount === 0 ? 'Every screen already has a mockup' : `Sequentially generate mockups for the ${missingMockupCount} screen(s) without one`}
-                className="inline-flex min-h-11 items-center gap-1 rounded-md border border-cyan-700 bg-cyan-950/30 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={generatedMockupCount === 0}
+                title={generatedMockupCount === 0 ? 'No generated mockups to save yet' : `Save all ${generatedMockupCount} generated mockup(s) to the Library`}
+                className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                All Mock-up{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
+                Save all{generatedMockupCount > 0 ? ` (${generatedMockupCount})` : ''}
               </button>
             </form>
-          )}
-          <form action="/api/actions" method="post">
-            <input type="hidden" name="action" value="mockup-save-all" />
-            <button
-              disabled={generatedMockupCount === 0}
-              title={generatedMockupCount === 0 ? 'No generated mockups to save yet' : `Save all ${generatedMockupCount} generated mockup(s) to the Library`}
-              className="inline-flex min-h-11 items-center gap-1 rounded-md border border-emerald-700 bg-emerald-950/20 px-3 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-950/50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Save all{generatedMockupCount > 0 ? ` (${generatedMockupCount})` : ''}
-            </button>
-          </form>
-          <MockupLibrary files={savedMockups()} report={fs.existsSync(path.join(savedMockupsDir, 'UI-Design-Report.pdf')) ? 'UI-Design-Report.pdf' : undefined} />
-          <form action="/api/actions" method="post">
-            <input type="hidden" name="action" value="mockup-report" />
-            <button
-              disabled={savedMockups().length === 0}
-              title={savedMockups().length === 0 ? 'No saved mockups in the Library yet' : `Export all ${savedMockups().length} saved screen(s) to one PDF, saved in the Library`}
-              className="inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-700 bg-sky-950/30 px-3 py-2 text-sm font-medium text-sky-200 hover:bg-sky-950/60 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              UI Design Report
-            </button>
-          </form>
-          <form action="/api/actions" method="post" className="flex min-w-0 flex-col gap-2 sm:flex-row">
-            <input type="hidden" name="action" value="set-development-source" />
-            <input type="hidden" name="lane" value="ui" />
-            <input type="hidden" name="redirectTo" value="/docmee-audit" />
-            <input name="sourceUrl" defaultValue={sourceUrl} className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 sm:w-72" aria-label="UI Notion source URL" />
-            <button className="rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/40">Set Notion Source</button>
-          </form>
-          <Link href="/rev1-coverage" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Feature Records</Link>
-          <Link href="/docmee-deployment-frontend" className="rounded-md border border-cyan-700 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950/40">Frontend Records</Link>
-          <details className="relative">
-            <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-red-800 px-3 py-2 text-sm text-red-200 hover:bg-red-950/40">Reset design process…</summary>
-            <form action="/api/actions" method="post" className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-red-800 bg-slate-900 p-3 shadow-lg">
-              <input type="hidden" name="action" value="ui-reset-screens" />
-              <p className="text-xs leading-5 text-slate-300">Reset all {uiDevelopmentRecords.length} screens back to <span className="font-semibold text-amber-200">planned</span>? This restarts the whole design process from Start UI Development.</p>
-              <button className="mt-2 w-full rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500">Yes, reset all to planned</button>
+            <MockupLibrary files={savedMockups()} report={fs.existsSync(path.join(savedMockupsDir, 'UI-Design-Report.pdf')) ? 'UI-Design-Report.pdf' : undefined} />
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="mockup-report" />
+              <button
+                disabled={savedMockups().length === 0}
+                title={savedMockups().length === 0 ? 'No saved mockups in the Library yet' : `Export all ${savedMockups().length} saved screen(s) to one PDF, saved in the Library`}
+                className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Design report (PDF)
+              </button>
             </form>
+          </div>
+
+          {/* Review — see the result */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Review</span>
+            <a href={`${reviewUrl}/inbox`} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Review screens in app →</a>
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="app-launch" />
+              <button className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Launch app locally</button>
+            </form>
+            <Link href="/deploy" className="rounded-md border border-sky-800 px-3 py-2 text-sm text-sky-300 hover:bg-sky-950/40">Continue to Deploy →</Link>
+          </div>
+
+          {/* Setup & records — collapsed, low-frequency */}
+          <details className="group">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-slate-800 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800/60">
+              <span className="group-open:hidden">▸</span><span className="hidden group-open:inline">▾</span> Setup &amp; records
+            </summary>
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <form action="/api/actions" method="post" className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                <input type="hidden" name="action" value="set-development-source" />
+                <input type="hidden" name="lane" value="ui" />
+                <input type="hidden" name="redirectTo" value="/docmee-audit" />
+                <input name="sourceUrl" defaultValue={sourceUrl} className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 sm:w-72" aria-label="UI Notion source URL" />
+                <button className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Set Notion source</button>
+              </form>
+              <Link href="/rev1-coverage" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Feature records</Link>
+              <Link href="/docmee-deployment-frontend" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">Frontend records</Link>
+              <details className="relative">
+                <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-red-800 px-3 py-2 text-sm text-red-200 hover:bg-red-950/40">Reset design process…</summary>
+                <form action="/api/actions" method="post" className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-red-800 bg-slate-900 p-3 shadow-lg">
+                  <input type="hidden" name="action" value="ui-reset-screens" />
+                  <p className="text-xs leading-5 text-slate-300">Reset all {uiDevelopmentRecords.length} screens back to <span className="font-semibold text-amber-200">planned</span>? This restarts the whole design process from Start UI Development.</p>
+                  <button className="mt-2 w-full rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500">Yes, reset all to planned</button>
+                </form>
+              </details>
+            </div>
           </details>
-          <Link href="/deploy" className="rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Continue to Deploy →</Link>
         </div>
         {uiDevelopmentBuildable.length === 0 && uiDevelopmentNeedsReview.length > 0 && (
           <div className="mt-3 rounded-md border border-cyan-800 bg-cyan-950/30 p-3 text-sm text-cyan-100">
