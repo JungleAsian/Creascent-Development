@@ -10,6 +10,7 @@ import { useI18n } from '@/shared/hooks/useI18n'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { Breadcrumbs } from '@/shared/components/Breadcrumbs'
 import { PushOptIn } from '@/shared/components/PushOptIn'
+import { InstallPrompt } from '@/shared/components/InstallPrompt'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { ready } = useAuthGuard(['ia_studio_admin'])
@@ -86,6 +87,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
+
+      {/* Req 23 — PWA install sheet (Add to Home Screen). */}
+      <InstallPrompt />
     </div>
   )
 }

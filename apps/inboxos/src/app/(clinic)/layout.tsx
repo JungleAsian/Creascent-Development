@@ -12,6 +12,7 @@ import { can } from '@/shared/permissions'
 import { Sidebar, type NavLink } from '@/shared/components/Sidebar'
 import { NotificationBell } from '@/shared/components/NotificationBell'
 import { PushOptIn } from '@/shared/components/PushOptIn'
+import { InstallPrompt } from '@/shared/components/InstallPrompt'
 import { ClinicSwitcher } from '@/shared/components/ClinicSwitcher'
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
@@ -92,6 +93,10 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
         </header>
         <main className="flex-1 overflow-hidden">{children}</main>
       </div>
+
+      {/* Req 23 — PWA install sheet (Add to Home Screen); renders only when the
+          browser offers installation and the app isn't already installed. */}
+      <InstallPrompt />
     </div>
   )
 }

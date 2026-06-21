@@ -134,8 +134,35 @@ export function ConversationList({
     setChannel('all')
   }
 
+  // Top-of-list urgent banner (Screen 17) — when one or more safety-flagged threads
+  // are waiting on a human it sits above everything, pulsing, naming the patient
+  // (or the count) and jumping straight to the most urgent thread on tap. This makes
+  // a patient-safety escalation unmistakable even on a phone where the list scrolls.
+  const topSafety = safetyRows[0]
+  const urgentName = topSafety ? topSafety.patientName || topSafety.channelContactHandle : ''
+
   return (
     <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
+      {safetyRows.length > 0 && (
+        <button
+          type="button"
+          onClick={() => topSafety && onSelect(topSafety.id)}
+          className="flex shrink-0 items-center gap-2 bg-red-600 px-3 py-2 text-left text-[12.5px] font-semibold text-white transition hover:bg-red-700"
+        >
+          <span aria-hidden className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+          </span>
+          <span className="min-w-0 flex-1 truncate">
+            {safetyRows.length === 1
+              ? t('conv.urgentBanner.one', { name: urgentName })
+              : t('conv.urgentBanner.many', { n: String(safetyRows.length) })}
+          </span>
+          <span aria-hidden className="shrink-0 opacity-90">
+            →
+          </span>
+        </button>
+      )}
       <div className="border-b border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-base font-bold">{t('conv.title')}</h2>
