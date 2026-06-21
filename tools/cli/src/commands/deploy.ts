@@ -34,7 +34,8 @@ function ssh(args: string[]) {
   const result = spawnSync('ssh', ['-i', keyPath(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', target, ...args], {
     encoding: 'utf8',
     shell: true,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   return { ok: result.status === 0, output }
@@ -70,7 +71,7 @@ deployCmd.command('keygen').action(() => {
   const publicKey = `${privateKey}.pub`
   if (!fs.existsSync(privateKey)) {
     fs.mkdirSync(path.dirname(privateKey), { recursive: true })
-    const result = spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', privateKey, '-N', '', '-C', 'docmee-devtools'], { encoding: 'utf8', stdio: 'pipe' })
+    const result = spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', privateKey, '-N', '', '-C', 'docmee-devtools'], { encoding: 'utf8', stdio: 'pipe', windowsHide: true })
     if (result.status !== 0) {
       log('deploy', `SSH key generation failed: ${result.stderr || result.stdout}`, 'error')
       process.exitCode = 1
@@ -115,7 +116,8 @@ deployCmd.command('vps').action(async () => {
   const push = spawnSync('git', ['push', 'origin', `HEAD:${branch}`], {
     cwd: path.resolve(toolsRoot, '..'),
     encoding: 'utf8',
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   if (push.status !== 0) {
     log('deploy', `git push failed: ${(push.stderr || push.stdout || '').trim()}`, 'error')
@@ -128,7 +130,7 @@ deployCmd.command('vps').action(async () => {
   // Repo URL the VPS clones from on first deploy (the VPS needs its own GitHub
   // auth — a deploy key/token — for a private repo).
   const repoUrl = process.env.DEPLOY_REPO_URL
-    || (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: path.resolve(toolsRoot, '..'), encoding: 'utf8' }).stdout || '').trim()
+    || (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: path.resolve(toolsRoot, '..'), encoding: 'utf8', windowsHide: true }).stdout || '').trim()
 
   // 2) On the VPS: bootstrap the clone if missing, then sync to the pushed
   // commit, install, build, migrate, and reload PM2.
@@ -181,7 +183,7 @@ deployCmd
   .option('--no-browser', 'Do not open a browser (used by the Playwright webServer)')
   .action(() => {
     const compose = path.resolve(toolsRoot, '..', 'docker-compose.yml')
-    if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true })
+    if (fs.existsSync(compose)) spawnSync('docker', ['compose', 'up', '-d'], { cwd: path.dirname(compose), stdio: 'inherit', shell: true, windowsHide: true })
     log('deploy', 'Local deploy requested. Product app processes start after Docmee app phases create /apps.')
   })
 

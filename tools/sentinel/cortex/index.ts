@@ -39,7 +39,7 @@ export interface CortexDeps {
 }
 
 function commandVersion(command: string): { ok: boolean; out: string } {
-  const r = spawnSync(command, ['--version'], { encoding: 'utf8', shell: true, stdio: 'pipe' })
+  const r = spawnSync(command, ['--version'], { encoding: 'utf8', shell: true, stdio: 'pipe', windowsHide: true })
   return { ok: r.status === 0, out: `${r.stdout ?? ''}`.trim() }
 }
 

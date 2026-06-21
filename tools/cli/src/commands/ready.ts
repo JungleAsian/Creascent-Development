@@ -21,7 +21,7 @@ type ReadyResult = {
 }
 
 function command(args: string[], cwd = toolsRoot) {
-  const result = spawnSync(args[0], args.slice(1), { cwd, encoding: 'utf8', shell: true, stdio: 'pipe' })
+  const result = spawnSync(args[0], args.slice(1), { cwd, encoding: 'utf8', shell: true, stdio: 'pipe', windowsHide: true })
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
 }
 
@@ -89,7 +89,8 @@ function claudeCodeAccountCheck(): ReadyCheck {
     encoding: 'utf8',
     env: claudeCodeEnvironment(),
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   if (result.status !== 0) {
@@ -125,7 +126,8 @@ function claudeCodeBuildSmokeCheck(): ReadyCheck {
     env: claudeCodeEnvironment(),
     input: 'Reply READY only',
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   const normalized = output.toLowerCase()

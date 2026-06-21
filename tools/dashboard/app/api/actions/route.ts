@@ -174,7 +174,8 @@ function runTool(args: string[]) {
     cwd: toolsRoot,
     encoding: 'utf8',
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   return { ok: result.status === 0, output }
@@ -1015,7 +1016,7 @@ function openUrl(url: string) {
     return
   }
   const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
-  const child = spawn(command, [url], { detached: true, stdio: 'ignore' })
+  const child = spawn(command, [url], { detached: true, stdio: 'ignore', windowsHide: true })
   child.unref()
 }
 
@@ -1150,7 +1151,7 @@ async function launchProductApp() {
       message: docker.status === 0 ? 'Postgres and Redis are running.' : dockerOutput(`${docker.stdout ?? ''}${docker.stderr ?? ''}`) || 'Docker was not available. Use Docker Desktop, then retry.'
     })
   } else {
-    const docker = spawnSync('docker', ['compose', 'up', '-d'], { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' })
+    const docker = spawnSync('docker', ['compose', 'up', '-d'], { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe', windowsHide: true })
     steps.push({
       name: 'Local database',
       status: docker.status === 0 ? 'pass' : 'fail',
@@ -1344,7 +1345,7 @@ function activeFrontendRun() {
 function stopProcessTree(pid?: number) {
   if (!pid || !isProcessAlive(pid)) return false
   if (process.platform === 'win32') {
-    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8', stdio: 'pipe' })
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8', stdio: 'pipe', windowsHide: true })
     return !isProcessAlive(pid)
   }
   try {

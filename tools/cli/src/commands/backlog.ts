@@ -105,7 +105,7 @@ function scanTodos(): FoundTodo[] {
 function gitResolvedRefs(): Map<number, string> {
   const map = new Map<number, string>()
   try {
-    const result = spawnSync('git', ['log', '-i', '--grep=backlog #', '-n', '300', '--pretty=%h%x09%s'], { cwd: repoRoot(), encoding: 'utf8', timeout: 8000 })
+    const result = spawnSync('git', ['log', '-i', '--grep=backlog #', '-n', '300', '--pretty=%h%x09%s'], { cwd: repoRoot(), encoding: 'utf8', timeout: 8000, windowsHide: true })
     if (result.status !== 0) return map
     for (const line of (result.stdout || '').split(/\r?\n/)) {
       const tab = line.indexOf('\t')
@@ -396,7 +396,7 @@ const RESOLVE_TIMEOUT_MS = 12 * 60 * 1000
 function killTree(pid?: number) {
   if (!pid) return
   try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' })
+    if (process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true })
     else process.kill(pid, 'SIGKILL')
   } catch {
     // already gone
@@ -521,7 +521,7 @@ async function resolveTask(id: number, provider = 'claude'): Promise<number> {
   if (updated) {
     updated.status = code === 0 ? 'review' : 'blocked'
     if (code === 0) {
-      const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8' })
+      const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot(), encoding: 'utf8', windowsHide: true })
       if (head.status === 0) updated.commit = (head.stdout || '').trim()
     }
     saveTasks(after)

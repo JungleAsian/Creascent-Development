@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 function commandWorks(command: string) {
-  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: false, stdio: 'pipe' })
+  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: false, stdio: 'pipe', windowsHide: true })
   return result.status === 0
 }
 

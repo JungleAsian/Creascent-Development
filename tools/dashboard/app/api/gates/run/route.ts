@@ -11,7 +11,8 @@ export async function POST() {
     cwd: path.resolve(process.cwd(), '..'),
     encoding: 'utf8',
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   return NextResponse.json({
     ok: result.status === 0,

@@ -37,13 +37,13 @@ interface GuardianAuditEntry {
 }
 
 function commandAvailable(cmd: string) {
-  const probe = spawnSync(cmd, ['--version'], { encoding: 'utf8', shell: true, stdio: 'pipe' })
+  const probe = spawnSync(cmd, ['--version'], { encoding: 'utf8', shell: true, stdio: 'pipe', windowsHide: true })
   return probe.status === 0
 }
 
 function dockerStatus(container: string): 'running' | 'stopped' | 'unknown' {
   if (!commandAvailable('docker')) return 'unknown'
-  const out = spawnSync('docker', ['inspect', '-f', '{{.State.Status}}', container], { encoding: 'utf8', shell: true })
+  const out = spawnSync('docker', ['inspect', '-f', '{{.State.Status}}', container], { encoding: 'utf8', shell: true, windowsHide: true })
   if (out.status !== 0) return 'unknown'
   return out.stdout.trim() === 'running' ? 'running' : 'stopped'
 }

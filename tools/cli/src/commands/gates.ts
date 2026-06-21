@@ -13,7 +13,7 @@ type GateResult = { gate: number; name: string; ok: boolean; detail: string }
 const gatesFile = path.join(logsDir, 'six-gates.json')
 
 function run(command: string, args: string[]) {
-  const result = spawnSync(command, args, { stdio: 'pipe', shell: true, encoding: 'utf8' })
+  const result = spawnSync(command, args, { stdio: 'pipe', shell: true, encoding: 'utf8', windowsHide: true })
   return { ok: result.status === 0, detail: result.stderr || result.stdout || 'ok' }
 }
 

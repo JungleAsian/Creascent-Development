@@ -40,7 +40,8 @@ function runTool(args: string[]) {
     cwd: toolsRoot,
     encoding: 'utf8',
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   return result.status === 0
 }
@@ -50,7 +51,8 @@ function runScript(script: string) {
     cwd: toolsRoot,
     encoding: 'utf8',
     shell: false,
-    stdio: 'pipe'
+    stdio: 'pipe',
+    windowsHide: true
   })
   return result.status === 0
 }

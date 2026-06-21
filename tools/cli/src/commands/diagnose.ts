@@ -17,12 +17,12 @@ type Category = { id: string; label: string; checks: Check[] }
 type DiagnoseRun = { createdAt: string; quick: boolean; categories: Category[]; summary: { pass: number; warning: number; critical: number; info: number } }
 
 function commandOk(command: string) {
-  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: true, stdio: 'pipe' })
+  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: true, stdio: 'pipe', windowsHide: true })
   return result.status === 0
 }
 
 function commandOutput(command: string) {
-  const result = spawnSync(command, { encoding: 'utf8', shell: true, stdio: 'pipe' })
+  const result = spawnSync(command, { encoding: 'utf8', shell: true, stdio: 'pipe', windowsHide: true })
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
 }
 
