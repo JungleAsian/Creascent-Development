@@ -33,6 +33,13 @@ docker compose up -d
 
 Copy `.env.example` to `.env` and fill in values for your local environment.
 
+> **Requirements:** Node 20+ and **Redis ≥ 5.0** — BullMQ refuses to connect to
+> older servers. The bundled `docker compose` provides `redis:7-alpine`, so prefer
+> `docker compose up -d redis` over a host‑installed Redis. A legacy native Redis
+> (e.g. the old Windows 3.x build) fails the queue→worker integration test with
+> `Redis version needs to be greater or equal than 5.0.0`. On Windows without
+> Docker, use Memurai or WSL2 Redis 5+.
+
 ## DevTools
 
 The DevTools harness lives in `/tools`. Run from the **repo root**:
