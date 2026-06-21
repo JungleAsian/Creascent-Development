@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import { logsDir, forgeHeartbeatFile } from '../lib/paths.js'
+import { deploymentRecordsFile, featureCoverageFile, featureRunFile, forgeHeartbeatFile, logsDir, startReadinessFile } from '../lib/paths.js'
 import { readJsonFile } from '../lib/json-store.js'
 import { writeHeartbeat } from '../lib/heartbeat.js'
 import { isProcessAlive } from '../lib/proc.js'
@@ -14,11 +14,13 @@ const ROUTING: Record<string, { agent: string; provider: string }> = {
   'dashboard-route-error': { agent: 'Dashboard/UI agent', provider: 'global' },
   'stale-heartbeat': { agent: 'Diagnostics agent', provider: 'Direct Call' },
   'dead-watcher-process': { agent: 'Diagnostics agent', provider: 'Direct Call' },
+  'feature-watcher-stopped': { agent: 'Diagnostics agent', provider: 'Direct Call' },
   'ready-check-blocker': { agent: 'Diagnostics agent', provider: 'Direct Call' },
   'gate-failure': { agent: 'CLI/Build agent', provider: 'global' },
   'git-failure': { agent: 'Git/GitHub agent', provider: 'global' },
   'notion-sync-failure': { agent: 'Notion Integration agent', provider: 'Direct Call' },
   'deployment-check-failure': { agent: 'Deployment agent', provider: 'global' },
+  'frontend-acceptance-drift': { agent: 'Dashboard/UI agent', provider: 'global' },
   'stack-cve': { agent: 'CLI/Build agent', provider: 'global' },
   'missing-prompt': { agent: 'CLI/Build agent', provider: 'global' }
 }
@@ -54,12 +56,17 @@ function tail(name: string | null, lines = 160): string[] {
   }
 }
 
-type RunState = { pid?: number; phase?: string; status?: string; heartbeatAt?: string; message?: string }
+type RunState = { pid?: number; phase?: string; workflow?: string; status?: string; startedAt?: string; heartbeatAt?: string; message?: string; githubStatus?: string; githubMessage?: string }
 type ReadyJson = { categories?: Array<{ checks?: Array<{ name?: string; status?: string; message?: string; fix?: string }> }> }
 type GateJson = { results?: Array<{ name?: string; ok?: boolean; detail?: string }> }
 type ControlRow = { phaseId?: string; status?: string; notes?: string; updatedAt?: string }
 type StackJson = { cves?: Array<{ package?: string; id?: string; severity?: string }>; breaking?: Array<{ package?: string; note?: string }>; priceChanges?: Array<{ provider?: string; deltaPct?: number }> }
 type UsageGuard = { usagePct?: number; percent?: number; paused?: boolean; resumeAt?: string; accountMismatch?: boolean }
+type StageStatus = 'complete' | 'pending' | 'needs-audit'
+type DeploymentFeature = { status?: string; backendStatus?: StageStatus; frontendStatus?: StageStatus }
+type StageSummary = { designedFeatures: number; complete: number; pending: number; needsAudit: number }
+type DeploymentRecords = { groups?: Array<{ id?: string; summary?: Partial<StageSummary> }> }
+type StartReadiness = { phase?: string; steps?: Array<{ name?: string; message?: string }> }
 
 function mk(
   category: string,
@@ -114,11 +121,13 @@ export class ForgeScanner {
   scanOnce(): IssueDraft[] {
     const drafts: IssueDraft[] = []
     this.detectBuild(drafts)
+    this.detectFeatureRun(drafts)
     this.detectClaudeSession(drafts)
     this.detectReady(drafts)
     this.detectGates(drafts)
     this.detectBuildControl(drafts)
     this.detectDeployment(drafts)
+    this.detectFrontendAcceptanceDrift(drafts)
     this.detectStack(drafts)
     this.detectLogs(drafts)
 
@@ -153,6 +162,57 @@ export class ForgeScanner {
     }
     if ((run.status ?? '') === 'failed') {
       drafts.push(mk('gate-failure', 'critical', `Build is marked failed at ${phase}.`, [run.message ?? 'No message.'], ['logs/build-run.json'], 'Route to CLI/Build agent; review failure before retry.', { phase, phaseStatus: 'failed', requiresApproval: true }))
+    }
+  }
+
+  private detectFeatureRun(drafts: IssueDraft[]) {
+    const run = readJsonFile<RunState>(featureRunFile, {})
+    const workflow = run.workflow ?? ''
+    if (!['features-development', 'frontend-development', 'enhancements-development'].includes(workflow)) return
+
+    const phase = run.phase ?? workflow
+    const active = ['starting', 'running', 'paused'].includes(run.status ?? '')
+    const ageMs = run.heartbeatAt ? Date.now() - new Date(run.heartbeatAt).getTime() : null
+    const openItems = openFeatureItems(workflow)
+    const label = workflow === 'frontend-development' ? 'Frontend development' : workflow.replace(/-/g, ' ')
+
+    if (active && !isProcessAlive(run.pid)) {
+      drafts.push(
+        mk(
+          'dead-watcher-process',
+          'critical',
+          `${label} watcher is marked ${run.status} but PID ${run.pid ?? 'unknown'} is not alive.`,
+          [`Message: ${run.message ?? 'none'}`, `Heartbeat: ${run.heartbeatAt ?? 'none'}`],
+          ['logs/feature-run.json'],
+          'Open Forge and restart the feature development run after confirming the current working state.',
+          { phase, phaseStatus: run.status, risk: 'high', requiresApproval: true }
+        )
+      )
+    }
+    if (active && typeof ageMs === 'number' && ageMs > 120_000) {
+      drafts.push(
+        mk(
+          'stale-heartbeat',
+          ageMs > 300_000 ? 'critical' : 'warning',
+          `${label} heartbeat is stale by ${Math.round(ageMs / 1000)}s.`,
+          [`Last heartbeat: ${run.heartbeatAt}`, `Status: ${run.status}`],
+          ['logs/feature-run.json'],
+          'Inspect the feature development process; restart only after confirming it is not still working.',
+          { phase, phaseStatus: run.status, risk: 'high', requiresApproval: false }
+        )
+      )
+    }
+    if (run.status === 'failed') {
+      drafts.push(mk('gate-failure', 'critical', `${label} is marked failed.`, [run.message ?? 'No message.'], ['logs/feature-run.json'], 'Route to the build/frontend owner and inspect the last failed feature item before retrying.', { phase, phaseStatus: 'failed', requiresApproval: true }))
+    }
+    if (run.status === 'stopped' && openItems > 0) {
+      drafts.push(mk('feature-watcher-stopped', 'critical', `${label} stopped with ${openItems} open item${openItems === 1 ? '' : 's'} still pending.`, [run.message ?? 'No message.', `Open items: ${openItems}`], ['logs/feature-run.json', 'logs/rev1-feature-coverage.json'], 'Resume the frontend-development run or move the remaining items into an explicit hold state.', { phase, phaseStatus: 'stopped', risk: 'high', requiresApproval: true }))
+    }
+    if (run.status === 'complete' && openItems > 0) {
+      drafts.push(mk('feature-watcher-stopped', 'warning', `${label} says complete, but ${openItems} open item${openItems === 1 ? '' : 's'} remain.`, [run.message ?? 'No message.', `Open items: ${openItems}`], ['logs/feature-run.json', 'logs/rev1-feature-coverage.json'], 'Reconcile the coverage file, then rerun Forge so the dashboard reflects the true frontend state.', { phase, phaseStatus: 'complete', risk: 'medium', requiresApproval: false }))
+    }
+    if (run.githubStatus === 'failed') {
+      drafts.push(mk('git-failure', 'critical', `${label} completed but GitHub handoff failed.`, [run.githubMessage ?? 'No GitHub detail.'], ['logs/feature-run.json'], 'Route to Git/GitHub agent; commit/push only after checking the working tree.', { phase, phaseStatus: run.status, requiresApproval: true }))
     }
   }
 
@@ -214,6 +274,59 @@ export class ForgeScanner {
     }
   }
 
+  private detectFrontendAcceptanceDrift(drafts: IssueDraft[]) {
+    const drift = this.frontendAcceptanceDrift()
+    if (!drift) return
+
+    if (this.deps.refreshDerivedDeploymentRecords?.()) {
+      const remaining = this.frontendAcceptanceDrift()
+      if (!remaining) return
+      drafts.push(this.frontendDriftIssue(remaining, 'Safe refresh was attempted, but the discrepancy remains.'))
+      return
+    }
+
+    drafts.push(this.frontendDriftIssue(drift, 'Run the derived deployment-record refresh, then rerun Forge.'))
+  }
+
+  private frontendAcceptanceDrift() {
+    const features = readJsonFile<DeploymentFeature[]>(featureCoverageFile, [])
+    if (!features.length) return null
+
+    const expectedFrontend = summariseStage(features, 'frontendStatus')
+    const expectedBackend = summariseStage(features, 'backendStatus')
+    const deployment = readJsonFile<DeploymentRecords>(deploymentRecordsFile, {})
+    const backendRecord = deployment.groups?.find((group) => group.id === 'backend')?.summary
+    const frontendRecord = deployment.groups?.find((group) => group.id === 'frontend')?.summary
+    const readiness = readJsonFile<StartReadiness>(startReadinessFile, {})
+    const queueStep = readiness.steps?.find((step) => step.name === 'Frontend Queue')
+    const expectedOpen = expectedFrontend.pending + expectedFrontend.needsAudit
+
+    const evidence: string[] = []
+    if (!summaryMatches(backendRecord, expectedBackend)) {
+      evidence.push(`Backend deployment summary is stale. Expected ${summaryText(expectedBackend)}, found ${summaryText(backendRecord)}.`)
+    }
+    if (!summaryMatches(frontendRecord, expectedFrontend)) {
+      evidence.push(`Frontend deployment summary is stale. Expected ${summaryText(expectedFrontend)}, found ${summaryText(frontendRecord)}.`)
+    }
+    if (readiness.phase === 'FRONTEND' && queueStep?.message && !queueMessageMatches(queueStep.message, expectedOpen)) {
+      evidence.push(`Frontend readiness message is stale. Expected open frontend count ${expectedOpen}, found "${queueStep.message}".`)
+    }
+
+    return evidence.length ? { expectedFrontend, expectedBackend, evidence } : null
+  }
+
+  private frontendDriftIssue(drift: { expectedFrontend: StageSummary; expectedBackend: StageSummary; evidence: string[] }, suggestedFix: string) {
+    return mk(
+      'frontend-acceptance-drift',
+      'warning',
+      'Derived frontend deployment/readiness records disagree with the feature coverage source of truth.',
+      drift.evidence,
+      ['logs/rev1-feature-coverage.json', 'logs/docmee-deployment-records.json', 'logs/start-readiness.json'],
+      suggestedFix,
+      { phase: 'frontend-acceptance', risk: 'low', requiresApproval: false }
+    )
+  }
+
   private detectStack(drafts: IssueDraft[]) {
     const stack = readJson<StackJson>('stack-intelligence.json', {})
     for (const cve of stack.cves ?? []) {
@@ -243,4 +356,53 @@ export class ForgeScanner {
   status() {
     return { version: VERSION, uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000), lastScanAt: this.lastScanAt }
   }
+}
+
+function openFeatureItems(workflow: string) {
+  const features = readJsonFile<DeploymentFeature[]>(featureCoverageFile, [])
+  if (workflow === 'frontend-development') {
+    return features.filter((item) => stageFor(item, 'frontendStatus') !== 'complete').length
+  }
+  return features.filter((item) => item.status !== 'complete').length
+}
+
+function stageFor(item: DeploymentFeature, field: 'backendStatus' | 'frontendStatus'): StageStatus {
+  const explicit = item[field]
+  if (explicit === 'complete' || explicit === 'pending' || explicit === 'needs-audit') return explicit
+  if (field === 'backendStatus') return item.status === 'complete' ? 'complete' : 'pending'
+  return item.status === 'complete' ? 'needs-audit' : 'pending'
+}
+
+function summariseStage(features: DeploymentFeature[], field: 'backendStatus' | 'frontendStatus'): StageSummary {
+  const counts = features.reduce(
+    (acc, item) => {
+      const stage = stageFor(item, field)
+      if (stage === 'needs-audit') acc.needsAudit += 1
+      else acc[stage] += 1
+      return acc
+    },
+    { complete: 0, pending: 0, needsAudit: 0 }
+  )
+  return { designedFeatures: features.length, ...counts }
+}
+
+function summaryMatches(actual: Partial<StageSummary> | undefined, expected: StageSummary) {
+  return Boolean(
+    actual &&
+      actual.designedFeatures === expected.designedFeatures &&
+      actual.complete === expected.complete &&
+      actual.pending === expected.pending &&
+      actual.needsAudit === expected.needsAudit
+  )
+}
+
+function summaryText(summary: Partial<StageSummary> | undefined) {
+  if (!summary) return 'missing'
+  return `${summary.complete ?? '?'} complete, ${summary.pending ?? '?'} pending, ${summary.needsAudit ?? '?'} needsAudit, ${summary.designedFeatures ?? '?'} designed`
+}
+
+function queueMessageMatches(message: string, expectedOpen: number) {
+  if (expectedOpen === 0) return /clear|0 frontend item/i.test(message)
+  const match = message.match(/(\d+)\s+frontend item/i)
+  return Boolean(match && Number(match[1]) === expectedOpen)
 }

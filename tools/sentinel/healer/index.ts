@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { toolsRoot } from '../lib/paths.js'
+import { deploymentRecordsFile, featureCoverageFile, startReadinessFile, toolsRoot } from '../lib/paths.js'
+import { readJsonFile, writeJsonFile } from '../lib/json-store.js'
 import { httpProbe } from '../lib/net.js'
 import { findPidsOnPort, killPid, spawnDetached } from '../lib/proc.js'
 import { HEALER_PERMISSIONS, isActionAllowed } from '../executor/permissions.js'
@@ -19,6 +20,26 @@ export interface HealerDeps {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+type StageStatus = 'complete' | 'pending' | 'needs-audit'
+type DeploymentFeature = {
+  id: number
+  phase: string
+  area: string
+  feature: string
+  status?: string
+  backendStatus?: StageStatus
+  frontendStatus?: StageStatus
+  priority?: string
+  evidence?: string
+  nextStep?: string
+}
+type StartReadiness = {
+  createdAt?: string
+  phase?: string
+  ready?: boolean
+  steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }>
+}
 
 function portFromUrl(url: string, fallback: number) {
   try {
@@ -79,6 +100,72 @@ export class DevToolsHealer {
     } finally {
       this.healing = false
     }
+  }
+
+  refreshDerivedDeploymentRecords() {
+    let ok = false
+    this.act('refresh-derived-deployment-records', () => {
+      const features = readJsonFile<DeploymentFeature[]>(featureCoverageFile, [])
+      if (!features.length) throw new Error('No feature coverage records found.')
+
+      const backend = summarise(features, 'backendStatus')
+      const frontend = summarise(features, 'frontendStatus')
+      writeJsonFile(deploymentRecordsFile, {
+        record: 'Docmee deployment stage grouping',
+        updatedAt: new Date().toISOString().slice(0, 10),
+        source: 'tools/logs/rev1-feature-coverage.json',
+        landingPage: {
+          title: 'Docmee Deployment',
+          route: '/docmee-deployment',
+          purpose: 'User chooses between the Backend deployment lane and the Frontend deployment lane before starting deployment review.'
+        },
+        sharedWorkflow: {
+          enabled: true,
+          purpose: 'Backend and Frontend use the same screen arrangement, guided workprocess, workflow steps, progress gauge, grouped records, and heartbeat-style stage monitor.',
+          steps: ['Run readiness', 'Review grouped records', 'Verify or launch the stage', 'Deploy or verify VPS', 'Export report']
+        },
+        groups: [
+          {
+            id: 'backend',
+            title: 'Docmee Deployment - Backend',
+            route: '/docmee-deployment-backend',
+            statusField: 'backendStatus',
+            completeMeaning: 'Backend/local-code implementation is complete. Evidence comes from the completed feature coverage record.',
+            detailFields: ['id', 'phase', 'area', 'feature', 'priority', 'backendStatus', 'evidence', 'nextStep'],
+            summary: backend
+          },
+          {
+            id: 'frontend',
+            title: 'Docmee Deployment - Frontend',
+            route: '/docmee-deployment-frontend',
+            statusField: 'frontendStatus',
+            completeMeaning: 'Frontend/product acceptance is complete only after the running app passes UI, mobile, workflow, language, and design review.',
+            detailFields: ['id', 'phase', 'area', 'feature', 'priority', 'frontendStatus', 'evidence', 'nextStep'],
+            summary: frontend
+          }
+        ],
+        notes: [
+          'Backend and frontend records are intentionally separate so backend completion does not overclaim product/UI readiness.',
+          'The full completed item details remain in the feature coverage source record and are rendered by each deployment page.',
+          'Frontend records remain incomplete until each visible screen, route, workflow, mobile layout, and EN/ES label set is accepted in the running app.'
+        ]
+      })
+
+      const readiness = readJsonFile<StartReadiness>(startReadinessFile, { ready: false, steps: [] })
+      const openFrontend = frontend.pending + frontend.needsAudit
+      const message =
+        openFrontend > 0
+          ? `${openFrontend} frontend item(s) need audit or acceptance.`
+          : 'Frontend acceptance queue is clear.'
+      const steps = readiness.steps ?? []
+      const idx = steps.findIndex((step) => step.name === 'Frontend Queue')
+      const queueStep = { name: 'Frontend Queue', status: 'pass' as const, message }
+      if (idx >= 0) steps[idx] = queueStep
+      else steps.push(queueStep)
+      writeJsonFile(startReadinessFile, { ...readiness, steps })
+      ok = true
+    })
+    return ok
   }
 
   private async runAttempt(attempt: number, port: number) {
@@ -167,4 +254,24 @@ export class DevToolsHealer {
   isHealing() {
     return this.healing
   }
+}
+
+function stageFor(item: DeploymentFeature, field: 'backendStatus' | 'frontendStatus'): StageStatus {
+  const explicit = item[field]
+  if (explicit === 'complete' || explicit === 'pending' || explicit === 'needs-audit') return explicit
+  if (field === 'backendStatus') return item.status === 'complete' ? 'complete' : 'pending'
+  return item.status === 'complete' ? 'needs-audit' : 'pending'
+}
+
+function summarise(features: DeploymentFeature[], field: 'backendStatus' | 'frontendStatus') {
+  const counts = features.reduce(
+    (acc, item) => {
+      const stage = stageFor(item, field)
+      if (stage === 'needs-audit') acc.needsAudit += 1
+      else acc[stage] += 1
+      return acc
+    },
+    { complete: 0, pending: 0, needsAudit: 0 }
+  )
+  return { designedFeatures: features.length, ...counts }
 }
