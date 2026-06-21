@@ -6,6 +6,7 @@ import { FormSubmitFeedback } from './form-submit-feedback'
 import { readCustomAis } from './lib/custom-ais'
 
 const nav: NavItem[] = [
+  ['Mission Control', '/overview'],
   ['Workflow', '/workflow'],
   ['Ready', '/ready'],
   ['Backlog', '/backlog'],
