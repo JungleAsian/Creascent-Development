@@ -1,16 +1,55 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { Command } from 'commander'
 import { PDFDocument } from 'pdf-lib'
 import { log } from '../lib/logger.js'
-import { toolsRoot } from '../lib/paths.js'
+import { toolsRoot, logsDir } from '../lib/paths.js'
+import { claudeCodeCommand, claudeCodeEnvironment } from '../lib/claude-code.js'
 import { logActivity } from '../lib/activity.js'
 
 const libraryDir = path.join(toolsRoot, 'mockup-library')
 const REPORT_NAME = 'UI-Design-Report.pdf'
+const designRunFile = path.join(logsDir, 'design-run.json')
+const mockupQueueFile = path.join(logsDir, 'mockup-queue.json')
+const mockupsOutDir = path.join(logsDir, 'mockups')
+const repoRoot = path.resolve(toolsRoot, '..')
+const MOCKUP_TIMEOUT_MS = 8 * 60 * 1000
+
+function readDesignRun(): Record<string, unknown> {
+  try { return JSON.parse(fs.readFileSync(designRunFile, 'utf8')) as Record<string, unknown> } catch { return {} }
+}
+function touchDesignRun(partial: Record<string, unknown>) {
+  fs.mkdirSync(logsDir, { recursive: true })
+  fs.writeFileSync(designRunFile, `${JSON.stringify({ ...readDesignRun(), ...partial, workflow: 'claude-design', heartbeatAt: new Date().toISOString() }, null, 2)}\n`)
+}
+function killTree(pid?: number) {
+  if (!pid) return
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true })
+    else process.kill(pid, 'SIGKILL')
+  } catch { /* gone */ }
+}
+
+// Single headless Claude run for one mockup prompt (the prompt writes the file).
+function runClaudeMockup(prompt: string, message: string): Promise<number> {
+  return new Promise((resolve) => {
+    let settled = false
+    const child = spawn(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot], {
+      cwd: repoRoot, env: claudeCodeEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
+    })
+    const heartbeat = setInterval(() => touchDesignRun({ pid: process.pid, status: 'running', message }), 10000)
+    const finish = (code: number) => { if (settled) return; settled = true; clearInterval(heartbeat); clearTimeout(timer); resolve(code) }
+    const timer = setTimeout(() => { killTree(child.pid); finish(124) }, MOCKUP_TIMEOUT_MS)
+    child.stdout.on('data', (chunk) => log('mockup', String(chunk).trim()))
+    child.stderr.on('data', (chunk) => log('mockup', String(chunk).trim(), 'warn'))
+    child.on('error', () => finish(1))
+    child.on('close', (exit) => finish(exit ?? 1))
+    child.stdin.end(prompt)
+  })
+}
 
 // Headless Chrome/Edge is used to render the standalone mockup HTML to PDF, then
 // pdf-lib merges the screens into one report. No browser download needed.
@@ -100,4 +139,46 @@ mockupCmd
 
     log('mockup', `UI Design Report saved to library: ${out} (${ok}/${screens.length} screens, ${report.getPageCount()} pages).`)
     logActivity({ actor: 'user', event: 'mockup.report', severity: 'success', source: 'ui', message: `UI Design Report exported — ${ok}/${screens.length} screen(s) → library.` })
+  })
+
+mockupCmd
+  .command('generate-all')
+  .description('Sequentially generate every queued mockup screen (queue written by the dashboard)')
+  .action(async () => {
+    let queue: Array<{ id: number; prompt: string }> = []
+    try { queue = JSON.parse(fs.readFileSync(mockupQueueFile, 'utf8')) } catch { queue = [] }
+    if (!Array.isArray(queue) || queue.length === 0) {
+      touchDesignRun({ status: 'complete', message: 'No mockups queued.' })
+      log('mockup', 'No mockups queued.', 'warn')
+      return
+    }
+    const total = queue.length
+    let generated = 0
+    let failed = 0
+    touchDesignRun({ pid: process.pid, status: 'running', startedAt: new Date().toISOString(), total, processed: 0, message: `Generating ${total} mockup(s)…` })
+    logActivity({ actor: 'claude', event: 'mockup.generate-all.start', severity: 'info', source: 'ui', message: `Generating ${total} mockup screen(s) sequentially.` })
+    for (const [index, item] of queue.entries()) {
+      const state = readDesignRun()
+      if (state.status === 'stopped' || state.status === 'stopping') { log('mockup', 'Stopped by user.', 'warn'); break }
+      touchDesignRun({ status: 'running', total, processed: index, currentId: item.id, message: `(${index + 1}/${total}) Generating mockup for screen #${item.id}…` })
+      const code = await runClaudeMockup(item.prompt, `Mockup screen #${item.id} (${index + 1}/${total})`)
+      const wrote = fs.existsSync(path.join(mockupsOutDir, `screen-${item.id}.html`))
+      if (code === 0 && wrote) generated += 1
+      else { failed += 1; log('mockup', `Screen #${item.id} mockup not generated (exit ${code}).`, 'warn') }
+    }
+    touchDesignRun({ status: 'complete', total, processed: total, currentId: null, message: `Mockups done: ${generated} generated, ${failed} failed.` })
+    logActivity({ actor: 'claude', event: 'mockup.generate-all.done', severity: failed ? 'warn' : 'success', source: 'ui', message: `Mockup generation finished — ${generated}/${total} generated${failed ? `, ${failed} failed` : ''}.` })
+    try { fs.unlinkSync(mockupQueueFile) } catch { /* ignore */ }
+    log('mockup', `Mockup generation complete: ${generated}/${total} generated, ${failed} failed.`)
+  })
+
+mockupCmd
+  .command('stop')
+  .description('Stop a running bulk mockup generation and clear its state')
+  .action(() => {
+    const state = readDesignRun()
+    killTree(typeof state.pid === 'number' ? state.pid : undefined)
+    fs.writeFileSync(designRunFile, `${JSON.stringify({ status: 'stopped', pid: 0, message: 'Mockup generation stopped by user.', heartbeatAt: new Date().toISOString(), workflow: 'claude-design' }, null, 2)}\n`)
+    try { fs.unlinkSync(mockupQueueFile) } catch { /* ignore */ }
+    log('mockup', 'Bulk mockup generation stopped.')
   })

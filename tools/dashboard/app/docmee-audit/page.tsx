@@ -304,6 +304,12 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   const readyCritical = ready.summary?.critical ?? 1
   const uiDevelopmentProgress = uiDevelopmentPercent(uiDevelopmentRecords)
   const uiDevelopmentGaugeState = uiDevelopmentOpen.length === 0 ? 'complete' : uiDevelopmentLive ? 'progressing' : uiDevelopmentStartPassed ? 'halted' : 'stopped'
+  // Bulk mockup controls: how many screens still lack a mockup, how many are
+  // generated (savable), and whether a bulk run (design-run.json) is live.
+  const missingMockupCount = uiDevelopmentRecords.filter((row) => !mockupExists(row.id)).length
+  const generatedMockupCount = fs.existsSync(mockupsDir) ? fs.readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file)).length : 0
+  const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
+  const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
   const backendComplete = countStage(features, backendStage, 'complete')
   const frontendComplete = countStage(features, frontendStage, 'complete')
   const backendOpen = features.length - backendComplete
@@ -393,6 +399,35 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
           >
             Review screens in app →
           </a>
+          {mockupRunLive ? (
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="ui-mockup-stop" />
+              <button className="inline-flex min-h-11 items-center gap-1 rounded-md border border-red-700 bg-red-950/30 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/50" title={designRun.message ?? 'Stop bulk mockup generation'}>
+                Stop mockups{typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? ` (${designRun.processed}/${designRun.total})` : ''}
+              </button>
+            </form>
+          ) : (
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="ui-mockup-all" />
+              <button
+                disabled={missingMockupCount === 0}
+                title={missingMockupCount === 0 ? 'Every screen already has a mockup' : `Sequentially generate mockups for the ${missingMockupCount} screen(s) without one`}
+                className="inline-flex min-h-11 items-center gap-1 rounded-md border border-cyan-700 bg-cyan-950/30 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                All Mock-up{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
+              </button>
+            </form>
+          )}
+          <form action="/api/actions" method="post">
+            <input type="hidden" name="action" value="mockup-save-all" />
+            <button
+              disabled={generatedMockupCount === 0}
+              title={generatedMockupCount === 0 ? 'No generated mockups to save yet' : `Save all ${generatedMockupCount} generated mockup(s) to the Library`}
+              className="inline-flex min-h-11 items-center gap-1 rounded-md border border-emerald-700 bg-emerald-950/20 px-3 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save all{generatedMockupCount > 0 ? ` (${generatedMockupCount})` : ''}
+            </button>
+          </form>
           <MockupLibrary files={savedMockups()} report={fs.existsSync(path.join(savedMockupsDir, 'UI-Design-Report.pdf')) ? 'UI-Design-Report.pdf' : undefined} />
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="mockup-report" />

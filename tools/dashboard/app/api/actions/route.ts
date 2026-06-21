@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import net from 'node:net'
@@ -39,6 +39,31 @@ const claudeDesignRunFile = path.join(logsRoot, 'design-run.json')
 const claudeDesignPromptFile = path.join(promptsDir, 'CLAUDE-DESIGN-RUN.md')
 const mockupsDir = path.join(logsRoot, 'mockups')
 const savedMockupsDir = path.join(toolsRoot, 'mockup-library')
+
+// Mirrors screenMockupPrompt in docmee-audit/page.tsx — used to build the bulk
+// "All Mock-up" queue so the CLI generates the exact same per-screen mockups.
+function screenMockupPrompt(item: { id: number; screen: string; phase: string; featuresCovered: string; nextStep: string }) {
+  return `Generate a high-fidelity, self-contained HTML mockup of Docmee UI Screen ${item.id}: ${item.screen} for visual approval. Do NOT modify any product code and do NOT commit.
+
+Write the mockup to exactly this path (create the folder if needed): tools/logs/mockups/screen-${item.id}.html
+
+Product: Docmee, a medical-clinic AI booking and patient-communication platform.
+Screen: ${item.screen}
+Phase: ${item.phase}
+Features covered: ${item.featuresCovered}
+Context: ${item.nextStep}
+
+Mockup rules:
+- A single self-contained .html file with inline CSS only — no external/network assets — so it renders standalone in an iframe.
+- High-fidelity, realistic content in a quiet, professional medical-SaaS style.
+- Show the desktop layout, then a phone-width section below it for the responsive reflow.
+- Show the key states that matter for this screen (empty, loading, error, success) where relevant.
+- Make patient safety, bot mode, human mode, urgent status, assignment, and handoff visually unmistakable.
+- Use realistic English labels with a few Spanish examples.
+- This is a visual mockup for approval only: no JavaScript behaviour, no product code changes.
+
+Output: only create/overwrite tools/logs/mockups/screen-${item.id}.html, then stop.`
+}
 const docmeeUpdateFile = path.join(logsRoot, 'docmee-technology-update.json')
 const codexAccountFile = path.join(logsRoot, 'codex-account.json')
 const costFile = path.join(logsRoot, 'cost.json')
@@ -2213,6 +2238,46 @@ export async function POST(request: Request) {
   if (action === 'mockup-report') {
     const result = runTool(['mockup', 'report'])
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'UI Design Report saved to the mockup Library (UI-Design-Report.pdf).' : 'Could not generate the report — check that Chrome/Edge is installed and the Library has mockups.', '/docmee-audit')
+  }
+
+  if (action === 'ui-mockup-all') {
+    const state = readJson<{ pid?: number; status?: string }>(claudeDesignRunFile, {})
+    if (state.status === 'running' && isProcessAlive(state.pid)) {
+      return redirect(request, 'error', 'A design/mockup run is already in progress. Wait for it to finish or stop it.', '/docmee-audit')
+    }
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const queue = records
+      .filter((row) => !existsSync(path.join(mockupsDir, `screen-${row.id}.html`)))
+      .sort((a, b) => a.id - b.id)
+      .map((row) => ({ id: row.id, prompt: screenMockupPrompt(row) }))
+    if (queue.length === 0) return redirect(request, 'message', 'Every screen already has a mockup — nothing to generate.', '/docmee-audit')
+    mkdirSync(logsRoot, { recursive: true })
+    writeFileSync(path.join(logsRoot, 'mockup-queue.json'), JSON.stringify(queue, null, 2))
+    runToolDetached(['mockup', 'generate-all'])
+    return redirect(request, 'message', `Generating ${queue.length} mockup(s) sequentially with Claude — each appears on its screen as it finishes.`, '/docmee-audit')
+  }
+
+  if (action === 'ui-mockup-stop') {
+    const result = runTool(['mockup', 'stop'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stopped bulk mockup generation.' : 'Could not stop.', '/docmee-audit')
+  }
+
+  if (action === 'mockup-save-all') {
+    if (!existsSync(mockupsDir)) return redirect(request, 'message', 'No generated mockups to save yet.', '/docmee-audit')
+    const files = readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file))
+    if (files.length === 0) return redirect(request, 'message', 'No generated mockups to save yet.', '/docmee-audit')
+    const records = readJson<UiQueueItem[]>(uiDevelopmentRecordsFile, [])
+    const slug = (value: string, max = 60) => String(value ?? '').trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max).replace(/-+$/g, '') || 'na'
+    mkdirSync(savedMockupsDir, { recursive: true })
+    let saved = 0
+    for (const file of files) {
+      const id = Number(file.replace(/\D+/g, ''))
+      const item = records.find((row) => row.id === id)
+      const fileName = item ? `${slug(item.screen)}_Phase-${slug(String(item.phase))}_${slug(item.featuresCovered)}.html` : file
+      writeFileSync(path.join(savedMockupsDir, fileName), readFileSync(path.join(mockupsDir, file), 'utf8'))
+      saved += 1
+    }
+    return redirect(request, 'message', `Saved ${saved} mockup(s) to the Library.`, '/docmee-audit')
   }
 
   if (action === 'ai-add') {
