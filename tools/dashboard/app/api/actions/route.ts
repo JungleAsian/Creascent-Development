@@ -1291,6 +1291,16 @@ function isProcessAlive(pid?: number) {
   }
 }
 
+// A backlog run blocks new runs only if it's running, its process is alive, AND
+// it has heart-beat within 90s. Healthy runs beat every 10s, so a hung/OS-killed
+// run (or a reused pid) goes stale and can no longer wedge the queue.
+function backlogRunBusy() {
+  const state = readJson<{ pid?: number; status?: string; heartbeatAt?: string }>(backlogRunFile, {})
+  if (state.status !== 'running' || !isProcessAlive(state.pid)) return false
+  const beat = state.heartbeatAt ? Date.parse(state.heartbeatAt) : 0
+  return Number.isFinite(beat) && Date.now() - beat < 90000
+}
+
 function activeBuildRun() {
   if (!existsSync(buildRunFile)) return null
   try {
@@ -2106,9 +2116,8 @@ export async function POST(request: Request) {
 
   if (action === 'backlog-plan') {
     const id = String(form.get('id') ?? '')
-    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
-    if (state.status === 'running' && isProcessAlive(state.pid)) {
-      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    if (backlogRunBusy()) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish, or click Stop.')
     }
     runTool(['backlog', 'update', '--id', id, '--assignee', 'claude'])
     runToolDetached(['backlog', 'plan', '--id', id, '--auto'])
@@ -2117,9 +2126,8 @@ export async function POST(request: Request) {
 
   if (action === 'backlog-verify') {
     const id = String(form.get('id') ?? '')
-    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
-    if (state.status === 'running' && isProcessAlive(state.pid)) {
-      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    if (backlogRunBusy()) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish, or click Stop.')
     }
     runToolDetached(['backlog', 'verify', '--id', id])
     return redirect(request, 'message', `Verifying backlog #${id} — Claude checks whether the fix actually works and rates confidence; ≥8 marks it done, below flags it for review with a reason.`)
@@ -2131,13 +2139,17 @@ export async function POST(request: Request) {
     return redirect(request, result.ok ? 'message' : 'error', result.ok ? `Backlog #${id} approved — marked done.` : `Backlog #${id} approve failed`)
   }
 
+  if (action === 'backlog-stop') {
+    const result = runTool(['backlog', 'stop'])
+    return redirect(request, result.ok ? 'message' : 'error', result.ok ? 'Stopped the backlog run and cleared the state.' : 'Could not stop the run.')
+  }
+
   if (action === 'backlog-resolve') {
     const id = String(form.get('id') ?? '')
     const plan = String(form.get('plan') ?? '')
     const provider = String(form.get('provider') ?? 'claude') || 'claude'
-    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
-    if (state.status === 'running' && isProcessAlive(state.pid)) {
-      return redirect(request, 'error', 'A backlog resolution is already running. Wait for it to finish.')
+    if (backlogRunBusy()) {
+      return redirect(request, 'error', 'A backlog resolution is already running. Wait for it to finish, or click Stop.')
     }
     // Persist the (possibly edited) plan + assignee first so the run uses them.
     const updateArgs = ['backlog', 'update', '--id', id, '--assignee', provider]
@@ -2151,18 +2163,16 @@ export async function POST(request: Request) {
   }
 
   if (action === 'backlog-auto-resolve') {
-    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
-    if (state.status === 'running' && isProcessAlive(state.pid)) {
-      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    if (backlogRunBusy()) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish, or click Stop.')
     }
     runToolDetached(['backlog', 'auto-resolve'])
     return redirect(request, 'message', 'Auto-resolve started — Claude plans each open item in turn, resolving the confident ones (≥8) and queuing the rest for your approval.')
   }
 
   if (action === 'backlog-verify-all') {
-    const state = readJson<{ pid?: number; status?: string }>(backlogRunFile, {})
-    if (state.status === 'running' && isProcessAlive(state.pid)) {
-      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish.')
+    if (backlogRunBusy()) {
+      return redirect(request, 'error', 'A backlog run is already in progress. Wait for it to finish, or click Stop.')
     }
     runToolDetached(['backlog', 'verify-all'])
     return redirect(request, 'message', 'Verify-all started — Claude verifies each item awaiting review; ≥8 marks it done, below leaves it flagged with a reason.')

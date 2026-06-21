@@ -391,17 +391,45 @@ function touchBacklogRun(partial: Record<string, unknown>) {
   fs.writeFileSync(backlogRunFile, `${JSON.stringify({ ...current, ...partial, workflow: 'backlog-resolve', heartbeatAt: new Date().toISOString() }, null, 2)}\n`)
 }
 
+const RESOLVE_TIMEOUT_MS = 12 * 60 * 1000
+
+function killTree(pid?: number) {
+  if (!pid) return
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' })
+    else process.kill(pid, 'SIGKILL')
+  } catch {
+    // already gone
+  }
+}
+
 // Single-shot headless Claude Code run; returns exit code + captured output.
-function runClaudeHeadless(prompt: string, message: string): Promise<{ code: number; output: string }> {
+// Hard timeout: a hung run is killed (exit 124) so it can never leave the
+// backlog stuck in `running` forever (which would block every later resolve).
+function runClaudeHeadless(prompt: string, message: string, timeoutMs = RESOLVE_TIMEOUT_MS): Promise<{ code: number; output: string }> {
   return new Promise((resolve) => {
     let output = ''
+    let settled = false
     const child = spawn(claudeCodeCommand(), ['--print', '--dangerously-skip-permissions', '--add-dir', repoRoot()], {
       cwd: repoRoot(), env: claudeCodeEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
     })
     const heartbeat = setInterval(() => touchBacklogRun({ pid: child.pid, status: 'running', message }), 10000)
+    const finish = (code: number) => {
+      if (settled) return
+      settled = true
+      clearInterval(heartbeat)
+      clearTimeout(timer)
+      resolve({ code, output })
+    }
+    const timer = setTimeout(() => {
+      log('backlog', `Claude run exceeded ${Math.round(timeoutMs / 60000)} min — aborting.`, 'warn')
+      killTree(child.pid)
+      finish(124)
+    }, timeoutMs)
     child.stdout.on('data', (chunk) => { output += String(chunk); log('backlog', String(chunk).trim()) })
     child.stderr.on('data', (chunk) => { output += String(chunk); log('backlog', String(chunk).trim(), 'warn') })
-    child.on('close', (exit) => { clearInterval(heartbeat); resolve({ code: exit ?? 1, output }) })
+    child.on('error', () => finish(1))
+    child.on('close', (exit) => finish(exit ?? 1))
     child.stdin.end(prompt)
   })
 }
@@ -711,6 +739,23 @@ backlogCmd
   .option('--threshold <n>', `Confidence needed to auto-resolve (default ${CONFIDENCE_THRESHOLD})`)
   .action(async (opts: { threshold?: string }) => {
     await autoResolveAll(Number(opts.threshold) || CONFIDENCE_THRESHOLD)
+  })
+
+backlogCmd
+  .command('stop')
+  .description('Clear a stuck/hung backlog run: kill its process and reset the run state to idle')
+  .action(() => {
+    let state: { pid?: number; currentId?: number } = {}
+    try { state = JSON.parse(fs.readFileSync(backlogRunFile, 'utf8')) } catch { state = {} }
+    killTree(state.pid)
+    // If an item was left mid-run, drop it back from in-progress so it is actionable again.
+    if (typeof state.currentId === 'number') {
+      const tasks = getTasks()
+      const stuck = tasks.find((item) => item.id === state.currentId)
+      if (stuck && stuck.status === 'in-progress') { stuck.status = 'todo'; saveTasks(tasks) }
+    }
+    fs.writeFileSync(backlogRunFile, `${JSON.stringify({ status: 'idle', pid: 0, message: 'Run stopped by user.', heartbeatAt: new Date().toISOString() }, null, 2)}\n`)
+    log('backlog', 'Backlog run stopped and state cleared')
   })
 
 backlogCmd

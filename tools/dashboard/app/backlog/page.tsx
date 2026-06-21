@@ -206,6 +206,17 @@ export default function BacklogPage({ searchParams }: PageProps) {
               {verifyActive ? 'Verifying…' : `Verify all${reviewCount > 0 ? ` (${reviewCount})` : ''}`}
             </button>
           </form>
+          {runLive && (
+            <form action="/api/actions" method="post">
+              <input type="hidden" name="action" value="backlog-stop" />
+              <button
+                title="Stop the current backlog run and clear the state (use this if a run looks stuck)"
+                className="min-h-10 rounded-md border border-red-700 bg-red-950/30 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-950/50"
+              >
+                Stop run
+              </button>
+            </form>
+          )}
         </div>
       </div>
 
