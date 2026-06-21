@@ -6,6 +6,7 @@ import { BacklogReviewPanel } from './backlog-review-panel'
 import { resolveAutoAi } from '../lib/auto-ai'
 import { BacklogItemGauge } from './backlog-item-gauge'
 import { BacklogFlowStrip } from '../backlog-flow-strip'
+import { ElapsedTimer } from '../elapsed-timer'
 import { BuildProgressGauge } from '../build-progress-gauge'
 import { maybeAutoSyncBacklog, lastBacklogSyncAt } from '../lib/backlog-autosync'
 import { AutoRefresh } from '../auto-refresh'
@@ -15,7 +16,7 @@ const toolsRoot = path.resolve(process.cwd(), '..')
 const backlogFile = path.join(toolsRoot, 'logs', 'backlog.json')
 const backlogRunFile = path.join(toolsRoot, 'logs', 'backlog-run.json')
 
-type BacklogRun = { status?: string; message?: string; autoResolve?: boolean; verifyAll?: boolean; total?: number; processed?: number; resolved?: number; queued?: number; failed?: number; pid?: number; currentId?: number; heartbeatAt?: string }
+type BacklogRun = { status?: string; message?: string; autoResolve?: boolean; verifyAll?: boolean; total?: number; processed?: number; resolved?: number; queued?: number; failed?: number; pid?: number; currentId?: number; heartbeatAt?: string; startedAt?: string }
 
 function backlogRun(): BacklogRun {
   if (!fs.existsSync(backlogRunFile)) return {}
@@ -150,7 +151,7 @@ export default function BacklogPage({ searchParams }: PageProps) {
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
           {activeId === row.id && (
             <span className="inline-flex items-center gap-1 font-medium text-cyan-300" title={run.message ?? 'Working…'}>
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" aria-hidden="true" />working
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" aria-hidden="true" />working<ElapsedTimer startedAt={run.startedAt} prefix=" · ⏱ " className="font-normal text-cyan-300/70" />
             </span>
           )}
           <span className="font-mono">{row.phase}</span>
@@ -226,7 +227,7 @@ export default function BacklogPage({ searchParams }: PageProps) {
       {showBatchBanner && (
         <div className="mt-3 rounded-lg border border-cyan-900 bg-cyan-950/20 p-3">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium text-cyan-100">{runLive ? `${batchVerb} running` : autoAllResolved ? `${batchVerb} finished — all done` : `${batchVerb} finished — needs follow-up`}</span>
+            <span className="font-medium text-cyan-100">{runLive ? `${batchVerb} running` : autoAllResolved ? `${batchVerb} finished — all done` : `${batchVerb} finished — needs follow-up`}{runLive && <ElapsedTimer startedAt={run.startedAt} processed={run.processed} total={autoTotal} prefix=" · ⏱ " className="font-normal text-cyan-300/80" />}</span>
             <span className="text-xs text-slate-400">{run.processed ?? 0}/{autoTotal} processed · {autoResolved} {batchDoneWord} · {run.queued ?? 0} {batchPendWord} · {run.failed ?? 0} failed</span>
           </div>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800" title={`${autoResolved}/${autoTotal} ${batchDoneWord}`}>

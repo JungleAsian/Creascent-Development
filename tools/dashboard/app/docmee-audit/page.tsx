@@ -22,6 +22,7 @@ import { AutoRefresh } from '../auto-refresh'
 import { LaneFlowStrip } from '../lane-flow-strip'
 import { LaneItemGauge } from '../lane-item-gauge'
 import { runLiveness, isProcessAlive, heartbeatAge } from '../lib/run-live'
+import { ElapsedTimer } from '../elapsed-timer'
 import { readJson } from '../lib/read-json'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
@@ -37,7 +38,7 @@ const uiDesignSourceUrl = 'https://app.notion.com/p/38541c470daf810a903ae389776c
 type PageProps = { searchParams?: { message?: string; error?: string } }
 type Ready = { ready?: boolean; summary?: { critical?: number; warning?: number; pass?: number }; createdAt?: string }
 type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; steps?: Array<{ name: string; status: 'pass' | 'fail'; message: string }> }
-type FeatureRun = { pid?: number; phase?: string; workflow?: string; status?: string; heartbeatAt?: string; message?: string }
+type FeatureRun = { pid?: number; phase?: string; workflow?: string; status?: string; heartbeatAt?: string; startedAt?: string; message?: string }
 type UIDevelopmentRecord = { id: number; screen: string; phase: string; featuresCovered: string; status: 'complete' | 'planned' | 'running' | 'needs-review'; priority: 'critical' | 'high' | 'medium' | 'low'; source: string; nextStep: string }
 
 const sourceLinks = [
@@ -309,7 +310,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   const missingMockupCount = uiDevelopmentRecords.filter((row) => !mockupExists(row.id)).length
   const approvedBuildableCount = uiDevelopmentRecords.filter((row) => row.status !== 'complete' && mockupExists(row.id)).length
   const generatedMockupCount = fs.existsSync(mockupsDir) ? fs.readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file)).length : 0
-  const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
+  const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; startedAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
   const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
   // Heartbeat/liveness for the design+mockup runs (Mockup all / Approve & build /
   // single design) so every running process — not just the ui-development build —
@@ -356,7 +357,8 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <p className="text-sm font-medium text-cyan-100">{designRun.message ?? 'Design / mockup run in progress…'}</p>
               <p className="mt-0.5 text-xs text-cyan-300/80">
                 {typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? `${designRun.processed}/${designRun.total} · ` : ''}
-                heartbeat {heartbeatAge(designRun.heartbeatAt)}
+                <ElapsedTimer startedAt={designRun.startedAt} processed={designRun.processed} total={designRun.total} prefix="⏱ " />
+                {' · '}heartbeat {heartbeatAge(designRun.heartbeatAt)}
                 {designLiveness.stale ? ' · ⚠ no recent heartbeat — may be hung' : ''}
                 {designRun.pid ? ` · PID ${designRun.pid}` : ''}
               </p>
@@ -382,13 +384,16 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               Run the same safe-start pattern as backend and frontend automation. The runner creates the UI development prompt from the 17-screen map, works through the full open queue, and keeps the DevTool heartbeat updated.
             </p>
           </div>
-          <BuildProgressGauge
-            size="md"
-            percent={uiDevelopmentProgress}
-            state={uiDevelopmentGaugeState}
-            label={uiDevelopmentLive ? 'UI development running' : 'UI development progress'}
-            message={uiDevelopmentLive ? run.message ?? 'UI development is running.' : `${uiDevelopmentComplete}/${uiDevelopmentRecords.length} UI screens complete`}
-          />
+          <div className="flex flex-col items-start gap-1 lg:items-end">
+            <BuildProgressGauge
+              size="md"
+              percent={uiDevelopmentProgress}
+              state={uiDevelopmentGaugeState}
+              label={uiDevelopmentLive ? 'UI development running' : 'UI development progress'}
+              message={uiDevelopmentLive ? run.message ?? 'UI development is running.' : `${uiDevelopmentComplete}/${uiDevelopmentRecords.length} UI screens complete`}
+            />
+            {uiDevelopmentLive && <ElapsedTimer startedAt={run.startedAt} prefix="⏱ building for " className="text-xs text-cyan-300/80" />}
+          </div>
         </div>
 
         <div className="mt-4 space-y-2">
