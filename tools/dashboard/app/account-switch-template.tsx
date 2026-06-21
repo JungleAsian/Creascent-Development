@@ -92,7 +92,7 @@ export function AccountSwitchTemplate({ provider, providerKey, modelHint, accoun
         </div>
         <div className="flex flex-wrap gap-2">
           <a href={consoleUrl} target="_blank" rel="noreferrer" className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">
-            Open {provider}
+            Connect {provider}
           </a>
           <Link href="/settings" className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">
             Settings

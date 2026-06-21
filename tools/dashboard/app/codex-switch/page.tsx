@@ -96,7 +96,7 @@ export default function CodexControlPage({ searchParams }: PageProps) {
         <div className="flex flex-wrap gap-2">
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="codex-open" />
-            <button className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">Open Codex / Login</button>
+            <button className="min-h-11 rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">Connect Codex</button>
           </form>
           <Link href="/rev1-coverage" className="min-h-11 rounded-md border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800">Feature Queue</Link>
         </div>
@@ -137,7 +137,7 @@ export default function CodexControlPage({ searchParams }: PageProps) {
             </div>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="codex-open" />
-              <button className="rounded-md border border-cyan-700 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950/40">Open Codex</button>
+              <button className="rounded-md border border-cyan-700 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950/40">Connect Codex</button>
             </form>
           </div>
           <textarea
@@ -155,7 +155,7 @@ export default function CodexControlPage({ searchParams }: PageProps) {
             <div className="mt-4 grid gap-2">
               <form action="/api/actions" method="post">
                 <input type="hidden" name="action" value="codex-open" />
-                <button className="w-full rounded-md bg-cyan-600 px-3 py-3 text-sm font-medium text-white">1. Open Codex / Login</button>
+                <button className="w-full rounded-md bg-cyan-600 px-3 py-2 text-sm font-medium text-white">1. Connect Codex</button>
               </form>
               <form action="/api/actions" method="post">
                 <input type="hidden" name="action" value="codex-logout" />

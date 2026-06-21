@@ -3,6 +3,7 @@ import path from 'node:path'
 import Link from 'next/link'
 import { getUsdToCad } from '../lib/currency'
 import { readTunnel } from '../lib/sentinel-platform'
+import { TranslationStatus } from '../translation-status'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
 const envFile = path.join(toolsRoot, '.env.tools')
@@ -229,6 +230,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         {tunnelView.webhookReminderPending && <p className="mt-2 text-xs text-amber-300">⚠️ WhatsApp webhook changed — update it in the Meta dashboard.</p>}
         <Link href="/sentinel" className="mt-3 inline-block text-xs text-cyan-300 hover:underline">Open Sentinel →</Link>
       </div>
+      <div className="mb-6"><TranslationStatus /></div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup</h1>
