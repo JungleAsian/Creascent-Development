@@ -544,6 +544,10 @@ export interface CustomFlowStep {
   collect?: string | null
   next?: string | null
   action?: CustomFlowAction | null
+  // Visual-canvas node position (Rev 2). Stored in the steps JSONB; ignored by the
+  // flow engine. Absent for legacy/form-built flows — the canvas auto-lays-out then.
+  x?: number
+  y?: number
 }
 
 /** A keyword-triggered scripted conversation flow that bypasses intent/LLM. */

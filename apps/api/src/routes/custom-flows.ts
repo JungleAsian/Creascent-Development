@@ -32,6 +32,10 @@ const stepSchema = z.object({
   collect: z.string().min(1).nullable().optional(),
   next: z.string().min(1).nullable().optional(),
   action: actionSchema.nullable().optional(),
+  // Visual-canvas node coordinates (Rev 2) — persisted in the steps JSONB so the
+  // graph reopens with the same layout. The flow engine ignores them.
+  x: z.number().optional(),
+  y: z.number().optional(),
 })
 
 // A flow needs SOMETHING to say: either a single-shot `messages` list or a step
