@@ -42,6 +42,30 @@ type StartReadiness = { ready?: boolean; phase?: string; createdAt?: string; ste
 type FeatureRun = { pid?: number; phase?: string; workflow?: string; status?: string; heartbeatAt?: string; startedAt?: string; message?: string }
 type UIDevelopmentRecord = { id: number; screen: string; phase: string; featuresCovered: string; status: 'complete' | 'planned' | 'running' | 'needs-review'; priority: 'critical' | 'high' | 'medium' | 'low'; source: string; nextStep: string; wiringConfidence?: number; wiringReason?: string; wiringCheckedAt?: string }
 
+// Base URL of the running InboxOS app + the live route for each of the 17 screens,
+// so the acceptance reviewer can deep-link straight to the real screen. A few sit
+// inside another route (open a conversation / clinic) — see the hint column.
+const INBOXOS_BASE = process.env.INBOXOS_URL || 'http://127.0.0.1:3000'
+const SCREEN_LIVE_ROUTE: Record<number, { path: string; hint?: string }> = {
+  1: { path: '/inbox' },
+  2: { path: '/calendar' },
+  3: { path: '/inbox', hint: 'open a conversation → Patient tab' },
+  4: { path: '/studio/quick-replies' },
+  5: { path: '/inbox', hint: 'open a conversation → AI assistant panel' },
+  6: { path: '/studio/clinics' },
+  7: { path: '/studio/kb' },
+  8: { path: '/studio/clinics', hint: 'open a clinic → settings' },
+  9: { path: '/studio/errors' },
+  10: { path: '/studio/channels' },
+  11: { path: '/alerts' },
+  12: { path: '/studio/automations' },
+  13: { path: '/studio/compliance' },
+  14: { path: '/metrics' },
+  15: { path: '/analytics' },
+  16: { path: '/reports' },
+  17: { path: '/inbox', hint: 'resize narrow / install as PWA' }
+}
+
 const sourceLinks = [
   ['UI/UX design for 17 screens', uiDesignSourceUrl],
   ['Backend design documentation', 'https://app.notion.com/p/38141c470daf8130b7d8dcd70fbb792a'],
@@ -698,7 +722,20 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               {uiDevelopmentRecords.map((item) => (
                 <tr key={item.id} className="bg-slate-950/50 align-top">
                   <td className="p-3"><LaneItemGauge percent={uiRecordGaugePercent(item.status)} tone={uiRecordGaugeTone(item.status)} title={item.status} /></td>
-                  <td className="min-w-[220px] p-3 font-medium text-slate-100">Screen {item.id}: {item.screen}</td>
+                  <td className="min-w-[220px] p-3 font-medium text-slate-100">
+                    Screen {item.id}: {item.screen}
+                    {SCREEN_LIVE_ROUTE[item.id] && (
+                      <a
+                        href={`${INBOXOS_BASE}${SCREEN_LIVE_ROUTE[item.id]!.path}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 flex items-center gap-1 text-[11px] font-normal text-cyan-400 hover:text-cyan-300"
+                        title={`Open the live screen in InboxOS (${INBOXOS_BASE}${SCREEN_LIVE_ROUTE[item.id]!.path})${SCREEN_LIVE_ROUTE[item.id]!.hint ? ` — ${SCREEN_LIVE_ROUTE[item.id]!.hint}` : ''} — sign in as studio@demo.test for /studio screens`}
+                      >
+                        <Icon name="eye" className="h-3 w-3" />Open live ↗{SCREEN_LIVE_ROUTE[item.id]!.hint ? <span className="text-slate-500">({SCREEN_LIVE_ROUTE[item.id]!.hint})</span> : null}
+                      </a>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap p-3 text-slate-300">{item.phase}</td>
                   <td className="min-w-[160px] p-3 text-xs text-slate-400">{item.featuresCovered}</td>
                   <td className="whitespace-nowrap p-3"><StatusDot tone={priorityDot(item.priority)} label={`Priority: ${item.priority}`} /></td>
