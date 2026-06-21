@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { BuildProgressGauge } from '../build-progress-gauge'
 import { LaneItemGauge } from '../lane-item-gauge'
+import { PhaseStrip } from '../phase-strip'
 import { AutoRefresh } from '../auto-refresh'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
@@ -102,6 +103,11 @@ export default function PhasesPage({ searchParams }: PageProps) {
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
       {searchParams?.error && <p className="mt-2 text-sm text-red-300">{searchParams.error}</p>}
+
+      <div className="mt-4">
+        <PhaseStrip phases={definitions.map(([id, name]) => ({ id, name, status: byId.get(id)?.status ?? 'not-started' }))} />
+      </div>
+
       {p11Done && <div className="mt-4 rounded-md border border-amber-500 bg-amber-950/40 p-4 text-sm text-amber-200">Submit to Meta NOW. WhatsApp approval should start after P11, not after P19.</div>}
 
       <div id="build-panel" className="mt-6 rounded-md border border-slate-800 bg-slate-900 p-4">

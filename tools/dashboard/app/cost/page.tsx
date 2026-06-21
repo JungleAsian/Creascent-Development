@@ -4,6 +4,7 @@ import { costDisplayCurrency, formatCost, getUsdToCad } from '../lib/currency'
 import { maybeAutoSyncCost, lastAutoSyncAt } from '../lib/cost-autosync'
 import { AutoRefresh } from '../auto-refresh'
 import { WorkflowStages } from '../workflow-stages'
+import { CostDonut, CostBars } from './cost-charts'
 
 const costFile = path.resolve(process.cwd(), '..', 'logs', 'cost.json')
 const coverageFile = path.resolve(process.cwd(), '..', 'logs', 'rev1-feature-coverage.json')
@@ -329,6 +330,23 @@ export default async function CostPage({ searchParams }: PageProps) {
   })
   const trackedFeatures = featureRows.filter((row) => row.entries.length > 0).length
 
+  // Chart data: cost by tool (donut) + cost by phase (bars).
+  const claudeCost = development.filter((entry) => entry.tool.toLowerCase().includes('claude')).reduce((total, entry) => total + entry.cost_usd, 0)
+  const codexCost = development.filter((entry) => entry.tool.toLowerCase().includes('codex')).reduce((total, entry) => total + entry.cost_usd, 0)
+  const otherCost = Math.max(0, devTotal - claudeCost - codexCost)
+  const toolSlices = [
+    { label: 'Claude Code', value: claudeCost, formatted: money(claudeCost), color: '#06b6d4' },
+    { label: 'Codex', value: codexCost, formatted: money(codexCost), color: '#8b5cf6' },
+    { label: 'Other', value: otherCost, formatted: money(otherCost), color: '#64748b' }
+  ]
+  const phaseCostMap = new Map<string, number>()
+  for (const entry of development) {
+    if (/^P\d{2}$/.test(entry.phase)) phaseCostMap.set(entry.phase, (phaseCostMap.get(entry.phase) ?? 0) + entry.cost_usd)
+  }
+  const phaseBars = [...phaseCostMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([phase, cost]) => ({ label: phase, value: cost, formatted: money(cost) }))
+
   return (
     <section className="w-full">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -384,6 +402,11 @@ export default async function CostPage({ searchParams }: PageProps) {
           <p className="mt-2 text-xl">{money(rate.perMillion, 4)} / 1M</p>
           <p className="mt-1 text-xs text-violet-100/70">{money(rate.perThousand, 6)} / 1K · {money(rate.perToken, 8)} / token</p>
         </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,360px)_1fr]">
+        <CostDonut title="Cost by tool" slices={toolSlices} />
+        <CostBars title="Cost by phase" items={phaseBars} />
       </div>
 
       <details className="mt-5 rounded-md border border-slate-800 bg-slate-900/40 p-4">
