@@ -202,6 +202,21 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
 
   return (
     <Section title={t('clinic.section.bot')}>
+      {/* Mode banner (Req 20) — the assistant answers automatically and hands off to a
+          human on urgent messages / on request. Stated up front so the operating mode
+          is unmistakable before any tone or rule is touched. */}
+      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/40 sm:flex-row sm:items-center">
+        <div className="flex shrink-0 flex-wrap gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+            🤖 {t('bot.mode.botName')} · {t('bot.mode.botState')}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+            👤 {t('bot.mode.humanName')} · {t('bot.mode.humanState')}
+          </span>
+        </div>
+        <p className="text-[11px] leading-snug text-emerald-800 dark:text-emerald-300">{t('bot.mode.banner')}</p>
+      </div>
+
       <p className="mb-2 text-xs font-medium text-gray-500">{t('bot.tone.title')}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {TONES.map((value) => {
@@ -284,7 +299,17 @@ function BotConfigSection({ clinic }: { clinic: Clinic }) {
         <AddRuleForm onAdd={addRule} />
       </div>
 
-      <SaveBar dirty={dirty} pending={save.isPending} saved={save.isSuccess && !dirty} onSave={onSave} />
+      {/* Mode & handoff summary (Req 20) — bot mode, human takeover, and the always-on
+          urgent→handoff override, each in its own status colour so they're unmistakable. */}
+      <ModeHandoffCard />
+
+      <SaveBar
+        dirty={dirty}
+        pending={save.isPending}
+        saved={save.isSuccess && !dirty}
+        error={save.isError}
+        onSave={onSave}
+      />
     </Section>
   )
 }
@@ -322,6 +347,19 @@ function TonePreviewCard({
           </div>
         </div>
       </div>
+      {/* Every sample reply routes to booking and never gives medical advice — the
+          tags make that safety posture explicit (Req 26/27/20). */}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+          ✓ {t('bot.preview.tagBooking')}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+          ✓ {t('bot.preview.tagNoAdvice')}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800 dark:text-emerald-300">
+          🔒 {t('bot.preview.tagSafe')}
+        </span>
+      </div>
       {showAutoNote && <p className="mt-2 text-[11px] text-gray-400">{t('bot.preview.autoNote')}</p>}
     </div>
   )
@@ -358,6 +396,68 @@ function SafetyRulesCard() {
       <p className="mt-2 text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
         {t('bot.safety.subtitle')}
       </p>
+    </div>
+  )
+}
+
+// Mode & handoff summary (Req 20). The actual mode lives per-conversation in the inbox
+// (the bot answers; secretaries take over; urgent threads are flagged and assigned by the
+// agents layer) — this card states the guarantees so bot mode, human mode and the urgent
+// override read unmistakably from the config surface.
+function ModeHandoffCard() {
+  const { t } = useI18n()
+  const rows = [
+    {
+      icon: '🤖',
+      name: t('bot.mode.botName'),
+      state: t('bot.mode.botState'),
+      desc: t('bot.mode.botDesc'),
+      tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
+      ring: 'border-gray-200 dark:border-gray-800',
+    },
+    {
+      icon: '👤',
+      name: t('bot.mode.humanName'),
+      state: t('bot.mode.humanState'),
+      desc: t('bot.mode.humanDesc'),
+      tone: 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+      ring: 'border-gray-200 dark:border-gray-800',
+    },
+    {
+      icon: '🚨',
+      name: t('bot.mode.urgentName'),
+      state: t('bot.mode.urgentState'),
+      desc: t('bot.mode.urgentDesc'),
+      tone: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
+      ring: 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30',
+    },
+  ]
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-xs font-medium text-gray-500">{t('bot.mode.title')}</p>
+      <ul className="space-y-1.5">
+        {rows.map((row) => (
+          <li
+            key={row.name}
+            className={`flex items-start gap-2.5 rounded-lg border p-2.5 ${row.ring}`}
+          >
+            <span aria-hidden className="mt-0.5 text-base leading-none">
+              {row.icon}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+                {row.name}
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${row.tone}`}
+                >
+                  {row.state}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-gray-500">{row.desc}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -970,25 +1070,29 @@ function SaveBar({
   dirty,
   pending,
   saved,
+  error = false,
   onSave,
 }: {
   dirty: boolean
   pending: boolean
   saved: boolean
+  error?: boolean
   onSave: () => void
 }) {
   const { t } = useI18n()
   return (
-    <div className="mt-4 flex items-center gap-3">
+    <div className="mt-4 flex flex-wrap items-center gap-3">
       <button
         type="button"
         onClick={onSave}
         disabled={!dirty || pending}
         className="rounded-md bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-40 dark:bg-gray-700"
       >
-        {pending ? t('common.saving') : t('common.save')}
+        {/* On a failed save the edits are kept and the button re-reads "Retry". */}
+        {pending ? t('common.saving') : error ? t('common.retry') : t('common.save')}
       </button>
       {saved && <span className="text-xs text-emerald-600">{t('common.saved')}</span>}
+      {error && !pending && <span className="text-xs text-red-600">⚠️ {t('common.saveFailed')}</span>}
     </div>
   )
 }

@@ -303,8 +303,13 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   const uiDevelopmentStale = uiRunActive && uiLiveness.stale
   const uiDevelopmentStartPassed = Boolean(startReadiness.ready && startReadiness.phase === uiDevelopmentPhase)
   const readyCritical = ready.summary?.critical ?? 1
+  const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; startedAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
+  const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
+  // The gauge should reflect ANY active UI build — the ui-development watcher OR a
+  // design/mockup/build/wiring run (design-run.json) — so it isn't gray while one runs.
+  const uiBuildLive = uiDevelopmentLive || mockupRunLive
   const uiDevelopmentProgress = uiDevelopmentPercent(uiDevelopmentRecords)
-  const uiDevelopmentGaugeState = uiDevelopmentOpen.length === 0 ? 'complete' : uiDevelopmentLive ? 'progressing' : uiDevelopmentStartPassed ? 'halted' : 'stopped'
+  const uiDevelopmentGaugeState = uiDevelopmentOpen.length === 0 ? 'complete' : uiBuildLive ? 'progressing' : uiDevelopmentStartPassed ? 'halted' : 'stopped'
   // Bulk mockup controls: how many screens still lack a mockup, how many are
   // generated (savable), and whether a bulk run (design-run.json) is live.
   const missingMockupCount = uiDevelopmentRecords.filter((row) => !mockupExists(row.id)).length
@@ -313,8 +318,6 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
   const builtScreenCount = uiDevelopmentRecords.filter((row) => row.status !== 'planned').length
   const wiringFlaggedCount = uiDevelopmentRecords.filter((row) => typeof row.wiringConfidence === 'number' && row.wiringConfidence < 8).length
   const generatedMockupCount = fs.existsSync(mockupsDir) ? fs.readdirSync(mockupsDir).filter((file) => /^screen-\d+\.html$/.test(file)).length : 0
-  const designRun = readJson<{ pid?: number; status?: string; heartbeatAt?: string; startedAt?: string; total?: number; processed?: number; message?: string }>(path.join(toolsRoot, 'logs', 'design-run.json'), {})
-  const mockupRunLive = designRun.status === 'running' && isProcessAlive(designRun.pid)
   // Heartbeat/liveness for the design+mockup runs (Mockup all / Approve & build /
   // single design) so every running process — not just the ui-development build —
   // surfaces a heartbeat + progress, not only a Stop button.
@@ -392,10 +395,10 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               size="md"
               percent={uiDevelopmentProgress}
               state={uiDevelopmentGaugeState}
-              label={uiDevelopmentLive ? 'UI development running' : 'UI development progress'}
-              message={uiDevelopmentLive ? run.message ?? 'UI development is running.' : `${uiDevelopmentComplete}/${uiDevelopmentRecords.length} UI screens complete`}
+              label={uiBuildLive ? 'UI build running' : 'UI development progress'}
+              message={uiDevelopmentLive ? run.message ?? 'UI development is running.' : mockupRunLive ? designRun.message ?? 'Building…' : `${uiDevelopmentComplete}/${uiDevelopmentRecords.length} UI screens complete`}
             />
-            {uiDevelopmentLive && <ElapsedTimer startedAt={run.startedAt} prefix="⏱ building for " className="text-xs text-cyan-300/80" />}
+            {uiBuildLive && <ElapsedTimer startedAt={uiDevelopmentLive ? run.startedAt : designRun.startedAt} processed={uiDevelopmentLive ? undefined : designRun.processed} total={uiDevelopmentLive ? undefined : designRun.total} prefix="⏱ building for " className="text-xs text-cyan-300/80" />}
           </div>
         </div>
 
