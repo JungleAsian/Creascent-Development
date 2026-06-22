@@ -5,6 +5,7 @@
 // routes stay fan-out to their downstream queues.
 import { z } from 'zod'
 import { classifyIntent, claudeComplete, embedText } from '@docmee/llm'
+import { enqueueWorkflowRuns } from './workflow-run.js'
 import {
   routeIntent,
   runClinicBot,
@@ -376,6 +377,20 @@ export async function processAgentJob(job: Job): Promise<void> {
     if (!clinic) {
       console.warn(`[agent] unknown clinic ${data.clinicId}; dropping ${data.waMessageId}`)
       return
+    }
+
+    // Rev 3 — fire any active "message keyword" automation workflows for this inbound.
+    // Awaited (so the lookup finishes before sql closes) but gated + best-effort: with
+    // no matching active workflow it's a single empty EXISTS query and a no-op, so this
+    // never changes the reply path or existing behaviour.
+    try {
+      await enqueueWorkflowRuns(sql, data.clinicId, 'trigger.message_keyword', {
+        message: data.message,
+        ...(data.patientId ? { patientId: data.patientId } : {}),
+        ...(data.conversationId ? { conversationId: data.conversationId } : {}),
+      })
+    } catch (err) {
+      console.error('[agent] workflow trigger enqueue failed:', err)
     }
 
     const account = activeWhatsAppAccount(await channelAccounts.listByClinic(data.clinicId))
