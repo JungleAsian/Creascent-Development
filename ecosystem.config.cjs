@@ -56,6 +56,9 @@ module.exports = {
       // monorepo path: apps/api/dist/apps/api/src/server.js — not dist/server.js.
       script: 'dist/apps/api/src/server.js',
       instances: 1,
+      // fork (not cluster): Next.js `next start` can't run under Node's cluster
+      // module, and there's no benefit to cluster at instances:1 for the others.
+      exec_mode: 'fork',
       autorestart: true,
       max_restarts: 10,
       env: { ...baseEnv },
@@ -65,6 +68,9 @@ module.exports = {
       cwd: './apps/workers',
       script: 'dist/apps/workers/src/index.js',
       instances: 1,
+      // fork (not cluster): Next.js `next start` can't run under Node's cluster
+      // module, and there's no benefit to cluster at instances:1 for the others.
+      exec_mode: 'fork',
       autorestart: true,
       max_restarts: 10,
       env: { ...baseEnv },
@@ -76,6 +82,9 @@ module.exports = {
       script: './node_modules/next/dist/bin/next',
       args: 'start',
       instances: 1,
+      // fork (not cluster): Next.js `next start` can't run under Node's cluster
+      // module, and there's no benefit to cluster at instances:1 for the others.
+      exec_mode: 'fork',
       autorestart: true,
       max_restarts: 10,
       env: { ...baseEnv, PORT: fileEnv.PORT || '3000' },
