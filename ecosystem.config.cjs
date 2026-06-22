@@ -52,7 +52,9 @@ module.exports = {
     {
       name: 'docmee-api',
       cwd: './apps/api',
-      script: 'dist/server.js',
+      // tsc has no rootDir (it pulls in packages/*), so it emits preserving the
+      // monorepo path: apps/api/dist/apps/api/src/server.js — not dist/server.js.
+      script: 'dist/apps/api/src/server.js',
       instances: 1,
       autorestart: true,
       max_restarts: 10,
@@ -61,7 +63,7 @@ module.exports = {
     {
       name: 'docmee-workers',
       cwd: './apps/workers',
-      script: 'dist/index.js',
+      script: 'dist/apps/workers/src/index.js',
       instances: 1,
       autorestart: true,
       max_restarts: 10,
