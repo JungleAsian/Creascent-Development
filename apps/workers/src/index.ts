@@ -20,6 +20,7 @@ import { processFollowUpJob } from './follow-up.worker.js'
 import { processReportsJob } from './reports.worker.js'
 import { processSheetsSyncJob } from './sheets-sync.worker.js'
 import { processReviewRequestJob } from './review-request.worker.js'
+import { processWorkflowRunJob } from './workflow-runner.worker.js'
 import { runTimeoutChecks } from './timeout-monitor.js'
 
 export const conversationWorker = createWorker(
@@ -76,6 +77,8 @@ export const followUpWorker = createWorker('follow-up', processFollowUpJob, 5)
 export const reportsWorker = createWorker('reports', processReportsJob, 1)
 export const sheetsSyncWorker = createWorker('sheets-sync', processSheetsSyncJob, 1)
 export const reviewRequestWorker = createWorker('review-request', processReviewRequestJob, 1)
+// Rev 3 — N8N-style automation workflows: walk the active workflow graph on trigger.
+export const workflowRunWorker = createWorker('workflow-run', processWorkflowRunJob, 3)
 
 // Timeout monitor: detects secretary inactivity + stale conversations every 5 min.
 const TIMEOUT_CHECK_INTERVAL_MS = 5 * 60 * 1000
