@@ -430,6 +430,18 @@ a {
   max-width: 100%;
 }
 
+/* Tables are the main thing that distorts on narrow screens: `main` is
+   overflow-x-hidden, so a table wider than the viewport gets clipped and unusable.
+   Make every table its own horizontal scroll area (the anonymous table box keeps
+   column alignment; the block box provides the scroll). Covers all current and
+   future tables without per-page wrappers. */
+.dashboard-content :where(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .dashboard-content :where(pre, code, .font-mono) {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
