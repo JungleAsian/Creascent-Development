@@ -168,7 +168,7 @@ export default function DeployPage({ searchParams }: PageProps) {
     },
     {
       action: 'deploy-local',
-      label: 'Start Local Plan',
+      label: 'Start Local',
       enabled: true,
       tone: 'secondary',
       readyText: 'Available anytime',
@@ -208,7 +208,7 @@ export default function DeployPage({ searchParams }: PageProps) {
     },
     {
       action: 'deploy-env',
-      label: 'Sync .env Plan',
+      label: 'Sync .env',
       enabled: vpsReady && envReady,
       tone: 'secondary',
       readyText: '.env readiness and VPS settings configured',
@@ -224,7 +224,7 @@ export default function DeployPage({ searchParams }: PageProps) {
     },
     {
       action: 'deploy-vps',
-      label: 'Deploy to VPS Plan',
+      label: 'Deploy to VPS',
       enabled: vpsReady && runtimeReady && envReady && phase1Ready,
       tone: 'danger',
       readyText: 'Phase 1, runtime, .env, and VPS prerequisites passed',
@@ -242,65 +242,100 @@ export default function DeployPage({ searchParams }: PageProps) {
     },
     {
       action: 'deploy-rollback',
-      label: 'Rollback Plan',
+      label: 'Rollback',
       enabled: deployLock?.action === 'vps',
       tone: 'secondary',
       readyText: 'Available after a VPS deployment request',
-      blockedText: 'Available after Deploy to VPS Plan is requested'
+      blockedText: 'Available after Deploy to VPS is requested'
     }
   ]
+  // A passing VPS runtime check (SSH reaches the box and services/Redis respond) is
+  // our proxy that the one-time provisioning (bootstrap + Redis + .env.production) is done.
+  const vpsProvisioned = vpsRuntimeChecked
   const guideSteps = [
     {
       id: 'runtime',
-      label: 'Check local runtime',
+      label: '1 · Check local runtime',
       action: 'post-deploy-check',
       complete: runtimeReady,
       ready: true,
-      detail: runtimeChecked && !runtimeReady ? 'Resolve local runtime issues before VPS deployment.' : 'Confirms local app, API, database, Redis, and demo login.'
-    },
-    {
-      id: 'phases',
-      label: 'Complete Phase 1',
-      action: '',
-      complete: phase1Ready,
-      ready: runtimeReady,
-      detail: 'Required before production deployment is requested.'
+      detail: runtimeChecked && !runtimeReady ? 'Resolve local runtime issues before VPS deployment.' : 'Confirms the local app, API, database, and Redis respond.'
     },
     {
       id: 'env',
-      label: 'Check .env readiness',
+      label: '2 · Check .env readiness',
       action: 'env-readiness-check',
       complete: envReady,
       ready: runtimeReady,
-      detail: envChecked && !envReady ? 'Resolve .env issues before VPS sync or deploy.' : 'Checks production database, Supabase, Redis, JWT, app URL, and VPS values without showing secrets.'
+      detail: envChecked && !envReady ? 'Resolve .env issues before VPS sync or deploy.' : 'Checks production database, Redis, JWT, app URL, and VPS values without showing secrets.'
     },
     {
       id: 'vps-settings',
-      label: 'Confirm VPS settings',
+      label: '3 · Confirm VPS settings',
       action: 'deploy-check',
       complete: vpsReady,
-      ready: runtimeReady && envReady,
+      ready: true,
       detail: vpsReady ? 'SSH host, user, key, and deploy path are configured.' : 'Fill host, user, SSH key, and deploy path in Settings.'
     },
     {
+      id: 'bootstrap',
+      label: '4 · Bootstrap the VPS (one-time)',
+      action: '',
+      complete: vpsProvisioned,
+      ready: vpsReady,
+      detail: 'Run vps-bootstrap.sh as root, then add the printed GitHub deploy key and re-run. Installs Node 20, pnpm, pm2, caddy. See "VPS Provisioning" below.'
+    },
+    {
+      id: 'redis',
+      label: '5 · Install Redis ≥5 (one-time)',
+      action: '',
+      complete: vpsProvisioned,
+      ready: vpsReady,
+      detail: 'The bootstrap script does NOT install Redis. On Ubuntu 22.04+: apt-get install redis-server (ships Redis 6/7, satisfies BullMQ).'
+    },
+    {
+      id: 'env-production',
+      label: '6 · Create .env.production (one-time)',
+      action: '',
+      complete: vpsProvisioned,
+      ready: vpsReady,
+      detail: 'On the VPS: cp .env.example .env.production and fill the secrets. PM2 loads it into every app automatically (ecosystem.config.cjs).'
+    },
+    {
       id: 'vps-status',
-      label: 'Check VPS runtime',
+      label: '7 · Check VPS runtime',
       action: 'deploy-status',
       complete: vpsRuntimeChecked,
       ready: vpsReady,
-      detail: vpsRuntimeChecked ? 'Latest VPS verification confirmed SSH runtime status.' : 'Checks VPS services, Redis, disk, and memory through SSH.'
+      detail: vpsRuntimeChecked ? 'SSH runtime confirmed: services, Redis, disk, and memory.' : 'Verifies the bootstrap + Redis through SSH.'
+    },
+    {
+      id: 'preflight',
+      label: '8 · Preflight VPS',
+      action: 'deploy-preflight',
+      complete: vpsProvisioned,
+      ready: vpsReady,
+      detail: 'Validates .env.production keys, NODE_ENV=production, Redis ≥5, and the toolchain on the VPS before deploying.'
+    },
+    {
+      id: 'phases',
+      label: '9 · Complete Phase 1',
+      action: '',
+      complete: phase1Ready,
+      ready: runtimeReady,
+      detail: 'Feature phases that must be done before a production deployment is requested.'
     },
     {
       id: 'deploy-request',
-      label: 'Request VPS deployment',
+      label: '10 · Deploy to VPS',
       action: 'deploy-vps',
       complete: deployLock?.action === 'vps',
       ready: vpsReady && runtimeReady && envReady && phase1Ready,
-      detail: 'Posts the deployment request and records the deployment lock.'
+      detail: 'Runs the remote pipeline: build → migrate → PM2 reload → health check.'
     },
     {
       id: 'vps-verify',
-      label: 'Verify deployed app',
+      label: '11 · Verify deployed app',
       action: 'vps-post-deploy-check',
       complete: vpsVerified,
       ready: vpsReady,
@@ -339,7 +374,7 @@ export default function DeployPage({ searchParams }: PageProps) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Deploy</h1>
-          <p className="mt-2 text-sm text-slate-400">Local machine and Hostinger VPS deployment controls.</p>
+          <p className="mt-2 text-sm text-slate-400">Local machine and VPS deployment controls.</p>
         </div>
         <BuildProgressGauge
           size="sm"
@@ -429,6 +464,33 @@ export default function DeployPage({ searchParams }: PageProps) {
           ))}
           </div>
         </details>
+      </div>
+
+      <div className="mt-6">
+      <CompactSection
+        title="VPS Provisioning (one-time)"
+        subtitle="Bare-server setup that must happen before the deploy buttons unlock. Run these once over SSH."
+        badge={<span className={vpsProvisioned ? 'rounded bg-emerald-950 px-2 py-1 text-xs text-emerald-200' : 'rounded bg-amber-950 px-2 py-1 text-xs text-amber-200'}>{vpsProvisioned ? 'provisioned' : 'not provisioned'}</span>}
+      >
+        <ol className="space-y-4 text-sm text-slate-300">
+          <li>
+            <p className="font-medium text-slate-100">1 · Bootstrap (Node 20 / pnpm / pm2 / caddy + GitHub deploy key)</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-slate-950 p-2 text-xs text-slate-300">{`ssh root@<vps> 'bash -s' < tools/deploy/setup/vps-bootstrap.sh`}</pre>
+            <p className="mt-1 text-xs text-slate-500">It prints a public key — add it at the repo → Settings → Deploy keys (read-only is fine), then re-run the same command to finish cloning.</p>
+          </li>
+          <li>
+            <p className="font-medium text-slate-100">2 · Install Redis ≥5 (the bootstrap script does NOT install it)</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-slate-950 p-2 text-xs text-slate-300">{`ssh root@<vps> 'apt-get install -y redis-server && systemctl enable --now redis-server'`}</pre>
+            <p className="mt-1 text-xs text-slate-500">Ubuntu 22.04+ ships Redis 6/7, which satisfies BullMQ. Required — the workers won&apos;t process jobs without it.</p>
+          </li>
+          <li>
+            <p className="font-medium text-slate-100">3 · Create the production env (your secrets)</p>
+            <pre className="mt-1 overflow-x-auto rounded bg-slate-950 p-2 text-xs text-slate-300">{`cd ${env.VPS_DEPLOY_PATH || '/var/www/docmee'} && cp .env.example .env.production && nano .env.production`}</pre>
+            <p className="mt-1 text-xs text-slate-500">Fill JWT_SECRET, JWT_REFRESH_SECRET, the database keys, and ANTHROPIC_API_KEY. PM2 loads it into every app automatically (ecosystem.config.cjs) and the deploy sources it before the build.</p>
+          </li>
+        </ol>
+        <p className="mt-4 text-xs text-slate-500">After these three, run <span className="text-slate-300">Check VPS runtime</span> → <span className="text-slate-300">Preflight VPS</span>; the checks go green and the red <span className="text-slate-300">Deploy to VPS</span> button unlocks.</p>
+      </CompactSection>
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -641,9 +703,11 @@ export default function DeployPage({ searchParams }: PageProps) {
       <div className="mt-6">
       <CompactSection title="Service Layout" subtitle="Technical service map for the deployed app.">
         <h2 className="text-sm font-semibold">Service Layout</h2>
-        <div className="mt-3 grid gap-2 md:grid-cols-4">
-          {['docmee-api :3001', 'docmee-workers', 'docmee-inboxos :3000', 'docmee-licensekit :3002'].map((service) => <div key={service} className="rounded border border-slate-800 px-3 py-2 text-sm text-slate-300">{service}</div>)}
+        <p className="mt-1 text-xs text-slate-500">PM2 processes defined in ecosystem.config.cjs.</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {['docmee-api :3001', 'docmee-workers', 'docmee-inboxos :3000'].map((service) => <div key={service} className="rounded border border-slate-800 px-3 py-2 text-sm text-slate-300">{service}</div>)}
         </div>
+        <p className="mt-2 text-xs text-slate-500">licensekit is a separate workspace and is not part of the PM2 deploy.</p>
       </CompactSection>
       </div>
 
