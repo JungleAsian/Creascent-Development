@@ -86,7 +86,7 @@ function vpsPreflight(): { ok: boolean } {
   const env = `${deployPath}/.env.production`
   const keys = REQUIRED_PROD_ENV.map((entry) => entry.key).join(' ')
   const remote = [
-    `if [ -f ${env} ]; then echo ENVFILE_OK; for k in ${keys} NODE_ENV; do if grep -qE ^$k= ${env}; then echo ENV_OK $k=$(grep -E ^$k= ${env} | head -1 | cut -d= -f2-); else echo ENV_MISSING $k; fi; done; else echo ENVFILE_MISSING; fi`,
+    `if [ -f ${env} ]; then echo ENVFILE_OK; for k in ${keys} NODE_ENV; do if grep -qE ^$k= ${env}; then echo ENV_OK $k=$(grep -E ^$k= ${env} | head -1 | cut -d= -f2-); else echo ENV_MISSING $k; fi; done; if grep -qE '^DATABASE_URL=' ${env}; then (grep -E '^DATABASE_URL=' ${env} | grep -qE 'sslmode=' && echo DBURL_SSL=yes || echo DBURL_SSL=no); (grep -E '^DATABASE_URL=' ${env} | grep -qE '@postgres[:/]' && echo DBURL_DOCKER=yes || echo DBURL_DOCKER=no); fi; else echo ENVFILE_MISSING; fi`,
     `echo REDIS $(redis-cli INFO server 2>/dev/null | grep -i redis_version | cut -d: -f2 || echo none)`,
     `for t in node pnpm pm2 caddy; do if command -v $t >/dev/null 2>&1; then echo TOOL_OK $t; else echo TOOL_MISSING $t; fi; done`
   ].join('; ')
@@ -113,6 +113,13 @@ function vpsPreflight(): { ok: boolean } {
     if (nodeEnv !== 'production') {
       log('deploy', `NODE_ENV is "${nodeEnv ?? 'unset'}" — must be production (a dev value breaks the inboxos build and loads the wrong env).`, 'error')
       critical++
+    }
+    // DATABASE_URL value sanity (checked redacted on the VPS — no secret echoed).
+    if (/DBURL_DOCKER=yes/.test(out)) {
+      log('deploy', 'DATABASE_URL host is "postgres" (a Docker service name) — it will not resolve on the VPS. Use the real DB host, e.g. the Supabase session pooler.', 'error')
+      critical++
+    } else if (/DBURL_SSL=no/.test(out)) {
+      log('deploy', 'DATABASE_URL has no sslmode — Supabase/managed Postgres needs ?sslmode=require appended (the client does not enable SSL on its own).', 'warn')
     }
   }
 
