@@ -66,6 +66,14 @@ function isFollowUpTypeDisabled(settings: unknown, type: string): boolean {
   return automations?.followUps?.[type] === false
 }
 
+/** Rev 2 Approval node: the clinic requires secretary sign-off before sending this
+ *  follow-up type when clinic.settings.automations.requireApproval[type] === true. */
+function requiresApproval(settings: unknown, type: string): boolean {
+  const automations = (settings as { automations?: { requireApproval?: Record<string, unknown> } } | null)
+    ?.automations
+  return automations?.requireApproval?.[type] === true
+}
+
 function isPatientOptedOut(patient: Patient): boolean {
   return (patient.metadata as { optedOut?: unknown }).optedOut === true
 }
@@ -273,21 +281,41 @@ export async function processFollowUpJob(job: Job): Promise<void> {
       text = template.body
     }
 
-    // Idempotency: claim a follow_ups row so a re-fired job never double-sends.
-    const followUp = await followUps.createIfAbsent({
-      clinicId: data.clinicId,
-      patientId: data.patientId,
-      ...(data.appointmentId ? { appointmentId: data.appointmentId } : {}),
-      type: data.type,
-      ...(data.conversationId ? { metadata: { conversationId: data.conversationId } } : {}),
-    })
+    // Approval gate (Rev 2): when the clinic requires sign-off for this type, store
+    // the drafted message for a secretary instead of sending. On approval the same
+    // job re-runs with approved:true, so every consent/window/anti-spam re-check above
+    // runs again at the real send time. Skipped for the approved re-entry.
+    if (!data.approved && requiresApproval(clinic.settings, data.type)) {
+      await followUps.upsertPendingApproval({
+        clinicId: data.clinicId,
+        patientId: data.patientId,
+        ...(data.appointmentId ? { appointmentId: data.appointmentId } : {}),
+        type: data.type,
+        metadata: { draft: text, job: data, ...(data.conversationId ? { conversationId: data.conversationId } : {}) },
+      })
+      console.log(`[follow-up] ${data.type} queued for approval (clinic ${data.clinicId})`)
+      return
+    }
+
+    // Idempotency: claim a follow_ups row so a re-fired job never double-sends. An
+    // approved re-entry atomically claims its existing pending_approval row instead.
+    const followUp = data.approved && data.followUpId
+      ? await followUps.claimForSend(data.clinicId, data.followUpId)
+      : await followUps.createIfAbsent({
+          clinicId: data.clinicId,
+          patientId: data.patientId,
+          ...(data.appointmentId ? { appointmentId: data.appointmentId } : {}),
+          type: data.type,
+          ...(data.conversationId ? { metadata: { conversationId: data.conversationId } } : {}),
+        })
     if (!followUp) {
-      console.log(`[follow-up] ${data.type} already recorded for appointment ${data.appointmentId}`)
+      console.log(`[follow-up] ${data.type} already recorded/claimed; skipping`)
       return
     }
 
     const wamid = await sendWhatsAppText(account.accountId, account.accessTokenEnc ?? '', handle, text)
-    await followUps.markSent(data.clinicId, followUp.id)
+    // The approved path was already flipped to 'sent' by claimForSend.
+    if (!(data.approved && data.followUpId)) await followUps.markSent(data.clinicId, followUp.id)
 
     // Surface the delivered follow-up in the secretary's inbox thread (Req 4/14).
     await threadFollowUpIntoInbox(

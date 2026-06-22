@@ -49,6 +49,11 @@ export const FollowUpJobSchema = z.object({
   conversationId: z.string().uuid().optional(),
   /** no_response self-cancel: the patient's last-inbound time when the job was scheduled. */
   silentSinceIso: z.string().optional(),
+  /** Rev 2 Approval node: a re-enqueued job after a secretary approved the draft —
+   *  skips the approval gate but re-runs every consent/window/anti-spam re-check. */
+  approved: z.boolean().optional(),
+  /** The pending_approval follow_ups row being approved (claimed atomically on send). */
+  followUpId: z.string().uuid().optional(),
 })
 
 export type FollowUpJobData = z.infer<typeof FollowUpJobSchema>

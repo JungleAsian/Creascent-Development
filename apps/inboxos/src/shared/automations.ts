@@ -87,6 +87,8 @@ export const PROACTIVE_CAP_PER_DAY = 5
 export interface AutomationsConfig {
   /** Per-type enable flag. Absent/true = enabled (backward-compatible default-on). */
   followUps?: Partial<Record<FollowUpType, boolean>>
+  /** Rev 2 Approval node: per-type "require secretary sign-off before send". Default OFF. */
+  requireApproval?: Partial<Record<FollowUpType, boolean>>
   reviewRequest?: { enabled?: boolean }
 }
 
@@ -104,6 +106,11 @@ export function isFollowUpEnabled(config: AutomationsConfig, type: FollowUpType)
 /** Is review-request automation enabled? Defaults to ON. */
 export function isReviewEnabled(config: AutomationsConfig): boolean {
   return config.reviewRequest?.enabled !== false
+}
+
+/** Does a follow-up type require secretary sign-off before sending? Defaults to OFF. */
+export function requiresApproval(config: AutomationsConfig, type: FollowUpType): boolean {
+  return config.requireApproval?.[type] === true
 }
 
 /** How many follow-up automations are currently active, of the total modelled. */

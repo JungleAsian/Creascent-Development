@@ -27,6 +27,7 @@ import doctorsRoute from './routes/doctors.js'
 import servicesRoute from './routes/services.js'
 import appointmentsRoute from './routes/appointments.js'
 import customFlowsRoute from './routes/custom-flows.js'
+import followUpsRoute from './routes/follow-ups.js'
 import kbUploadRoute from './routes/kb-upload.js'
 import analyticsRoute from './routes/analytics.js'
 import qosRoute from './routes/qos.js'
@@ -97,6 +98,7 @@ export async function buildApp() {
   // Screen 2 — operational booking calendar (declares its own /clinics/:id/… paths)
   await app.register(appointmentsRoute)
   await app.register(customFlowsRoute)
+  await app.register(followUpsRoute)
   await app.register(kbUploadRoute)
   await app.register(analyticsRoute)
   await app.register(qosRoute)
