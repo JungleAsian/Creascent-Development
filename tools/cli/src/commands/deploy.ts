@@ -249,8 +249,11 @@ deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis prefligh
   const deployPath = process.env.VPS_DEPLOY_PATH as string
   const ecosystem = process.env.PM2_ECOSYSTEM_FILE || 'ecosystem.config.cjs'
   // Build product apps in dependency order (db first). Overridable for unusual setups.
+  // Build EVERY workspace package the apps import at runtime (not just db) plus the
+  // three apps — otherwise @docmee/queue, @docmee/agents, etc. have no dist and the
+  // apps fail at runtime with "Cannot find package". Topological order is handled by pnpm.
   const buildCmd = process.env.VPS_BUILD_CMD
-    || 'pnpm install --frozen-lockfile && pnpm --filter @docmee/db --filter @docmee/api --filter @docmee/workers --filter @docmee/inboxos build'
+    || 'pnpm install --frozen-lockfile && pnpm --filter "./packages/*" --filter @docmee/api --filter @docmee/workers --filter @docmee/inboxos build'
   const migrateCmd = process.env.VPS_MIGRATE_CMD || 'pnpm --filter @docmee/db db:migrate'
 
   // 1) Push the current HEAD to the deploy branch the VPS pulls from.
