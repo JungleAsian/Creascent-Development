@@ -608,9 +608,10 @@ export default function DeployPage({ searchParams }: PageProps) {
               </p>
             </form>
           ))}
-          {/* Open the deployed Docmee panel on the VPS (a link, not an action). */}
+          {/* Open the deployed Docmee panel — only active once a VPS deployment is
+              verified (the app is actually up and reachable). */}
           <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
-            {docmeeUrl ? (
+            {vpsVerified && docmeeUrl ? (
               <a
                 href={`${docmeeUrl}/login`}
                 target="_blank"
@@ -624,8 +625,12 @@ export default function DeployPage({ searchParams }: PageProps) {
                 Open Docmee
               </button>
             )}
-            <p className={docmeeUrl ? 'mt-2 break-all text-xs text-emerald-300' : 'mt-2 text-xs text-amber-300'}>
-              {docmeeUrl ? `Opens ${docmeeUrl} in a new tab` : 'Set APP_URL / VPS_DOMAIN or VPS_HOST first'}
+            <p className={vpsVerified && docmeeUrl ? 'mt-2 break-all text-xs text-emerald-300' : 'mt-2 text-xs text-amber-300'}>
+              {!docmeeUrl
+                ? 'Set APP_URL / VPS_DOMAIN or VPS_HOST first'
+                : !vpsVerified
+                  ? 'Available after a verified VPS deployment (run Verify VPS Deployment)'
+                  : `Opens ${docmeeUrl} in a new tab`}
             </p>
           </div>
         </div>
