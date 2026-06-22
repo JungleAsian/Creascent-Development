@@ -541,6 +541,34 @@ export interface CustomFlow {
   updatedAt: string
 }
 
+// ── Rev 3: N8N-style automation workflows ───────────────────────────────────────
+export type WorkflowStatus = 'draft' | 'active'
+export type WorkflowNodeKind = 'trigger' | 'logic' | 'action'
+export interface WorkflowNode {
+  id: string
+  kind: WorkflowNodeKind
+  type: string
+  config: Record<string, unknown>
+  x: number
+  y: number
+}
+export interface WorkflowEdge {
+  id: string
+  source: string
+  target: string
+  sourceHandle?: string | null
+}
+export interface Workflow {
+  id: string
+  clinicId: string
+  name: string
+  status: WorkflowStatus
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  createdAt: string
+  updatedAt: string
+}
+
 /** A prebuilt flow served by GET /clinics/:id/custom-flows/templates. */
 export interface FlowTemplate {
   key: string
