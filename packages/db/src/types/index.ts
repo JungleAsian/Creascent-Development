@@ -76,6 +76,11 @@ export type {
   // Follow-ups (P18)
   FollowUp,
   FollowUpStatus,
+  Workflow,
+  WorkflowStatus,
+  WorkflowNodeKind,
+  WorkflowNode,
+  WorkflowEdge,
   // Generated reports (Req 37)
   GeneratedReport,
   ReportType,

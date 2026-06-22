@@ -71,6 +71,11 @@ export type {
   CustomFlowStep,
   FollowUp,
   FollowUpStatus,
+  Workflow,
+  WorkflowStatus,
+  WorkflowNodeKind,
+  WorkflowNode,
+  WorkflowEdge,
   GeneratedReport,
   ReportType,
 } from './types/index.js'
@@ -100,6 +105,7 @@ export {
   createQosRepository,
   createReportsRepository,
   createPushSubscriptionsRepository,
+  createWorkflowsRepository,
 } from './repositories/index.js'
 
 export type {
@@ -173,4 +179,7 @@ export type {
   CreateGeneratedReportInput,
   PushSubscriptionsRepository,
   UpsertPushSubscriptionInput,
+  WorkflowsRepository,
+  CreateWorkflowInput,
+  UpdateWorkflowInput,
 } from './repositories/index.js'
