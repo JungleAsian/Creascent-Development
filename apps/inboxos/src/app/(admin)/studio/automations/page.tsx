@@ -21,6 +21,7 @@ import {
   readAutomations,
   isFollowUpEnabled,
   isReviewEnabled,
+  requiresApproval,
   activeCount,
   type AutomationDef,
   type ScheduleOffset,
@@ -215,6 +216,20 @@ function AutomationSections({ clinic, clinicId }: { clinic: Clinic; clinicId: st
                         🕑 {scheduleLabel(t, def.offset)}
                       </span>
                       <WindowBadge def={def} />
+                      {on && (
+                        <label className="inline-flex items-center gap-1 text-[11px] text-gray-500" title={t('automations.requireApproval.hint')}>
+                          <input
+                            type="checkbox"
+                            checked={requiresApproval(config, def.type)}
+                            disabled={save.isPending}
+                            onChange={(e) =>
+                              patchAutomations({ requireApproval: { ...config.requireApproval, [def.type]: e.target.checked } })
+                            }
+                            className="h-3 w-3 rounded border-gray-300"
+                          />
+                          {t('automations.requireApproval')}
+                        </label>
+                      )}
                     </div>
                   </div>
                   <Toggle
@@ -231,6 +246,9 @@ function AutomationSections({ clinic, clinicId }: { clinic: Clinic; clinicId: st
           })}
         </ul>
       </section>
+
+      {/* ── Approval queue (Rev 2): drafts awaiting secretary sign-off ────────── */}
+      <PendingApprovals clinicId={clinicId} />
 
       {/* ── Section B: Review requests (Req 38) ──────────────────────────────── */}
       <ReviewSection
@@ -401,6 +419,70 @@ function CustomFlowsSummary({ clinicId }: { clinicId: string }) {
           ))}
         </ul>
       )}
+    </section>
+  )
+}
+
+// ── Rev 2 Approval node: drafts the worker parked for a secretary to sign off ──────
+type PendingFollowUp = { id: string; type: string; draft: string; createdAt: string }
+
+function PendingApprovals({ clinicId }: { clinicId: string }) {
+  const { t } = useI18n()
+  const qc = useQueryClient()
+  const key = ['follow-up-approvals', clinicId]
+  const query = useQuery({
+    queryKey: key,
+    enabled: Boolean(clinicId),
+    queryFn: () => api.get<{ pending: PendingFollowUp[] }>(`/clinics/${clinicId}/follow-ups/pending`),
+  })
+  const act = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: 'approve' | 'reject' }) =>
+      api.post(`/clinics/${clinicId}/follow-ups/${id}/${action}`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+  })
+  const pending = query.data?.pending ?? []
+  // Hide the section entirely when there's nothing to approve.
+  if (!query.isLoading && pending.length === 0) return null
+
+  return (
+    <section>
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+        {t('automations.approvals.title')}
+        {pending.length > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-200">
+            {pending.length}
+          </span>
+        )}
+      </h2>
+      <p className="mb-3 text-xs text-gray-500">{t('automations.approvals.desc')}</p>
+      <ul className="space-y-2">
+        {pending.map((p) => (
+          <li key={p.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+              {t(`automations.type.${p.type}` as Parameters<Translate>[0])}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap rounded-md bg-white px-2.5 py-1.5 text-sm dark:bg-gray-900">{p.draft}</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => act.mutate({ id: p.id, action: 'approve' })}
+                disabled={act.isPending}
+                className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {t('automations.approvals.approve')}
+              </button>
+              <button
+                type="button"
+                onClick={() => act.mutate({ id: p.id, action: 'reject' })}
+                disabled={act.isPending}
+                className="rounded-md border border-gray-300 px-3 py-1 text-xs hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                {t('automations.approvals.reject')}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

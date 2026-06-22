@@ -570,7 +570,7 @@ export interface CustomFlow {
 
 // ── Follow-ups (P18 — Gap #37) ──────────────────────────────────────────────────
 
-export type FollowUpStatus = 'pending' | 'sent' | 'clicked' | 'skipped'
+export type FollowUpStatus = 'pending' | 'sent' | 'clicked' | 'skipped' | 'pending_approval' | 'rejected'
 
 /** Tracks an automated follow-up (e.g. a post-appointment review request). */
 export interface FollowUp {

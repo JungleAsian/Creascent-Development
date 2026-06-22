@@ -33,6 +33,17 @@ export interface FollowUpsRepository {
   markSent(clinicId: string, id: string): Promise<void>
   /** Stamp the click and flip status → 'clicked'. Returns the row (or null if unknown). */
   markClicked(id: string): Promise<FollowUp | null>
+  // ── Rev 2 Approval node ──────────────────────────────────────────────────────
+  /** Store/refresh a drafted follow-up awaiting secretary sign-off (status
+   *  'pending_approval'); metadata carries { draft, job } for preview + re-enqueue. */
+  upsertPendingApproval(data: CreateFollowUpInput): Promise<FollowUp>
+  /** Drafted follow-ups awaiting a secretary decision. */
+  listPendingApprovals(clinicId: string): Promise<FollowUp[]>
+  findById(clinicId: string, id: string): Promise<FollowUp | null>
+  /** Atomically claim a pending_approval row for sending (→ 'sent'). Null if already claimed/sent. */
+  claimForSend(clinicId: string, id: string): Promise<FollowUp | null>
+  /** A secretary declined the draft (pending_approval → 'rejected'; never sent). */
+  reject(clinicId: string, id: string): Promise<void>
 }
 
 export function createFollowUpsRepository(sql: Sql): FollowUpsRepository {
@@ -108,6 +119,55 @@ export function createFollowUpsRepository(sql: Sql): FollowUpsRepository {
         RETURNING *
       `
       return rows[0] ?? null
+    },
+
+    async upsertPendingApproval(data) {
+      const rows = await sql<FollowUp[]>`
+        INSERT INTO follow_ups (clinic_id, patient_id, appointment_id, type, status, metadata)
+        VALUES (
+          ${data.clinicId},
+          ${data.patientId},
+          ${data.appointmentId ?? null},
+          ${data.type},
+          'pending_approval',
+          ${sql.json(toJson(data.metadata ?? {}))}
+        )
+        ON CONFLICT (appointment_id, type) WHERE appointment_id IS NOT NULL
+          DO UPDATE SET status = 'pending_approval', metadata = EXCLUDED.metadata, created_at = NOW()
+        RETURNING *
+      `
+      return rows[0]!
+    },
+
+    async listPendingApprovals(clinicId) {
+      return sql<FollowUp[]>`
+        SELECT * FROM follow_ups
+        WHERE clinic_id = ${clinicId} AND status = 'pending_approval'
+        ORDER BY created_at DESC
+      `
+    },
+
+    async findById(clinicId, id) {
+      const rows = await sql<FollowUp[]>`
+        SELECT * FROM follow_ups WHERE clinic_id = ${clinicId} AND id = ${id} LIMIT 1
+      `
+      return rows[0] ?? null
+    },
+
+    async claimForSend(clinicId, id) {
+      const rows = await sql<FollowUp[]>`
+        UPDATE follow_ups SET status = 'sent', review_sent_at = NOW()
+        WHERE clinic_id = ${clinicId} AND id = ${id} AND status = 'pending_approval'
+        RETURNING *
+      `
+      return rows[0] ?? null
+    },
+
+    async reject(clinicId, id) {
+      await sql`
+        UPDATE follow_ups SET status = 'rejected'
+        WHERE clinic_id = ${clinicId} AND id = ${id} AND status = 'pending_approval'
+      `
     },
   }
 }
