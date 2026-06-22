@@ -593,9 +593,15 @@ export default function DeployPage({ searchParams }: PageProps) {
       <div className="mt-6">
       <CompactSection title="Production .env Readiness" subtitle="Checks required setup values without showing tokens, passwords, or keys." badge={<span className={envReady ? 'rounded bg-emerald-950 px-2 py-1 text-xs text-emerald-200' : envChecked ? 'rounded bg-red-950 px-2 py-1 text-xs text-red-200' : 'rounded bg-slate-800 px-2 py-1 text-xs text-slate-300'}>{envReady ? 'ready' : envChecked ? 'has issues' : 'not checked'}</span>}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold">Production .env Readiness</h2>
             <p className="mt-2 text-sm text-slate-400">Checks required setup values without showing tokens, passwords, or keys.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              Reads from <a href={`file://${envFile.replace(/\\/g, '/')}`} className="break-all font-mono text-sky-300 hover:text-sky-200">{envFile}</a>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              The VPS runs its own file: <span className="break-all font-mono text-slate-300">{(env.VPS_DEPLOY_PATH || '/var/www/docmee')}/.env.production</span> (not synced from here).
+            </p>
           </div>
           <form action="/api/actions" method="post">
             <input type="hidden" name="action" value="env-readiness-check" />
