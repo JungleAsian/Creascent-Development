@@ -29,7 +29,9 @@ const baseInput = (over: Partial<ClinicBotInput> = {}): ClinicBotInput => ({
 })
 
 const makeDeps = (over: Partial<ClinicBotDeps> = {}): ClinicBotDeps => ({
-  searchKb: vi.fn().mockResolvedValue([]),
+  // Default: a KB match exists, so the bot answers (the grounded path). Tests that
+  // want the no-grounding handoff override searchKb with [].
+  searchKb: vi.fn().mockResolvedValue([{ title: 'Información', content: 'Abrimos de 9 a 17.', similarity: 0.9 }]),
   complete: vi.fn().mockResolvedValue('Abrimos de 9 a 17.'),
   sendText: vi.fn().mockResolvedValue(undefined),
   logError: vi.fn().mockResolvedValue(undefined),
@@ -93,7 +95,7 @@ describe('runClinicBot', () => {
   it('emergency → handoff, no reply sent', async () => {
     const deps = makeDeps()
     const result = await runClinicBot(baseInput({ message: 'no puedo respirar' }), deps)
-    expect(result).toEqual({ replied: false, triggeredHandoff: true, language: 'es' })
+    expect(result).toEqual({ replied: false, triggeredHandoff: true, handoffReason: 'medical_safety', language: 'es', citations: [] })
     expect(deps.sendText).not.toHaveBeenCalled()
     expect(deps.complete).not.toHaveBeenCalled()
   })
@@ -132,10 +134,11 @@ describe('runClinicBot', () => {
   })
 
   it('clinic rules are injected into the system prompt regardless of the query', async () => {
-    const deps = makeDeps({ searchKb: vi.fn().mockResolvedValue([]) })
+    // A KB match is present (default), so the bot reaches the prompt — rules must
+    // appear there even though the query is unrelated to them.
+    const deps = makeDeps()
     const rulesText = 'Solo atendemos pacientes mayores de 18 años. No damos precios por chat.'
-    // No KB match for this message → rules must still be present.
-    await runClinicBot(baseInput({ clinic: { ...clinic, rulesText }, message: 'tienen estacionamiento?' }), deps)
+    await runClinicBot(baseInput({ clinic: { ...clinic, rulesText } }), deps)
     const system = (deps.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
     expect(system).toContain('CLINIC-SPECIFIC RULES')
     expect(system).toContain(rulesText)
@@ -194,5 +197,34 @@ describe('runClinicBot', () => {
       sendText: vi.fn().mockRejectedValue(new Error('network down')),
     })
     await expect(runClinicBot(baseInput(), deps)).resolves.toMatchObject({ replied: true })
+  })
+
+  it('⑤ a real question with no KB grounding → safe handoff, no LLM answer', async () => {
+    const deps = makeDeps({ searchKb: vi.fn().mockResolvedValue([]) })
+    const result = await runClinicBot(baseInput({ message: '¿tienen estacionamiento?' }), deps)
+    expect(result.triggeredHandoff).toBe(true)
+    expect(result.handoffReason).toBe('low_confidence')
+    // The model is never asked to answer ungrounded.
+    expect(deps.complete).not.toHaveBeenCalled()
+    const sent = (deps.sendText as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(sent).toContain('clínica')
+  })
+
+  it('⑤ a non-question with no KB still gets a normal reply (no over-escalation)', async () => {
+    const deps = makeDeps({ searchKb: vi.fn().mockResolvedValue([]) })
+    const result = await runClinicBot(baseInput({ message: 'gracias, hasta luego' }), deps)
+    expect(result.triggeredHandoff).toBe(false)
+    expect(deps.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('⑥ a grounded reply cites the KB titles it used', async () => {
+    const deps = makeDeps({
+      searchKb: vi.fn().mockResolvedValue([
+        { title: 'Horario', content: 'Lun-Vie 9-17', similarity: 0.92 },
+        { title: 'Precios', content: 'Consulta: 500', similarity: 0.81 },
+      ]),
+    })
+    const result = await runClinicBot(baseInput(), deps)
+    expect(result.citations).toEqual(['Horario', 'Precios'])
   })
 })
