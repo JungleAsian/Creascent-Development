@@ -435,18 +435,18 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <input type="hidden" name="action" value="phase-build-watch" />
               <input type="hidden" name="from" value={uiDevelopmentPhase} />
               <input type="hidden" name="workflow" value="ui-development" />
-              <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 inline-flex items-center gap-1" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}><Icon name="build" className="h-3.5 w-3.5" />Build screens</button>
+              <button disabled={!uiDevelopmentStartPassed || uiDevelopmentLive || uiDevelopmentBuildable.length === 0 || readyCritical > 0} className="rounded-md bg-cyan-500 px-2 py-0.5 text-[11px] leading-5 font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 inline-flex items-center gap-1" title={readyCritical > 0 ? `${readyCritical} critical setup issue(s) must be fixed first` : !uiDevelopmentStartPassed ? 'Run the UI start check first' : uiDevelopmentLive ? 'UI development is already running' : uiDevelopmentBuildable.length === 0 ? 'No screens left to build — all are built and awaiting review. Use Improve Design on a row to rework one.' : 'Start building the planned screens'}><Icon name="build" className="h-3.5 w-3.5" />Build screens</button>
             </form>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="phase-build-stop" />
-              <button disabled={!uiDevelopmentLive} className="rounded-md border border-red-800 px-2.5 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Stop</button>
+              <button disabled={!uiDevelopmentLive} className="rounded-md border border-red-800 px-2 py-0.5 text-[11px] leading-5 font-medium text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500">Stop</button>
             </form>
             <details className="relative">
-              <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Rebuild all ▾</summary>
+              <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800">Rebuild all ▾</summary>
               <form action="/api/actions" method="post" className="absolute left-0 z-20 mt-1 w-72 rounded-md border border-slate-700 bg-slate-900 p-3 shadow-lg">
                 <input type="hidden" name="action" value="ui-build-all" />
                 <p className="text-xs leading-5 text-slate-300">Sequentially build all <span className="font-semibold text-cyan-200">{uiDevelopmentRecords.filter((row) => row.status !== 'complete').length}</span> not-yet-approved screen(s) with Claude Code, one after another. Each lands in <span className="font-semibold text-cyan-200">review</span> for you to approve later. Runs unattended and uses Claude credits.</p>
-                <button disabled={uiDevelopmentLive} className="mt-2 w-full rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Rebuild all sequentially</button>
+                <button disabled={uiDevelopmentLive} className="mt-2 w-full rounded-md bg-cyan-500 px-2 py-0.5 text-[11px] leading-5 font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Rebuild all sequentially</button>
               </form>
             </details>
             <form action="/api/actions" method="post">
@@ -454,7 +454,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <input type="hidden" name="phase" value={uiDevelopmentPhase} />
               <input type="hidden" name="workflow" value="ui-development" />
               <input type="hidden" name="redirectTo" value="/docmee-audit" />
-              <button className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Start check</button>
+              <button className="rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800">Start check</button>
             </form>
           </div>
 
@@ -464,7 +464,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
             {mockupRunLive ? (
               <form action="/api/actions" method="post">
                 <input type="hidden" name="action" value="ui-mockup-stop" />
-                <button className="inline-flex items-center gap-1 rounded-md border border-red-800 px-2.5 py-1.5 text-xs font-medium text-red-200 hover:bg-red-950/40" title={designRun.message ?? 'Stop bulk mockup generation'}>
+                <button className="inline-flex items-center gap-1 rounded-md border border-red-800 px-2 py-0.5 text-[11px] leading-5 font-medium text-red-200 hover:bg-red-950/40" title={designRun.message ?? 'Stop bulk mockup generation'}>
                   <Icon name="stop" className="h-3.5 w-3.5" />Stop{typeof designRun.processed === 'number' && typeof designRun.total === 'number' ? ` (${designRun.processed}/${designRun.total})` : ''}
                 </button>
               </form>
@@ -474,7 +474,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                 <button
                   disabled={missingMockupCount === 0}
                   title={missingMockupCount === 0 ? 'Every screen already has a mockup' : `Sequentially generate mockups for the ${missingMockupCount} screen(s) without one`}
-                  className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                  className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-2 py-0.5 text-[11px] leading-5 font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                 >
                   <Icon name="plus" className="h-3.5 w-3.5" />Mockup all{missingMockupCount > 0 ? ` (${missingMockupCount})` : ''}
                 </button>
@@ -486,7 +486,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={generatedMockupCount === 0}
                 title={generatedMockupCount === 0 ? 'No generated mockups to save yet' : `Save all ${generatedMockupCount} generated mockup(s) to the Library`}
-                className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Save all{generatedMockupCount > 0 ? ` (${generatedMockupCount})` : ''}
               </button>
@@ -497,7 +497,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={savedMockups().length === 0}
                 title={savedMockups().length === 0 ? 'No saved mockups in the Library yet' : `Export all ${savedMockups().length} saved screen(s) to one PDF, saved in the Library`}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="report" className="h-3.5 w-3.5" />PDF
               </button>
@@ -517,7 +517,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={approvedBuildableCount === 0 || mockupRunLive || uiDevelopmentLive}
                 title={approvedBuildableCount === 0 ? 'No screens to build — generate a mockup first' : mockupRunLive || uiDevelopmentLive ? 'A build/design run is already in progress' : `Sequentially build the ${approvedBuildableCount} screen(s) that have an approved mockup (not yet complete) into real components`}
-                className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-0.5 text-[11px] leading-5 font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
                 <Icon name="build" className="h-3.5 w-3.5" />Approve &amp; build all{approvedBuildableCount > 0 ? ` (${approvedBuildableCount})` : ''}
               </button>
@@ -532,7 +532,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={builtScreenCount === 0 || mockupRunLive || uiDevelopmentLive}
                 title={builtScreenCount === 0 ? 'No built screens to verify' : mockupRunLive || uiDevelopmentLive ? 'A run is already in progress' : `Read-only check that all ${builtScreenCount} built screen(s) are wired to the backend (cheap model, no rebuild)`}
-                className="inline-flex items-center gap-1 rounded-md border border-sky-700 bg-sky-950/30 px-2.5 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md border border-sky-700 bg-sky-950/30 px-2 py-0.5 text-[11px] leading-5 font-medium text-sky-100 hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="check" className="h-3.5 w-3.5" />Verify wiring{builtScreenCount > 0 ? ` (${builtScreenCount})` : ''}
               </button>
@@ -542,7 +542,7 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
               <button
                 disabled={wiringFlaggedCount === 0 || mockupRunLive || uiDevelopmentLive}
                 title={wiringFlaggedCount === 0 ? 'No screens flagged — run Verify wiring first' : mockupRunLive || uiDevelopmentLive ? 'A run is already in progress' : `Wire the ${wiringFlaggedCount} flagged screen(s) to the backend — targeted edits, no rebuild`}
-                className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="inline-flex items-center gap-1 rounded-md bg-cyan-500 px-2 py-0.5 text-[11px] leading-5 font-medium text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
                 <Icon name="auto" className="h-3.5 w-3.5" />Wire flagged{wiringFlaggedCount > 0 ? ` (${wiringFlaggedCount})` : ''}
               </button>
@@ -553,12 +553,12 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
           {/* Review — see the result */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Review</span>
-            <a href={`${reviewUrl}/inbox`} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400">Open inbox →</a>
+            <a href={`${reviewUrl}/inbox`} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-md bg-emerald-500 px-2 py-0.5 text-[11px] leading-5 font-semibold text-slate-950 hover:bg-emerald-400">Open inbox →</a>
             <form action="/api/actions" method="post">
               <input type="hidden" name="action" value="app-launch" />
-              <button className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Launch local</button>
+              <button className="rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800">Launch local</button>
             </form>
-            <Link href="/deploy" className="rounded-md border border-sky-800 px-2.5 py-1.5 text-xs text-sky-300 hover:bg-sky-950/40">Deploy →</Link>
+            <Link href="/deploy" className="rounded-md border border-sky-800 px-2 py-0.5 text-[11px] leading-5 text-sky-300 hover:bg-sky-950/40">Deploy →</Link>
           </div>
 
           {/* Setup & records — collapsed, low-frequency */}
@@ -571,17 +571,17 @@ export default function DocmeeAuditPage({ searchParams }: PageProps) {
                 <input type="hidden" name="action" value="set-development-source" />
                 <input type="hidden" name="lane" value="ui" />
                 <input type="hidden" name="redirectTo" value="/docmee-audit" />
-                <input name="sourceUrl" defaultValue={sourceUrl} className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 sm:w-72" aria-label="UI Notion source URL" />
-                <button className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Set Notion source</button>
+                <input name="sourceUrl" defaultValue={sourceUrl} className="min-w-0 rounded-md border border-slate-700 bg-slate-950 px-2 py-0.5 text-[11px] leading-5 text-slate-100 sm:w-72" aria-label="UI Notion source URL" />
+                <button className="rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800">Set Notion source</button>
               </form>
-              <Link href="/rev1-coverage" className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Feature records</Link>
-              <Link href="/docmee-deployment-frontend" className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Frontend records</Link>
+              <Link href="/rev1-coverage" className="rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800">Feature records</Link>
+              <Link href="/docmee-deployment-frontend" className="rounded-md border border-slate-700 px-2 py-0.5 text-[11px] leading-5 text-slate-200 hover:bg-slate-800">Frontend records</Link>
               <details className="relative">
-                <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-red-800 px-2.5 py-1.5 text-xs text-red-200 hover:bg-red-950/40">Reset design…</summary>
+                <summary className="grid cursor-pointer list-none place-items-center rounded-md border border-red-800 px-2 py-0.5 text-[11px] leading-5 text-red-200 hover:bg-red-950/40">Reset design…</summary>
                 <form action="/api/actions" method="post" className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-red-800 bg-slate-900 p-3 shadow-lg">
                   <input type="hidden" name="action" value="ui-reset-screens" />
                   <p className="text-xs leading-5 text-slate-300">Reset all {uiDevelopmentRecords.length} screens back to <span className="font-semibold text-amber-200">planned</span>? This restarts the whole design process from Build screens.</p>
-                  <button className="mt-2 w-full rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-500">Yes, reset all to planned</button>
+                  <button className="mt-2 w-full rounded-md bg-red-600 px-2 py-0.5 text-[11px] leading-5 font-semibold text-white hover:bg-red-500">Yes, reset all to planned</button>
                 </form>
               </details>
             </div>
