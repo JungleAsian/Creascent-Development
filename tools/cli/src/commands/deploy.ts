@@ -253,7 +253,7 @@ deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis prefligh
   // three apps — otherwise @docmee/queue, @docmee/agents, etc. have no dist and the
   // apps fail at runtime with "Cannot find package". Topological order is handled by pnpm.
   const buildCmd = process.env.VPS_BUILD_CMD
-    || 'pnpm install --frozen-lockfile && pnpm --filter "./packages/*" --filter @docmee/api --filter @docmee/workers --filter @docmee/inboxos build'
+    || 'pnpm install --frozen-lockfile && pnpm --filter @docmee/shared --filter @docmee/config --filter @docmee/db --filter @docmee/queue --filter @docmee/llm --filter @docmee/channels --filter @docmee/notifications --filter @docmee/kb --filter @docmee/agents --filter @docmee/api --filter @docmee/workers --filter @docmee/inboxos build'
   const migrateCmd = process.env.VPS_MIGRATE_CMD || 'pnpm --filter @docmee/db db:migrate'
 
   // 1) Push the current HEAD to the deploy branch the VPS pulls from.
