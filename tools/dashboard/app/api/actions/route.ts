@@ -405,9 +405,9 @@ function readJson<T>(file: string, fallback: T) {
   }
 }
 
-function readToolsEnv() {
-  if (!existsSync(envFile)) return {} as Record<string, string>
-  return Object.fromEntries(readFileSync(envFile, 'utf8')
+function parseEnvFile(file: string) {
+  if (!existsSync(file)) return {} as Record<string, string>
+  return Object.fromEntries(readFileSync(file, 'utf8')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#') && line.includes('='))
@@ -415,6 +415,25 @@ function readToolsEnv() {
       const index = line.indexOf('=')
       return [line.slice(0, index).trim(), line.slice(index + 1).trim().replace(/^["']|["']$/g, '')]
     }))
+}
+
+function readToolsEnv() {
+  return parseEnvFile(envFile)
+}
+
+// The Docmee APP env lives at the repo root (template .env.example). Prefer a real
+// filled file if present, else fall back to the template. Production env readiness
+// validates THIS file, not tools/.env.tools (which is the DevTools/VPS config).
+const appEnvCandidates = ['.env.production', '.env', '.env.example']
+function appEnvPath() {
+  for (const name of appEnvCandidates) {
+    const candidate = path.join(repoRoot, name)
+    if (existsSync(candidate)) return candidate
+  }
+  return path.join(repoRoot, '.env.example')
+}
+function readAppEnv() {
+  return parseEnvFile(appEnvPath())
 }
 
 function plainText(items?: NotionRichText[]) {
@@ -608,7 +627,8 @@ function requiredEnvCheck(env: Record<string, string>, name: string, label = nam
 }
 
 function runEnvReadinessChecks() {
-  const env = readToolsEnv()
+  const env = readAppEnv()        // app secrets/config from the repo-root .env (Docmee app env)
+  const toolsEnv = readToolsEnv() // deploy connectivity (VPS_*) lives in tools/.env.tools
   const checks: PostDeploymentCheck[] = []
   const databaseUrl = env.DATABASE_URL?.trim() ?? ''
   const supabaseUrl = env.SUPABASE_URL?.trim() ?? ''
@@ -707,7 +727,7 @@ function runEnvReadinessChecks() {
       : 'JWT_REFRESH_SECRET is missing.'
   })
 
-  const missingVps = ['VPS_HOST', 'VPS_USER', 'VPS_SSH_KEY_PATH', 'VPS_DEPLOY_PATH'].filter((name) => !env[name]?.trim())
+  const missingVps = ['VPS_HOST', 'VPS_USER', 'VPS_SSH_KEY_PATH', 'VPS_DEPLOY_PATH'].filter((name) => !toolsEnv[name]?.trim())
   checks.push({
     name: 'VPS settings',
     status: missingVps.length > 0 ? 'fail' : 'pass',
