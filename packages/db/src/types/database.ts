@@ -587,6 +587,41 @@ export interface FollowUp {
   updatedAt: string
 }
 
+// ── Rev 3: N8N-style automation workflows ───────────────────────────────────────
+export type WorkflowStatus = 'draft' | 'active'
+export type WorkflowNodeKind = 'trigger' | 'logic' | 'action'
+
+/** One node on the workflow canvas. `type` is the concrete node (e.g.
+ *  'trigger.no_show', 'logic.condition', 'action.send_template', 'action.approval');
+ *  `config` is node-type-specific; x/y are the canvas position. */
+export interface WorkflowNode {
+  id: string
+  kind: WorkflowNodeKind
+  type: string
+  config: Record<string, unknown>
+  x: number
+  y: number
+}
+
+export interface WorkflowEdge {
+  id: string
+  source: string
+  target: string
+  /** Branch label out of a condition node (e.g. 'true' | 'false'). */
+  sourceHandle?: string | null
+}
+
+export interface Workflow {
+  id: string
+  clinicId: string
+  name: string
+  status: WorkflowStatus
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  createdAt: string
+  updatedAt: string
+}
+
 // ── Generated reports (Req 37 — Automatic reports) ──────────────────────────────
 
 export type ReportType = 'daily' | 'weekly'
