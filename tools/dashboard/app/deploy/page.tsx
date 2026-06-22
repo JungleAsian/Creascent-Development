@@ -23,6 +23,7 @@ const appEnvFile = resolveAppEnvFile()
 const postDeploymentFile = path.join(toolsRoot, 'logs', 'post-deployment.json')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
 const deployLockFile = path.join(toolsRoot, 'logs', 'deploy-lock.json')
+const deployLogFile = path.join(toolsRoot, 'logs', `deploy-${new Date().toISOString().slice(0, 10)}.log`)
 
 function parseEnv() {
   if (!fs.existsSync(envFile)) return {}
@@ -99,6 +100,13 @@ function readDeployLock() {
   }
 }
 
+function latestPreflightPassed() {
+  if (!fs.existsSync(deployLogFile)) return false
+  const lines = fs.readFileSync(deployLogFile, 'utf8').trim().split(/\r?\n/).reverse()
+  const latest = lines.find((line) => line.includes('Preflight passed') || line.includes('Preflight found'))
+  return Boolean(latest?.includes('Preflight passed'))
+}
+
 function checkStatus(run: PostDeploymentRun | undefined, name: string) {
   return run?.checks.find((check) => check.name === name)
 }
@@ -149,6 +157,8 @@ export default function DeployPage({ searchParams }: PageProps) {
   const vpsChecked = Boolean(latestVps)
   const vpsVerified = Boolean(latestVps && latestVps.summary.fail === 0)
   const appUrl = publicAppUrl(env).replace(/\/$/, '')
+  // URL to reach the deployed Docmee panel: the public URL, else the VPS host:3000.
+  const docmeeUrl = appUrl || (env.VPS_HOST ? `http://${env.VPS_HOST}:3000` : '')
   const vpsRuntimeChecked = checkStatus(latestVps, 'VPS runtime status')?.status === 'pass'
   const phase1 = deploymentPhases[0]
   const phase1Ready = phase1.phaseIds.every((id) => phaseStatus.get(id) === 'done')
@@ -360,6 +370,7 @@ export default function DeployPage({ searchParams }: PageProps) {
   const latestIssueRun = latestVps?.summary.fail ? latestVps : latestEnv?.summary.fail ? latestEnv : latestLocal?.summary.fail ? latestLocal : latestVps ?? latestEnv ?? latestLocal
   const latestIssue = latestIssueRun?.checks.find((check) => check.status === 'fail') ?? latestIssueRun?.checks.find((check) => check.status === 'warning')
   const verifiedVps = vpsVerified ? latestVps : undefined
+  const stalePreflightError = Boolean(searchParams?.error?.startsWith('Preflight blocked') && latestPreflightPassed())
 
   // Overall deploy readiness reflected in the header gauge, derived only from
   // values already computed above (phase completion + run/issue signals).
@@ -395,7 +406,7 @@ export default function DeployPage({ searchParams }: PageProps) {
         />
       </div>
       {searchParams?.message && <p className="mt-2 text-sm text-emerald-300">{searchParams.message}</p>}
-      {searchParams?.error && !(envReady && /\.env/i.test(searchParams.error)) && (
+      {searchParams?.error && !stalePreflightError && !(envReady && /\.env|env /i.test(searchParams.error)) && (
         <a
           href={detailHref(latestIssueRun, latestIssue?.name)}
           className="mt-2 inline-flex rounded border border-red-800 bg-red-950/30 px-3 py-2 text-sm text-red-200 hover:bg-red-950/50"
@@ -597,6 +608,26 @@ export default function DeployPage({ searchParams }: PageProps) {
               </p>
             </form>
           ))}
+          {/* Open the deployed Docmee panel on the VPS (a link, not an action). */}
+          <div className="rounded border border-slate-800 bg-slate-950/40 p-3">
+            {docmeeUrl ? (
+              <a
+                href={`${docmeeUrl}/login`}
+                target="_blank"
+                rel="noreferrer"
+                className="block w-full rounded-md bg-emerald-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-emerald-500"
+              >
+                Open Docmee
+              </a>
+            ) : (
+              <button type="button" disabled className="block w-full cursor-not-allowed rounded-md bg-slate-700 px-3 py-2 text-center text-sm font-medium text-slate-400">
+                Open Docmee
+              </button>
+            )}
+            <p className={docmeeUrl ? 'mt-2 break-all text-xs text-emerald-300' : 'mt-2 text-xs text-amber-300'}>
+              {docmeeUrl ? `Opens ${docmeeUrl} in a new tab` : 'Set APP_URL / VPS_DOMAIN or VPS_HOST first'}
+            </p>
+          </div>
         </div>
       </div>
 
