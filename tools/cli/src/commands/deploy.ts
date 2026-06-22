@@ -240,6 +240,11 @@ deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis prefligh
     `cd ${deployPath}`,
     'git fetch --all --prune',
     `git reset --hard origin/${branch}`,
+    // Export .env.production into this shell BEFORE building, so build-time vars
+    // (e.g. inboxos NEXT_PUBLIC_API_URL, baked into the client bundle) take effect.
+    // pm2 --update-env then inherits the same env, and ecosystem.config.cjs also
+    // loads the file directly — belt and suspenders. No-op if the file is absent.
+    'set -a; . ./.env.production 2>/dev/null || true; set +a',
     buildCmd,
     migrateCmd,
     `pm2 startOrReload ${ecosystem} --update-env`,
