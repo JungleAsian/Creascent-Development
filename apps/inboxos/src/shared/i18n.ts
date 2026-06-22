@@ -149,6 +149,7 @@ const es: Dict = {
   'view.appt.next': 'Próxima cita',
   'view.appt.last': 'Última cita',
   'view.appt.none': 'Sin citas',
+  'view.kbGrounded': 'Basado en',
 
   'tags.title': 'Etiquetas',
   'tags.placeholder': 'Nueva etiqueta…',
@@ -1361,6 +1362,7 @@ const en: Dict = {
   'view.appt.next': 'Next appointment',
   'view.appt.last': 'Last appointment',
   'view.appt.none': 'No appointments',
+  'view.kbGrounded': 'Grounded in',
 
   'tags.title': 'Tags',
   'tags.placeholder': 'New tag…',

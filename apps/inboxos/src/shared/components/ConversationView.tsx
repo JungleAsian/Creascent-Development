@@ -407,6 +407,7 @@ export function ConversationView({
         {conversation?.patientId && (
           <ApptSummary conversationId={conversationId} patientId={conversation.patientId} />
         )}
+        {conversation && <KbCitations metadata={conversation.metadata} />}
       </div>
 
       {/* Req 5/6 — full-width mode strip directly under the header. The single
@@ -684,6 +685,29 @@ function ApptSummary({ conversationId, patientId }: { conversationId: string; pa
       ) : (
         <span className="text-gray-400">{t('view.appt.none')}</span>
       )}
+    </div>
+  )
+}
+
+// ⑥ Citations (Rev 2): show which KB entries grounded the bot's most recent reply,
+// so the secretary can trust + audit the answer. Renders nothing until the bot has
+// answered from the KB (worker writes metadata.kbCitations).
+function KbCitations({ metadata }: { metadata: Record<string, unknown> }) {
+  const { t } = useI18n()
+  const cites = (metadata as { kbCitations?: unknown }).kbCitations
+  if (!Array.isArray(cites) || cites.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-gray-500">
+      <span aria-hidden>🔎</span>
+      <span>{t('view.kbGrounded')}:</span>
+      {(cites as string[]).slice(0, 4).map((c, i) => (
+        <span
+          key={i}
+          className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+        >
+          {c}
+        </span>
+      ))}
     </div>
   )
 }

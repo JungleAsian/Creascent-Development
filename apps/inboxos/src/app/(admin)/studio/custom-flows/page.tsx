@@ -197,7 +197,7 @@ export default function CustomFlowsPage() {
         <p className="text-sm text-gray-400">{t('studio.customFlows.selectClinic')}</p>
       ) : (
         <>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setEditor({})}
@@ -205,23 +205,32 @@ export default function CustomFlowsPage() {
             >
               + {t('studio.customFlows.new')}
             </button>
-            <select
-              value=""
-              onChange={(e) => {
-                const tpl = templates.find((x) => x.key === e.target.value)
-                if (tpl) createFromTemplate.mutate(tpl)
-                e.target.value = ''
-              }}
-              className={`${field} max-w-xs`}
-            >
-              <option value="">{t('studio.customFlows.fromTemplate')}</option>
-              {templates.map((tpl) => (
-                <option key={tpl.key} value={tpl.key}>
-                  {tpl.name}
-                </option>
-              ))}
-            </select>
           </div>
+
+          {/* Template gallery (Rev 2): one click instantiates a prebuilt flow into an
+              editable copy — the no-blank-canvas starting point. */}
+          {!editor && templates.length > 0 && (
+            <div className="mb-5">
+              <p className="mb-2 text-xs font-medium text-gray-500">{t('studio.customFlows.fromTemplate')}</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {templates.map((tpl) => (
+                  <button
+                    key={tpl.key}
+                    type="button"
+                    onClick={() => createFromTemplate.mutate(tpl)}
+                    disabled={createFromTemplate.isPending}
+                    className="group rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-indigo-400 hover:shadow-sm disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900"
+                  >
+                    <p className="text-sm font-medium group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{tpl.name}</p>
+                    <p className="mt-1 truncate text-[11px] text-gray-500">{tpl.triggerKeywords.slice(0, 4).join(', ')}</p>
+                    <span className="mt-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                      {tpl.steps.length} {t('studio.customFlows.stepCount')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {editor && (
             <FlowEditor
