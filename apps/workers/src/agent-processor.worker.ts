@@ -592,6 +592,16 @@ export async function processAgentJob(job: Job): Promise<void> {
           conversationId: data.conversationId,
           reason: 'upset',
         })
+        // Rev 3 — fire any active patient_upset automation workflows (gated + best-effort).
+        try {
+          await enqueueWorkflowRuns(sql, data.clinicId, 'trigger.patient_upset', {
+            message: data.message,
+            ...(data.patientId ? { patientId: data.patientId } : {}),
+            conversationId: data.conversationId,
+          })
+        } catch (err) {
+          console.error('[agent] patient_upset workflow enqueue failed:', err)
+        }
       }
     }
 

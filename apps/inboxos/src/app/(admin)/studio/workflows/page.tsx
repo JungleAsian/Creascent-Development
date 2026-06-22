@@ -10,6 +10,7 @@ import { api } from '@/shared/api/client'
 import { ClinicSelect } from '@/shared/components/ClinicSelect'
 import { WorkflowCanvas } from '@/shared/components/WorkflowCanvas'
 import { useI18n } from '@/shared/hooks/useI18n'
+import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from '@/shared/workflowTemplates'
 import type { Workflow, WorkflowNode, WorkflowEdge, WorkflowStatus } from '@/shared/types'
 
 const btn = 'rounded-md px-3 py-1.5 text-sm font-medium'
@@ -34,6 +35,19 @@ export default function WorkflowsPage() {
     mutationFn: ({ id, status }: { id: string; status: WorkflowStatus }) =>
       api.patch(`/clinics/${clinicId}/workflows/${id}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+  })
+  const createFromTemplate = useMutation({
+    mutationFn: (tpl: WorkflowTemplate) =>
+      api.post<{ workflow: Workflow }>(`/clinics/${clinicId}/workflows`, {
+        name: t(tpl.nameKey as Parameters<typeof t>[0]),
+        status: 'draft',
+        nodes: tpl.nodes,
+        edges: tpl.edges,
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: key })
+      setEditing(res.workflow)
+    },
   })
 
   const workflows = query.data?.workflows ?? []
@@ -64,6 +78,24 @@ export default function WorkflowsPage() {
           <button type="button" onClick={() => setEditing('new')} className={`${btn} bg-indigo-600 text-white hover:bg-indigo-700`}>
             + {t('wf.new')}
           </button>
+
+          <section>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{t('wf.templates')}</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {WORKFLOW_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.key}
+                  type="button"
+                  disabled={createFromTemplate.isPending}
+                  onClick={() => createFromTemplate.mutate(tpl)}
+                  className="rounded-lg border border-gray-200 bg-white p-3 text-left hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800"
+                >
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{t(tpl.nameKey as Parameters<typeof t>[0])}</p>
+                  <p className="mt-0.5 text-xs text-gray-500">{t(tpl.descKey as Parameters<typeof t>[0])}</p>
+                </button>
+              ))}
+            </div>
+          </section>
           {query.isLoading ? (
             <p className="text-sm text-gray-500">{t('common.loading')}</p>
           ) : workflows.length === 0 ? (
