@@ -50,6 +50,20 @@ function keyPath() {
   return (process.env.VPS_SSH_KEY_PATH || '~/.ssh/id_ed25519').replace(/^~/, os.homedir())
 }
 
+// Copy a local file to the VPS over scp. localPath may contain spaces (the repo
+// path does), so it's quoted for the shell.
+function scpToVps(localPath: string, remotePath: string) {
+  if (!requireVpsConfig()) return { ok: false, output: 'VPS settings missing' }
+  const target = `${process.env.VPS_USER}@${process.env.VPS_HOST}:${remotePath}`
+  const result = spawnSync(
+    'scp',
+    ['-i', `"${keyPath()}"`, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', `"${localPath}"`, target],
+    { encoding: 'utf8', shell: true, stdio: 'pipe', windowsHide: true },
+  )
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+  return { ok: result.status === 0, output }
+}
+
 // Deploy-critical env that must live in the VPS .env.production. 'critical' aborts
 // the deploy; 'warn' is surfaced but allowed (the client has a same-host fallback).
 const REQUIRED_PROD_ENV: Array<{ key: string; severity: 'critical' | 'warn'; note: string }> = [
@@ -177,15 +191,36 @@ deployCmd.command('setup').action(() => {
   log('deploy', `Run one-time VPS setup with ${script}. Review it before copying to production.`)
 })
 
-deployCmd.command('env').action(() => {
-  loadConfig()
-  const envPath = process.env.ENV_PRODUCTION_PATH || '.env.production'
-  if (!fs.existsSync(path.resolve(toolsRoot, '..', envPath)) && !fs.existsSync(path.resolve(toolsRoot, envPath))) {
-    log('deploy', `${envPath} not found; nothing was synced.`, 'warn')
-    return
-  }
-  log('deploy', `${envPath} is ready to sync via SCP after VPS settings are confirmed.`)
-})
+deployCmd
+  .command('env')
+  .description('Sync the local .env.production up to the VPS (scp). Overwrites the VPS file.')
+  .action(() => {
+    if (!requireVpsConfig()) {
+      process.exitCode = 1
+      return
+    }
+    const repoRoot = path.resolve(toolsRoot, '..')
+    const envName = process.env.ENV_PRODUCTION_PATH || '.env.production'
+    const localEnv = path.isAbsolute(envName) ? envName : path.join(repoRoot, envName)
+    if (!fs.existsSync(localEnv)) {
+      log('deploy', `Local ${localEnv} not found — create it first (cp .env.example .env.production at the repo root).`, 'error')
+      process.exitCode = 1
+      return
+    }
+    const deployPath = process.env.VPS_DEPLOY_PATH as string
+    const remote = `${deployPath}/.env.production`
+    log('deploy', 'NOTE: this overwrites the VPS file — make sure the local values are VPS-appropriate (real domain in APP_URL/CORS_ORIGINS, the VPS Postgres host in DATABASE_URL, not @postgres/localhost).', 'warn')
+    log('deploy', `Syncing ${localEnv} → ${process.env.VPS_HOST}:${remote} ...`)
+    const res = scpToVps(localEnv, remote)
+    if (!res.ok) {
+      log('deploy', `.env sync failed: ${res.output || 'scp error'}`, 'error')
+      process.exitCode = 1
+      return
+    }
+    // Confirm the deploy-critical keys actually landed.
+    const verify = ssh([`"for k in DATABASE_URL NODE_ENV REDIS_URL CORS_ORIGINS; do grep -qE ^$k= ${remote} && echo OK:$k || echo MISSING:$k; done"`])
+    log('deploy', `.env.production synced to the VPS. ${verify.output.replace(/\s+/g, ' ')}`)
+  })
 
 deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis preflight (not recommended)').action(async (opts: { skipPreflight?: boolean }) => {
   if (!requireVpsConfig()) {
