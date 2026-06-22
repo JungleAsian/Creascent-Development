@@ -40,6 +40,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { href: '/studio/automations', label: t('nav.automations'), icon: <NavIcon name="automations" /> },
           { href: '/studio/kb', label: t('nav.kb'), icon: <NavIcon name="kb" /> },
           { href: '/studio/custom-flows', label: t('nav.customFlows'), icon: <NavIcon name="customFlows" /> },
+          { href: '/studio/workflows', label: t('nav.workflows'), icon: <NavIcon name="workflows" /> },
         ],
       },
       {
