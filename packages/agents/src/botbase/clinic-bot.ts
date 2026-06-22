@@ -48,7 +48,11 @@ export interface ClinicBotDeps {
 export interface ClinicBotResult {
   replied: boolean
   triggeredHandoff: boolean
+  /** Why the bot handed off — drives the worker's tagging + follow-up logging. */
+  handoffReason?: 'medical_safety' | 'low_confidence'
   language: Language
+  /** ⑥ Citations: KB entry titles that grounded the reply. Empty on handoff / no KB. */
+  citations: string[]
 }
 
 // Emergency keywords (ES + EN). Detected before any LLM call so a true emergency
@@ -159,6 +163,18 @@ export function emergencyNotice(language: Language): string {
 }
 
 /**
+ * ⑤ Safe reply when the bot has NO confident KB grounding for a real question.
+ * It must not answer clinic-specific facts from the model's general knowledge
+ * (medical-misinformation risk), so it defers to a human. The worker pauses the
+ * bot, alerts a person, and logs the question for Add-to-KB review.
+ */
+export function knowledgeHandoffNotice(language: Language): string {
+  return language === 'es'
+    ? 'No tengo esa información a la mano en este momento. Voy a conectarte con el equipo de la clínica para ayudarte mejor.'
+    : "I don't have that information on hand right now. I'm connecting you with the clinic team so they can help you properly."
+}
+
+/**
  * Run the clinic bot for one inbound message. Never throws: an LLM/send failure
  * is logged and a localized apology is attempted, so a single bad turn can never
  * crash the conversation worker.
@@ -171,11 +187,23 @@ export async function runClinicBot(
 
   // Emergency → immediate human handoff, no bot reply.
   if (isEmergencyMessage(input.message)) {
-    return { replied: false, triggeredHandoff: true, language }
+    return { replied: false, triggeredHandoff: true, handoffReason: 'medical_safety', language, citations: [] }
   }
 
   try {
     const kbMatches = await deps.searchKb(input.message)
+
+    // ⑤ Confidence-gated safety handoff: a real information question that retrieved
+    // NO clinic-KB grounding must not be answered from the model's general
+    // knowledge (medical-misinformation risk). Send a safe deferral and hand off;
+    // the worker logs it for Add-to-KB review.
+    if (isLikelyQuestion(input.message) && kbMatches.length === 0) {
+      let notice = knowledgeHandoffNotice(language)
+      if (input.isFirstMessage) notice += stopNotice(language)
+      await deps.sendText(notice)
+      return { replied: true, triggeredHandoff: true, handoffReason: 'low_confidence', language, citations: [] }
+    }
+
     const system = buildSystemPrompt(input, language, kbMatches)
 
     let reply = await deps.complete(system, input.message, 512)
@@ -199,14 +227,14 @@ export async function runClinicBot(
       let deferral = medicalSafetyDeferral(language)
       if (input.isFirstMessage) deferral += stopNotice(language)
       await deps.sendText(deferral)
-      return { replied: true, triggeredHandoff: true, language }
+      return { replied: true, triggeredHandoff: true, handoffReason: 'medical_safety', language, citations: [] }
     }
 
     // Compliance: STOP notice only on the first contact (Decision 3).
     if (input.isFirstMessage) reply += stopNotice(language)
 
     await deps.sendText(reply)
-    return { replied: true, triggeredHandoff: false, language }
+    return { replied: true, triggeredHandoff: false, language, citations: kbMatches.map((m) => m.title) }
   } catch (err) {
     await deps.logError({
       clinicId: input.clinicId,
@@ -217,6 +245,6 @@ export async function runClinicBot(
     })
     // Best-effort apology; swallow a secondary send failure.
     await deps.sendText(apologyMessage(language)).catch(() => {})
-    return { replied: true, triggeredHandoff: false, language }
+    return { replied: true, triggeredHandoff: false, language, citations: [] }
   }
 }

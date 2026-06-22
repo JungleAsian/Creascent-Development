@@ -677,10 +677,15 @@ export async function processAgentJob(job: Job): Promise<void> {
         // so the pause merges onto the latest metadata (the sentiment block above
         // just wrote to it).
         if (botResult.triggeredHandoff) {
+          const handoffReason = botResult.handoffReason ?? 'medical_safety'
           if (data.conversationId && conversation) {
             const latest = await conversations.findById(data.clinicId, data.conversationId)
-            const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'medical_safety' })
-            await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+            // Only a real safety event carries the medical_safety tag; a knowledge-gap
+            // (low-confidence) handoff is a routine "couldn't answer → human" case.
+            if (handoffReason === 'medical_safety') {
+              const tag = await conversations.createTag({ clinicId: data.clinicId, name: 'medical_safety' })
+              await conversations.addTag(data.clinicId, data.conversationId, tag.id)
+            }
             await pauseBotForHandoff(
               conversations,
               data,
@@ -693,6 +698,25 @@ export async function processAgentJob(job: Job): Promise<void> {
             conversationId: data.conversationId,
             reason: 'human_handoff',
           })
+          // ⑤ Knowledge-gap handoff: the bot found no KB grounding for a real
+          // question and deferred to a human. Log it for the Add-to-KB queue (Req 29)
+          // — the reply path's unanswered logging is skipped because we break here.
+          if (handoffReason === 'low_confidence') {
+            await errorReviews
+              .create({
+                clinicId: data.clinicId,
+                errorType: 'unanswered_question',
+                errorMessage: data.message,
+                context: {
+                  conversationId: data.conversationId,
+                  channel: data.channel,
+                  language: botResult.language,
+                  kbChunks: chunks.length,
+                  reason: 'low_confidence_handoff',
+                },
+              })
+              .catch((err) => console.error('[agent] failed to log low-confidence handoff:', err))
+          }
           break
         }
 
@@ -723,7 +747,9 @@ export async function processAgentJob(job: Job): Promise<void> {
           const existing = await conversations.findById(data.clinicId, data.conversationId)
           if (existing) {
             await conversations.update(data.clinicId, data.conversationId, {
-              metadata: { ...existing.metadata, kbHit: true },
+              // ⑥ Citations: record which KB entries grounded the bot's reply so the
+              // inbox can show "grounded in …" for trust + audit.
+              metadata: { ...existing.metadata, kbHit: true, kbCitations: botResult.citations },
             })
           }
         }
