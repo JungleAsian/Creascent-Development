@@ -9,7 +9,17 @@ import { BuildProgressGauge } from '../build-progress-gauge'
 import { AutoRefresh } from '../auto-refresh'
 
 const toolsRoot = path.resolve(process.cwd(), '..')
+const repoRoot = path.resolve(toolsRoot, '..')
 const envFile = path.join(toolsRoot, '.env.tools')
+// The Docmee app env lives at the repo root — prefer a real file, fall back to the template.
+function resolveAppEnvFile() {
+  for (const name of ['.env.production', '.env', '.env.example']) {
+    const candidate = path.join(repoRoot, name)
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return path.join(repoRoot, '.env.example')
+}
+const appEnvFile = resolveAppEnvFile()
 const postDeploymentFile = path.join(toolsRoot, 'logs', 'post-deployment.json')
 const phasesFile = path.join(toolsRoot, 'logs', 'phases.json')
 const deployLockFile = path.join(toolsRoot, 'logs', 'deploy-lock.json')
@@ -597,10 +607,10 @@ export default function DeployPage({ searchParams }: PageProps) {
             <h2 className="text-sm font-semibold">Production .env Readiness</h2>
             <p className="mt-2 text-sm text-slate-400">Checks required setup values without showing tokens, passwords, or keys.</p>
             <p className="mt-2 text-xs text-slate-500">
-              Reads from <a href={`file://${envFile.replace(/\\/g, '/')}`} className="break-all font-mono text-sky-300 hover:text-sky-200">{envFile}</a>
+              Reads the Docmee app env: <a href={`file://${appEnvFile.replace(/\\/g, '/')}`} className="break-all font-mono text-sky-300 hover:text-sky-200">{appEnvFile}</a>
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              The VPS runs its own file: <span className="break-all font-mono text-slate-300">{(env.VPS_DEPLOY_PATH || '/var/www/docmee')}/.env.production</span> (not synced from here).
+              VPS settings (VPS_*) come from <span className="break-all font-mono text-slate-300">{envFile}</span>; the VPS runs its own <span className="break-all font-mono text-slate-300">{(env.VPS_DEPLOY_PATH || '/var/www/docmee')}/.env.production</span>.
             </p>
           </div>
           <form action="/api/actions" method="post">
