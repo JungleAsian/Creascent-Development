@@ -51,6 +51,8 @@ export * from './calbot/index.js'
 
 export * from './sheets/index.js'
 
+export * from './workflows/index.js'
+
 export async function routeMessage(_context: MessageContext): Promise<AgentResult> {
   throw new Error('routeMessage: not implemented — wire LLM router in P05+')
 }
