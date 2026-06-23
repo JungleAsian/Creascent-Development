@@ -87,7 +87,9 @@ function vpsPreflight(): { ok: boolean } {
   const keys = REQUIRED_PROD_ENV.map((entry) => entry.key).join(' ')
   const remote = [
     `if [ -f ${env} ]; then echo ENVFILE_OK; for k in ${keys} NODE_ENV; do if grep -qE ^$k= ${env}; then echo ENV_OK $k=$(grep -E ^$k= ${env} | head -1 | cut -d= -f2-); else echo ENV_MISSING $k; fi; done; if grep -qE '^DATABASE_URL=' ${env}; then (grep -E '^DATABASE_URL=' ${env} | grep -qE 'sslmode=' && echo DBURL_SSL=yes || echo DBURL_SSL=no); (grep -E '^DATABASE_URL=' ${env} | grep -qE '@postgres[:/]' && echo DBURL_DOCKER=yes || echo DBURL_DOCKER=no); fi; else echo ENVFILE_MISSING; fi`,
-    `echo REDIS $(redis-cli INFO server 2>/dev/null | grep -i redis_version | cut -d: -f2 || echo none)`,
+    // Authenticate with the requirepass from REDIS_URL (redis-cli -u doesn't parse the
+    // empty-username redis://:pass@ form, so extract the password and pass it via -a).
+    `echo REDIS $(R=$(grep -E '^REDIS_URL=' ${env} 2>/dev/null | head -1 | cut -d= -f2-); P=$(echo $R | sed -nE 's#^redis://[^:]*:([^@]+)@.*#\\1#p'); redis-cli \${P:+-a $P --no-auth-warning} INFO server 2>/dev/null | grep -i redis_version | cut -d: -f2 || echo none)`,
     `for t in node pnpm pm2 caddy; do if command -v $t >/dev/null 2>&1; then echo TOOL_OK $t; else echo TOOL_MISSING $t; fi; done`
   ].join('; ')
 
@@ -306,19 +308,15 @@ deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis prefligh
     return
   }
 
-  // 3) Health check the API through the public reverse proxy (Caddy :80 strips
-  // /api → the API). The app port (3001) is firewalled off the internet, so hitting
-  // it directly always fails; /api/health goes through the same path a user does.
-  const host = process.env.VPS_DOMAIN || process.env.VPS_HOST
-  const healthUrl = `http://${host}/api/health`
-  let healthy = false
-  try {
-    const response = await fetch(healthUrl)
-    healthy = response.ok
-    log('deploy', `Health ${healthUrl}: HTTP ${response.status}`, response.ok ? 'info' : 'warn')
-  } catch (error) {
-    log('deploy', `Health check ${healthUrl} failed: ${String(error)}`, 'warn')
-  }
+  // 3) Health check the API via the reverse proxy ON the VPS (localhost). The app
+  // port (3001) is never public, and public :80 may be firewalled too (ngrok-only
+  // setups where the origin isn't exposed) — so curl Caddy on the box itself, the
+  // same path a request takes once it reaches the server.
+  const healthRes = ssh([`"curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/api/health"`])
+  const code = /\d{3}/.exec(healthRes.output || '')?.[0]
+  const healthy = healthRes.ok && code === '200'
+  if (healthy) log('deploy', `Health /api/health (via Caddy on the VPS): HTTP ${code}`)
+  else log('deploy', `Health check failed: ${healthRes.output || 'no response'}`, 'warn')
   if (!healthy) process.exitCode = 1
   await sendNotification(
     healthy
