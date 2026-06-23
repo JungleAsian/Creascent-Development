@@ -15,7 +15,9 @@
 import postgres from 'postgres'
 import { randomBytes, scryptSync } from 'node:crypto'
 
-const url = process.env['DATABASE_URL'] ?? 'postgres://postgres:postgres@localhost:5432/docmee'
+// Seeding does heavy inserts — prefer DIRECT_URL (session pooler / direct) when set,
+// matching the migration script (the app's DATABASE_URL may be the transaction pooler).
+const url = process.env['DIRECT_URL'] ?? process.env['DATABASE_URL'] ?? 'postgres://postgres:postgres@localhost:5432/docmee'
 const sql = postgres(url, { prepare: false, transform: postgres.camel })
 
 // Mirrors @docmee/shared hashPassword (`scrypt$salt$key`); inlined so the seed
