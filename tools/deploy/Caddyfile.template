@@ -1,8 +1,10 @@
-{$VPS_DOMAIN} {
-  reverse_proxy /api/* 127.0.0.1:3001
-  reverse_proxy 127.0.0.1:3000
-}
-
-license.{$VPS_DOMAIN} {
-  reverse_proxy 127.0.0.1:3002
+# Reverse proxy for the Docmee panel.
+#   - Set VPS_DOMAIN (in Caddy's environment) for a real domain — Caddy auto-provisions HTTPS.
+#   - Leave it unset to serve plain :80 (e.g. behind ngrok, which terminates TLS).
+# /api/* is PATH-STRIPPED and proxied to the API (3001); everything else to inboxos (3000).
+{$VPS_DOMAIN::80} {
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+	reverse_proxy 127.0.0.1:3000
 }
