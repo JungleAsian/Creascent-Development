@@ -3,6 +3,8 @@ import {
   capPatientInput,
   MAX_PATIENT_INPUT_CHARS,
   injectionGuard,
+  scopeGuard,
+  outOfScopeReply,
   wrapUntrustedKb,
   detectPromptInjection,
   screenPromptLeak,
@@ -79,5 +81,18 @@ describe('system-prompt helpers', () => {
     expect(wrapped).toContain('<<<KB')
     expect(wrapped).toContain('KB>>>')
     expect(wrapped).toContain('clinic hours: 9-5')
+  })
+  it('scopeGuard restricts to booking and refuses off-topic', () => {
+    const guard = scopeGuard('Clinica Demo').toLowerCase()
+    expect(guard).toContain('clinica demo')
+    expect(guard).toContain('strict scope')
+    expect(guard).toContain('out of scope')
+    expect(guard).toContain('booking')
+    // explicitly names commands/tasks as out of scope
+    expect(guard).toMatch(/command|instruction|task/)
+  })
+  it('outOfScopeReply offers booking + handoff in both languages', () => {
+    expect(outOfScopeReply('en').toLowerCase()).toContain('appointment')
+    expect(outOfScopeReply('es').toLowerCase()).toContain('cita')
   })
 })
