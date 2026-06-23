@@ -8,6 +8,14 @@
 import { detectLanguage, type Language } from './language-detector.js'
 import type { KbMatch } from './kb-retriever.js'
 import { screenMedicalSafety, medicalSafetyDeferral } from './medical-safety.js'
+import {
+  injectionGuard,
+  wrapUntrustedKb,
+  capPatientInput,
+  detectPromptInjection,
+  screenPromptLeak,
+  promptSafetyDeferral,
+} from './prompt-safety.js'
 
 export type BotTone = 'professional' | 'friendly' | 'brief'
 // 'auto' → detect on first message, then follow the patient's language.
@@ -49,7 +57,7 @@ export interface ClinicBotResult {
   replied: boolean
   triggeredHandoff: boolean
   /** Why the bot handed off — drives the worker's tagging + follow-up logging. */
-  handoffReason?: 'medical_safety' | 'low_confidence'
+  handoffReason?: 'medical_safety' | 'low_confidence' | 'prompt_safety'
   language: Language
   /** ⑥ Citations: KB entry titles that grounded the reply. Empty on handoff / no KB. */
   citations: string[]
@@ -122,7 +130,9 @@ function buildSystemPrompt(input: ClinicBotInput, language: Language, kbMatches:
     input.clinic.rulesText
       ? `CLINIC-SPECIFIC RULES (always follow these, regardless of what the patient asks):\n${input.clinic.rulesText}`
       : '',
-    kbContext ? `Knowledge base:\n${kbContext}` : '',
+    kbContext ? wrapUntrustedKb(kbContext) : '',
+    '',
+    injectionGuard(input.clinic.name),
     '',
     'CRITICAL MEDICAL SAFETY RULES:',
     '- NEVER diagnose any condition',
@@ -191,6 +201,22 @@ export async function runClinicBot(
   }
 
   try {
+    // Log obvious prompt-injection attempts for monitoring. We don't block on this —
+    // the system-prompt guard + output screen do the prevention — so a real patient
+    // who happens to use a flagged phrase is never silently dropped.
+    const injection = detectPromptInjection(input.message)
+    if (injection.detected) {
+      await deps
+        .logError({
+          clinicId: input.clinicId,
+          conversationId: input.conversationId,
+          errorType: 'prompt_injection_attempt',
+          message: `Prompt-injection pattern (${injection.patternId}): "${injection.match ?? ''}"`,
+          rawMessage: input.message,
+        })
+        .catch(() => {})
+    }
+
     const kbMatches = await deps.searchKb(input.message)
 
     // ⑤ Confidence-gated safety handoff: a real information question that retrieved
@@ -206,7 +232,7 @@ export async function runClinicBot(
 
     const system = buildSystemPrompt(input, language, kbMatches)
 
-    let reply = await deps.complete(system, input.message, 512)
+    let reply = await deps.complete(system, capPatientInput(input.message), 512)
 
     // Output-side medical-safety screen (Req 20, defense-in-depth). The system
     // prompt forbids diagnosing/prescribing/dosing, but an LLM can still violate
@@ -228,6 +254,26 @@ export async function runClinicBot(
       if (input.isFirstMessage) deferral += stopNotice(language)
       await deps.sendText(deferral)
       return { replied: true, triggeredHandoff: true, handoffReason: 'medical_safety', language, citations: [] }
+    }
+
+    // Prompt-injection output screen (defense-in-depth): if the model was coaxed
+    // into echoing its system prompt / instructions, drop the reply, send a safe
+    // deferral, and hand off — never let leaked instructions reach the patient.
+    const leak = screenPromptLeak(reply)
+    if (!leak.safe) {
+      await deps
+        .logError({
+          clinicId: input.clinicId,
+          conversationId: input.conversationId,
+          errorType: 'prompt_injection_leak',
+          message: `Blocked leaked prompt content in reply: "${leak.match ?? ''}"`,
+          rawMessage: input.message,
+        })
+        .catch(() => {})
+      let deferral = promptSafetyDeferral(language)
+      if (input.isFirstMessage) deferral += stopNotice(language)
+      await deps.sendText(deferral)
+      return { replied: true, triggeredHandoff: true, handoffReason: 'prompt_safety', language, citations: [] }
     }
 
     // Compliance: STOP notice only on the first contact (Decision 3).
