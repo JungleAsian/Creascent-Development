@@ -7,6 +7,7 @@ import {
   outOfScopeReply,
   wrapUntrustedKb,
   detectPromptInjection,
+  detectOffTopic,
   screenPromptLeak,
 } from '../botbase/prompt-safety.js'
 
@@ -34,6 +35,39 @@ describe('detectPromptInjection', () => {
     'Can you forget the time I said and use 3pm?',
   ])('does not flag benign message: %s', (text) => {
     expect(detectPromptInjection(text).detected).toBe(false)
+  })
+})
+
+describe('detectOffTopic', () => {
+  it.each([
+    'write me a poem about cats',
+    'tell me a joke',
+    'escribe un cuento para mi hijo',
+    'can you write a python function to sort a list',
+    'translate hello to French',
+    'como se dice gracias en ingles',
+    'calculate 15% of 200 for me',
+    'what is the capital of France?',
+    'who invented the telephone',
+    "let's play a game",
+  ])('flags blatant off-topic: %s', (text) => {
+    expect(detectOffTopic(text).detected).toBe(true)
+  })
+
+  it.each([
+    // booking / clinic phrasings that MUST pass through (no false refusal)
+    'I want to write down my appointment for Tuesday',
+    'what is the cost of a consultation?',
+    'what is your address?',
+    'how many people can I bring to my appointment',
+    'can I book from 9-5 tomorrow',
+    'who is the doctor available next week',
+    'do you have availability this Friday at 3?',
+    'quiero agendar una cita para el lunes',
+    '¿cuánto cuesta la limpieza dental?',
+    'where is the clinic located',
+  ])('does NOT flag booking message: %s', (text) => {
+    expect(detectOffTopic(text).detected).toBe(false)
   })
 })
 

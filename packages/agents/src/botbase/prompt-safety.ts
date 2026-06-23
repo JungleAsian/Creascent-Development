@@ -123,6 +123,46 @@ export function detectPromptInjection(text: string): InjectionDetection {
   return { detected: false }
 }
 
+export interface OffTopicResult {
+  detected: boolean
+  patternId?: string
+  match?: string
+}
+
+// Deterministic off-topic gate (HIGH precision, ES + EN). Only blatant out-of-scope
+// requests are matched; anything ambiguous is deliberately NOT flagged so it falls
+// through to the LLM (which still has the scope guard). Patterns are written to avoid
+// booking phrasings — times like "9-5", "what is the cost", "write down my
+// appointment", "how many people can come", "who is the doctor" must NOT match.
+const OFF_TOPIC_PATTERNS: { id: string; re: RegExp }[] = [
+  {
+    id: 'creative-writing',
+    re: /\b(write|compose|create|generate|escribe(?:me)?|redacta|crea|componer)\b[\s\S]{0,18}\b(poem|story|essay|song|joke|haiku|rap|script|screenplay|novel|tweet|poema|cuento|historia|chiste|ensayo|cancion|guion|novela)\b/,
+  },
+  { id: 'joke-story', re: /\b(tell me (a joke|a story|a riddle)|cuentame (un chiste|una historia|un cuento)|dime un chiste)\b/ },
+  {
+    id: 'coding',
+    re: /\b(write|debug|fix|refactor|explain|escribe(?:me)?|depura|corrige)\b[\s\S]{0,15}\b(code|a function|a script|a program|python|javascript|typescript|java|sql query|html|css|codigo|una funcion|un programa)\b/,
+  },
+  { id: 'translation', re: /\b(translate|traduce(?:me)?|traducir|how do you say|como se dice)\b/ },
+  { id: 'math', re: /\b(calculate|compute|solve this|what'?s \d+\s*[-+x*/]|calcula(?:me)?|resuelve)\b[\s\S]{0,12}\d/ },
+  {
+    id: 'general-knowledge',
+    re: /\b(what('?s| is) the (capital|population|weather forecast|meaning of life|square root)|who (invented|wrote|painted|discovered|won the|directed)|cual es la capital de|quien (invento|escribio|descubrio|gano el))\b/,
+  },
+  { id: 'game', re: /\b(let'?s play|play a game|wanna play|trivia game|juguemos|juega conmigo)\b/ },
+]
+
+/** Flag a clearly out-of-scope request (creative writing, code, translation, trivia, math, games). */
+export function detectOffTopic(text: string): OffTopicResult {
+  const normalized = normalize(text)
+  for (const { id, re } of OFF_TOPIC_PATTERNS) {
+    const m = normalized.match(re)
+    if (m) return { detected: true, patternId: id, match: m[0].slice(0, 80).trim() }
+  }
+  return { detected: false }
+}
+
 export interface PromptLeakResult {
   safe: boolean
   match?: string

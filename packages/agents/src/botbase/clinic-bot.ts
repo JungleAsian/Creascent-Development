@@ -14,6 +14,8 @@ import {
   wrapUntrustedKb,
   capPatientInput,
   detectPromptInjection,
+  detectOffTopic,
+  outOfScopeReply,
   screenPromptLeak,
   promptSafetyDeferral,
 } from './prompt-safety.js'
@@ -216,6 +218,27 @@ export async function runClinicBot(
           rawMessage: input.message,
         })
         .catch(() => {})
+    }
+
+    // Deterministic off-topic gate (pre-LLM): refuse blatantly out-of-scope requests
+    // (jokes, code, translation, trivia, math, games) with a safe booking redirect —
+    // even when the LLM is stubbed. High precision; ambiguous input falls through to
+    // the LLM + scope guard. A rare false hit still offers booking + a human.
+    const offTopic = detectOffTopic(input.message)
+    if (offTopic.detected) {
+      await deps
+        .logError({
+          clinicId: input.clinicId,
+          conversationId: input.conversationId,
+          errorType: 'off_topic_refused',
+          message: `Off-topic request (${offTopic.patternId}): "${offTopic.match ?? ''}"`,
+          rawMessage: input.message,
+        })
+        .catch(() => {})
+      let reply = outOfScopeReply(language)
+      if (input.isFirstMessage) reply += stopNotice(language)
+      await deps.sendText(reply)
+      return { replied: true, triggeredHandoff: false, language, citations: [] }
     }
 
     const kbMatches = await deps.searchKb(input.message)
