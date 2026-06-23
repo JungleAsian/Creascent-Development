@@ -5,6 +5,7 @@
 // Keys are resolved lazily from the environment so importing this module never
 // throws when JWT_SECRET is unset (tests, tooling). The dev fallbacks mirror the
 // defaults in plugins/env.ts; production deployments must set real secrets.
+import { randomUUID } from 'node:crypto'
 import { createSigner, createVerifier } from 'fast-jwt'
 
 // Treat an unset OR empty env var as "use the dev fallback" — an empty key would
@@ -30,7 +31,10 @@ export function signAccessToken(payload: JwtPayload): string {
 }
 
 export function signRefreshToken(payload: JwtPayload): string {
-  return createSigner({ key: refreshKey(), expiresIn: '7d' })(payload)
+  // Unique jti per token so two refreshes (even within the same second / same
+  // payload) never produce identical strings — required for rotation, where the
+  // previous token is blacklisted and the new one must be distinct.
+  return createSigner({ key: refreshKey(), expiresIn: '7d', jti: randomUUID() })(payload)
 }
 
 export function verifyAccessToken(token: string): JwtPayload {
