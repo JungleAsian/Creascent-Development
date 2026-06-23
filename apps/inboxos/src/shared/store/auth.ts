@@ -28,6 +28,7 @@ interface AuthState {
     language?: PanelLanguage
   }) => void
   setAccessToken: (token: string) => void
+  setRefreshToken: (token: string) => void
   setLanguage: (language: PanelLanguage) => void
   setActiveClinicId: (clinicId: string) => void
   logout: () => void
@@ -47,6 +48,7 @@ export const useAuthStore = create<AuthState>()(
         // an admin's previous switch must not carry over to the next session.
         set((s) => ({ accessToken, refreshToken, user, language: language ?? s.language, activeClinicId: user.clinicId })),
       setAccessToken: (accessToken) => set({ accessToken }),
+      setRefreshToken: (refreshToken) => set({ refreshToken }),
       setLanguage: (language) => set({ language }),
       setActiveClinicId: (activeClinicId) => set({ activeClinicId }),
       logout: () => set({ accessToken: null, refreshToken: null, user: null, activeClinicId: null }),

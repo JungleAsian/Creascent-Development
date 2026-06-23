@@ -18,8 +18,12 @@ import {
   type JwtPayload,
 } from '../auth/jwt.js'
 import { blacklistRefreshToken, isRefreshTokenBlacklisted } from '../auth/token-store.js'
+import { rateLimit } from '../lib/rate-limit.js'
 
 const REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60
+// Brute-force guard: cap auth attempts per client IP. Generous enough for an office
+// behind one NAT, far below what an automated guesser needs.
+const AUTH_MAX_PER_MINUTE = 30
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -29,6 +33,16 @@ const refreshSchema = z.object({ refreshToken: z.string().min(1) })
 const logoutSchema = z.object({ refreshToken: z.string().min(1) })
 
 const authRoute: FastifyPluginAsync = async (app) => {
+  // Rate-limit every auth endpoint by client IP to blunt credential stuffing /
+  // brute-force (no app-level limiting existed; fail2ban only covers SSH).
+  app.addHook('onRequest', async (request, reply) => {
+    const { ok, retryAfter } = rateLimit(`auth:${request.ip}`, AUTH_MAX_PER_MINUTE, 60_000)
+    if (!ok) {
+      reply.header('retry-after', String(retryAfter))
+      return reply.code(429).send({ error: 'Too many requests — slow down.' })
+    }
+  })
+
   app.post('/login', async (request, reply) => {
     const parsed = validate(loginSchema, request.body, reply)
     if (!parsed.ok) return
@@ -74,13 +88,16 @@ const authRoute: FastifyPluginAsync = async (app) => {
     } catch {
       return reply.code(401).send({ error: 'Invalid token' })
     }
-    const accessToken = signAccessToken({
+    // Rotation: invalidate the presented refresh token and issue a fresh pair, so a
+    // stolen token is single-use — its replay after the legitimate refresh is rejected.
+    await blacklistRefreshToken(refreshToken, REFRESH_TTL_SECONDS)
+    const next: JwtPayload = {
       userId: payload.userId,
       clinicId: payload.clinicId,
       role: payload.role,
       email: payload.email,
-    })
-    return { accessToken }
+    }
+    return { accessToken: signAccessToken(next), refreshToken: signRefreshToken(next) }
   })
 
   app.post('/logout', async (request, reply) => {
