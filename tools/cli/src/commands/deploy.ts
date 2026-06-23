@@ -306,10 +306,11 @@ deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis prefligh
     return
   }
 
-  // 3) Health check the API.
+  // 3) Health check the API through the public reverse proxy (Caddy :80 strips
+  // /api → the API). The app port (3001) is firewalled off the internet, so hitting
+  // it directly always fails; /api/health goes through the same path a user does.
   const host = process.env.VPS_DOMAIN || process.env.VPS_HOST
-  const apiPort = process.env.API_PORT || '3001'
-  const healthUrl = `http://${host}:${apiPort}/health`
+  const healthUrl = `http://${host}/api/health`
   let healthy = false
   try {
     const response = await fetch(healthUrl)
