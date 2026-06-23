@@ -21,7 +21,8 @@
   },
   "pnpm": {
     "overrides": {
-      "google-auth-library": "10.7.0"
+      "google-auth-library": "10.7.0",
+      "fast-uri": "^3"
     }
   }
 }
