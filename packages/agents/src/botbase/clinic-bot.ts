@@ -10,6 +10,7 @@ import type { KbMatch } from './kb-retriever.js'
 import { screenMedicalSafety, medicalSafetyDeferral } from './medical-safety.js'
 import {
   injectionGuard,
+  scopeGuard,
   wrapUntrustedKb,
   capPatientInput,
   detectPromptInjection,
@@ -132,6 +133,8 @@ function buildSystemPrompt(input: ClinicBotInput, language: Language, kbMatches:
       : '',
     kbContext ? wrapUntrustedKb(kbContext) : '',
     '',
+    scopeGuard(input.clinic.name),
+    '',
     injectionGuard(input.clinic.name),
     '',
     'CRITICAL MEDICAL SAFETY RULES:',
@@ -141,8 +144,6 @@ function buildSystemPrompt(input: ClinicBotInput, language: Language, kbMatches:
     '- For any symptoms: recommend the patient visit the clinic or call in an emergency',
     '- For emergencies: say you are connecting them with the team immediately',
     '- If unsure: say you will connect them with a team member',
-    '',
-    'You help with: appointment scheduling questions, clinic hours, general clinic information.',
   ]
     .filter((line) => line !== '')
     .join('\n')
