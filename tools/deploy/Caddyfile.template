@@ -8,7 +8,12 @@
 		X-Content-Type-Options nosniff
 		X-Frame-Options SAMEORIGIN
 		Referrer-Policy strict-origin-when-cross-origin
+		# Baseline CSP — Next.js needs 'unsafe-inline'/'unsafe-eval' for its runtime;
+		# still constrains default/connect/frame-ancestors/base-uri and blocks object/mixed content.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		# Don't advertise the stack.
 		-Server
+		-X-Powered-By
 	}
 	handle_path /api/* {
 		reverse_proxy 127.0.0.1:3001
