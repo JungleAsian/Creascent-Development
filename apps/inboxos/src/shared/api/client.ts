@@ -52,9 +52,12 @@ async function refreshAccessToken(): Promise<string | null> {
     })
       .then(async (res) => {
         if (!res.ok) return null
-        const data = (await res.json()) as { accessToken?: string }
+        const data = (await res.json()) as { accessToken?: string; refreshToken?: string }
         if (!data.accessToken) return null
         useAuthStore.getState().setAccessToken(data.accessToken)
+        // The server rotates the refresh token on each use — persist the new one,
+        // otherwise the next refresh would replay the now-revoked token and fail.
+        if (data.refreshToken) useAuthStore.getState().setRefreshToken(data.refreshToken)
         return data.accessToken
       })
       .catch(() => null)

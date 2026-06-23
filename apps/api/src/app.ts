@@ -40,6 +40,9 @@ export async function buildApp() {
 
   const app = Fastify({
     logger: env.NODE_ENV === 'test' ? false : { level: 'info' },
+    // Behind Caddy/ngrok — read the real client IP from X-Forwarded-For so the
+    // auth rate limiter buckets per client, not per proxy (which is 127.0.0.1).
+    trustProxy: true,
   })
 
   app.addHook('onRequest', async (request, reply) => {
