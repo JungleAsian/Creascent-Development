@@ -312,7 +312,11 @@ deployCmd.command('vps').option('--skip-preflight', 'Skip the env/Redis prefligh
   // port (3001) is never public, and public :80 may be firewalled too (ngrok-only
   // setups where the origin isn't exposed) — so curl Caddy on the box itself, the
   // same path a request takes once it reaches the server.
-  const healthRes = ssh([`"curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/api/health"`])
+  // Retry: the API needs a few seconds to start listening after a PM2 reload, so an
+  // immediate check can catch Caddy proxying to a not-yet-ready upstream (502).
+  const healthRes = ssh([
+    `"for i in $(seq 1 8); do c=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/api/health); case $c in 200) break;; esac; sleep 3; done; echo $c"`,
+  ])
   const code = /\d{3}/.exec(healthRes.output || '')?.[0]
   const healthy = healthRes.ok && code === '200'
   if (healthy) log('deploy', `Health /api/health (via Caddy on the VPS): HTTP ${code}`)
