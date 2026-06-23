@@ -22,7 +22,9 @@
   "pnpm": {
     "overrides": {
       "google-auth-library": "10.7.0",
-      "fast-uri": "^3"
+      "fast-uri": "^3",
+      "@types/react": "^19.0.0",
+      "@types/react-dom": "^19.0.0"
     }
   }
 }
