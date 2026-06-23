@@ -64,7 +64,10 @@ async function runMigrations(sql: postgres.Sql, reset: boolean) {
   console.log(`✅ Applied ${pending.length} migration(s).`)
 }
 
-const url = process.env['DATABASE_URL'] ?? 'postgres://postgres:postgres@localhost:5432/docmee'
+// Migrations run DDL — prefer DIRECT_URL (the Supabase SESSION pooler / direct
+// connection) when set, since the app's DATABASE_URL may point at the TRANSACTION
+// pooler (port 6543) which is meant for short app queries, not migrations.
+const url = process.env['DIRECT_URL'] ?? process.env['DATABASE_URL'] ?? 'postgres://postgres:postgres@localhost:5432/docmee'
 const reset = process.argv.includes('--reset')
 const sql = postgres(url, { prepare: false })
 
