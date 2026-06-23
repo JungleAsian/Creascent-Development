@@ -9,9 +9,10 @@ DEPLOY_PATH="${VPS_DEPLOY_PATH:-/var/www/docmee}"
 REPO_URL="${DEPLOY_REPO_URL:-git@github.com:JungleAsian/Creascent-Development.git}"
 BRANCH="${GITHUB_BRANCH:-main}"
 
-echo "==> Base packages (git, curl, ufw, caddy)"
+echo "==> Base packages (git, curl, ufw, caddy, redis)"
 apt-get update -y
-apt-get install -y curl git ufw caddy
+apt-get install -y curl git ufw caddy redis-server
+systemctl enable --now redis-server || true
 
 echo "==> Node 20 + pnpm (corepack) + pm2"
 if ! command -v node >/dev/null 2>&1; then
@@ -52,6 +53,10 @@ mkdir -p "$(dirname "$DEPLOY_PATH")"
 cd "$DEPLOY_PATH"
 git fetch --all --prune
 git reset --hard "origin/$BRANCH"
+
+echo "==> Caddy reverse proxy (/api/* -> API :3001 stripped, else -> inboxos :3000)"
+install -m 0644 "$DEPLOY_PATH/tools/deploy/Caddyfile.template" /etc/caddy/Caddyfile
+systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true
 
 echo "==> PM2 start on boot"
 pm2 startup systemd -u "$(whoami)" --hp "$HOME" >/dev/null 2>&1 || true
